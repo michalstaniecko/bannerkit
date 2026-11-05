@@ -127,9 +127,9 @@ function inspectReport(r: InspectResult): string {
   const lines = [`${r.name} ${r.canvas.width}x${r.canvas.height} (${r.path})`]
   lines.push(r.selection ? `Selection: ${r.selection.selectedLayerIds.join(', ') || '(none)'}` : 'Selection: not recorded')
   for (const l of r.layers) {
-    const b = l.bounds
+    const b = l.extent
     lines.push(
-      `${l.selected ? '*' : ' '} [${l.index}] ${l.type} ${l.id} at ${px(b.x)},${px(b.y)} ${px(b.width)}x${px(b.height)} ${l.canvas}`,
+      `${l.selected ? '*' : ' '} [${l.index}] ${l.type} ${l.id} at ${px(b.x)},${px(b.y)} ${px(b.width)}x${px(b.height)} ${l.placement}`,
     )
     if (l.text) {
       const t = l.text
@@ -194,7 +194,7 @@ const COMMANDS: Record<string, Command> = {
   inspect: {
     usage: 'bannerkit inspect <project> [<doc>]',
     summary:
-      'Show each Layer with resolved Text Layout, Asset sizes, Canvas bounds, warnings and the Selection (doc defaults to the selected one; * marks selected Layers)',
+      'Show each Layer with resolved Text Layout, Asset sizes, extent and Canvas placement, warnings and the Selection (doc defaults to the selected one; * marks selected Layers)',
     positionals: [1, 2],
     options: {},
     run: ({ root, args: [project, name] }) => inspect({ root, project: project!, ...(name ? { name } : {}) }),

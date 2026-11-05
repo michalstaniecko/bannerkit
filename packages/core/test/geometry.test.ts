@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyMatrix, type Box, boxCenter, boxTransform, linearGradientLine } from '../src/index.ts'
+import { applyMatrix, type Box, boxCenter, boxExtent, boxTransform, linearGradientLine } from '../src/index.ts'
 
 function round(line: { x0: number; y0: number; x1: number; y1: number }) {
   const r = (n: number) => Math.round(n * 1000) / 1000 + 0
@@ -78,5 +78,14 @@ describe('boxTransform (rotation in degrees around the Box centre)', () => {
     expect(c.x).toBeCloseTo(60, 9)
     expect(c.y).toBeCloseTo(40, 9)
     expect(boxCenter(box)).toEqual({ x: 60, y: 40 })
+  })
+})
+
+describe('boxExtent', () => {
+  it('is the Box itself when unrotated, and the rotated corners’ axis-aligned rectangle otherwise', () => {
+    expect(boxExtent({ x: 10, y: 20, width: 100, height: 50 })).toEqual({ x: 10, y: 20, width: 100, height: 50 })
+    const turned = boxExtent({ x: 10, y: 20, width: 100, height: 50, rotation: 90 })
+    // centre (60, 45); a quarter turn swaps width and height around it
+    expect([turned.x, turned.y, turned.width, turned.height].map((n) => Math.round(n * 1e6) / 1e6)).toEqual([35, -5, 50, 100])
   })
 })

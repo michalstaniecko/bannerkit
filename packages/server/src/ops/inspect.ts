@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { applyMatrix, boxTransform, layoutText, svgIntrinsicSize, type Box, type Issue, type LayerType, type Rect, type Size } from '@bannerkit/core'
+import { boxExtent, layoutText, svgIntrinsicSize, type Issue, type LayerType, type Rect, type Size } from '@bannerkit/core'
 import sharp from 'sharp'
 import { z } from 'zod'
 import { measureText } from '../render/fonts.ts'
@@ -43,10 +43,10 @@ export type LayerInspection = {
   index: number
   id: string
   type: LayerType
-  /** Axis-aligned Canvas-space bounds of the (rotated) Box. */
-  bounds: Rect
-  /** Where `bounds` falls relative to the Canvas. */
-  canvas: CanvasPlacement
+  /** The axis-aligned Canvas-space extent of the (rotated) Box (see core's `boxExtent`). */
+  extent: Rect
+  /** Where `extent` falls relative to the Canvas. */
+  placement: CanvasPlacement
   /** In the editor's current Selection. */
   selected: boolean
   text?: TextInspection
@@ -90,13 +90,13 @@ export async function inspect(input: z.input<typeof InspectInput>): Promise<Insp
   const layers: LayerInspection[] = []
   for (const [index, layer] of document.layers.entries()) {
     const layout = layer.type === 'text' ? layoutText(layer, measureText) : undefined
-    const bounds = boundsOf({ ...layer, height: layout?.height ?? layer.height! })
-    const canvas = placement(bounds, document.canvas)
-    if (canvas !== 'inside') {
-      const where = canvas === 'outside' ? 'entirely outside' : 'partly outside'
+    const extent = boxExtent({ ...layer, height: layout?.height ?? layer.height! })
+    const placement = placementOf(extent, document.canvas)
+    if (placement !== 'inside') {
+      const where = placement === 'outside' ? 'entirely outside' : 'partly outside'
       outside.push({ path: `layers[${index}]`, message: `Layer "${layer.id}" is ${where} the Canvas` })
     }
-    const base = { index, id: layer.id, type: layer.type, bounds, canvas, selected: selected.has(layer.id) }
+    const base = { index, id: layer.id, type: layer.type, extent, placement, selected: selected.has(layer.id) }
     if (layer.type === 'image') {
       layers.push({ ...base, asset: { src: layer.src, ...(await assetSize(dir, layer.src)) } })
       continue
@@ -143,27 +143,10 @@ async function assetSize(dir: string, src: string): Promise<Size> {
   return { width, height }
 }
 
-/** Axis-aligned bounds of a Box after rotation around its centre. */
-function boundsOf(box: Box): Rect {
-  if (!box.rotation) return { x: box.x, y: box.y, width: box.width, height: box.height }
-  const m = boxTransform(box)
-  const corners = [
-    [0, 0],
-    [box.width, 0],
-    [0, box.height],
-    [box.width, box.height],
-  ].map(([x, y]) => applyMatrix(m, x!, y!))
-  const xs = corners.map((c) => c.x)
-  const ys = corners.map((c) => c.y)
-  const x = Math.min(...xs)
-  const y = Math.min(...ys)
-  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
-}
-
 /** Sub-pixel slack so float noise from rotation does not count as poking out. */
 const EPSILON = 1e-6
 
-function placement(b: Rect, canvas: Size): CanvasPlacement {
+function placementOf(b: Rect, canvas: Size): CanvasPlacement {
   const { width: w, height: h } = canvas
   if (b.x >= w || b.y >= h || b.x + b.width <= 0 || b.y + b.height <= 0) return 'outside'
   const inside = b.x >= -EPSILON && b.y >= -EPSILON && b.x + b.width <= w + EPSILON && b.y + b.height <= h + EPSILON

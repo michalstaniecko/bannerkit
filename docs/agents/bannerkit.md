@@ -49,7 +49,7 @@ Every Layer has these fields: `id`, `type`, `x`, `y`, `width`, plus the optional
 
 Conventions:
 
-- **Box**: `x`/`y` is the top-left corner of the Box *before rotation*, in Canvas pixels. `rotation` is in degrees, clockwise, around the Box centre. To rotate a Layer in place, change only `rotation`. The `bounds` that `inspect` reports are the axis-aligned box *after* rotation, so they will not equal `x`/`y`/`width`/`height` for a rotated Layer.
+- **Box**: `x`/`y` is the top-left corner of the Box *before rotation*, in Canvas pixels. `rotation` is in degrees, clockwise, around the Box centre. To rotate a Layer in place, change only `rotation`. The `extent` that `inspect` reports is the axis-aligned rectangle *after* rotation, so they will not equal `x`/`y`/`width`/`height` for a rotated Layer.
 - **Colours** are CSS strings: `"#0e3a32"`, `"rgba(0,0,0,0.45)"`.
 - **Gradient**: `{ "type": "linear", "angle": 120, "stops": [["#0e3a32", 0], ["#2f8f76", 1]] }`. The angle follows the CSS `linear-gradient` convention: `0` runs bottom to top, `90` runs left to right and `180` runs top to bottom. You need at least two stops, and each offset is between 0 and 1.
 - **Fit**: `contain` shows the whole image inside the Box and may leave empty bands. `cover` fills the Box and crops the overflow. `stretch` ignores the aspect ratio. Use the Asset size from `asset add` or `inspect` to size the Box.
@@ -84,7 +84,7 @@ Exit codes are 0 for success, 1 for an operation error or invalid Documents, and
 
 The Presets are `1200x628`, `1080x1080`, `1080x1920`, `300x250` and `728x90`. Write the format as `jpg`, because `jpeg` is rejected. `--doc` and `--size` can be repeated. When you give both, a Document must match both filters, and an empty `files` list means nothing matched. `preview` and `render` refuse to run while the Document has validation errors.
 
-Each `inspect` entry in `layers` has the form `{ index, id, type, bounds, canvas: "inside"|"partial"|"outside", selected }`. Text Layers add `text: { fontSize, requestedFontSize, height, overflow, lines: [{ text, width }] }`, and image Layers add `asset: { src, width, height }`. The `warnings` list contains text overflow and Layers that are not fully inside the Canvas.
+Each `inspect` entry in `layers` has the form `{ index, id, type, extent, placement: "inside"|"partial"|"outside", selected }`. Text Layers add `text: { fontSize, requestedFontSize, height, overflow, lines: [{ text, width }] }`, and image Layers add `asset: { src, width, height }`. The `warnings` list contains text overflow and Layers that are not fully inside the Canvas.
 
 ## Selection
 

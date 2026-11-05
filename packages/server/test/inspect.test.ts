@@ -36,7 +36,7 @@ async function doc(layers: unknown[], canvas = { width: 300, height: 250 }) {
 
 const rect = (id: string, box: Record<string, number>) => ({ id, type: 'rect', fill: '#ff0000', ...box })
 
-describe('inspect: Canvas bounds', () => {
+describe('inspect: extent and Canvas placement', () => {
   it('says whether each Layer is inside, partly outside or fully outside the Canvas, and warns', async () => {
     await doc([
       rect('in', { x: 10, y: 10, width: 100, height: 100 }),
@@ -48,14 +48,14 @@ describe('inspect: Canvas bounds', () => {
 
     const result = await inspect({ root, project: 'p', name: 'hero' })
 
-    expect(result.layers.map((l) => [l.id, l.canvas])).toEqual([
+    expect(result.layers.map((l) => [l.id, l.placement])).toEqual([
       ['in', 'inside'],
       ['edge', 'partial'],
       ['gone', 'outside'],
       ['turned', 'partial'],
     ])
     const half = 50 * Math.SQRT2
-    expect(result.layers[3]!.bounds).toEqual({
+    expect(result.layers[3]!.extent).toEqual({
       x: expect.closeTo(50 - half, 6),
       y: expect.closeTo(50 - half, 6),
       width: expect.closeTo(2 * half, 6),
@@ -68,8 +68,8 @@ describe('inspect: Canvas bounds', () => {
   it('measures a text Layer without a height by its laid-out text block', async () => {
     await doc([text({ y: 240, text: 'Low' })])
     const [layer] = (await inspect({ root, project: 'p', name: 'hero' })).layers
-    expect(layer!.bounds.height).toBe(layer!.text!.height)
-    expect(layer!.canvas).toBe('partial')
+    expect(layer!.extent.height).toBe(layer!.text!.height)
+    expect(layer!.placement).toBe('partial')
   })
 })
 

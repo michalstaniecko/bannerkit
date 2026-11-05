@@ -1,4 +1,5 @@
 // Gradient and rotation geometry shared by both renderers. Pure math, no DOM or Node APIs.
+import type { Rect } from './fit.ts'
 
 /** A gradient line from (x0, y0) at stop 0 to (x1, y1) at stop 1, in Box-relative pixels. */
 export type GradientLine = { x0: number; y0: number; x1: number; y1: number }
@@ -46,4 +47,21 @@ export function boxTransform(box: Box): Matrix {
 /** Applies a Matrix to a point. */
 export function applyMatrix(m: Matrix, x: number, y: number): { x: number; y: number } {
   return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] }
+}
+
+/** The axis-aligned Canvas-space extent of a Box after rotation around its centre. */
+export function boxExtent(box: Box): Rect {
+  if (!box.rotation) return { x: box.x, y: box.y, width: box.width, height: box.height }
+  const m = boxTransform(box)
+  const corners = [
+    [0, 0],
+    [box.width, 0],
+    [0, box.height],
+    [box.width, box.height],
+  ].map(([x, y]) => applyMatrix(m, x!, y!))
+  const xs = corners.map((c) => c.x)
+  const ys = corners.map((c) => c.y)
+  const x = Math.min(...xs)
+  const y = Math.min(...ys)
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
 }
