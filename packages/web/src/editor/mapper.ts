@@ -20,6 +20,8 @@
 // an untouched Document round-trips unchanged.
 import {
   DEFAULT_LINE_HEIGHT,
+  applyMatrix,
+  boxTransform,
   fitImage,
   layoutText,
   linearGradientLine,
@@ -72,7 +74,8 @@ export function applyLayer(object: FabricObject, layer: Layer, env: MapperEnv): 
   object.set(commonProps(layer))
   localBoxes.set(object, box)
   // Put the local Box centre on the Box centre: centre = boxCentre − R(angle)·(cx·scaleX, cy·scaleY).
-  const offset = new Point(box.cx * object.scaleX, box.cy * object.scaleY).rotate(util.degreesToRadians(object.angle))
+  // R is core's rotation (boxTransform of a zero-size Box at the origin), the one the server draws with.
+  const offset = applyMatrix(boxTransform({ x: 0, y: 0, width: 0, height: 0, rotation: object.angle }), box.cx * object.scaleX, box.cy * object.scaleY)
   object.set({ left: layer.x + box.width * object.scaleX / 2 - offset.x, top: layer.y + box.height * object.scaleY / 2 - offset.y })
   object.setCoords()
 }

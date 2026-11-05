@@ -4,6 +4,7 @@
 // the latest scheduled Document is ever saved. Live reload holds autosave while
 // the human decides between their edits and a change made on disk.
 import type { Document } from '@bannerkit/core'
+import { debounce } from './debounce.ts'
 
 export const AUTOSAVE_DELAY_MS = 500
 
@@ -38,19 +39,13 @@ export function createAutosave(
   { delay = AUTOSAVE_DELAY_MS, onError = () => {} }: AutosaveOptions = {},
 ): Autosave {
   let pending: Document | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
   /** The save in flight (or a resolved promise): the next save chains on it. */
   let saving: Promise<void> = Promise.resolve()
   let inFlight = 0
   let held = false
 
-  const clearTimer = () => {
-    if (timer !== undefined) clearTimeout(timer)
-    timer = undefined
-  }
-
   const run = (): Promise<void> => {
-    clearTimer()
+    timer.cancel()
     saving = saving.then(async () => {
       const document = pending
       pending = undefined
@@ -68,16 +63,17 @@ export function createAutosave(
     })
     return saving
   }
+  const timer = debounce(() => void run(), delay)
 
   return {
     schedule(document) {
       pending = document
-      clearTimer()
-      if (!held) timer = setTimeout(run, delay)
+      if (held) timer.cancel()
+      else timer.schedule()
     },
     flush: () => (held ? saving : run()),
     cancel() {
-      clearTimer()
+      timer.cancel()
       pending = undefined
     },
     dirty: () => pending !== undefined || inFlight > 0,
@@ -91,12 +87,12 @@ export function createAutosave(
     },
     hold() {
       held = true
-      clearTimer()
+      timer.cancel()
     },
     release() {
       held = false
-      clearTimer()
-      if (pending) timer = setTimeout(run, delay)
+      if (pending) timer.schedule()
+      else timer.cancel()
     },
   }
 }

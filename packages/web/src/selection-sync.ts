@@ -1,6 +1,7 @@
 // Selection sync: the editor's `selection` events are sent to the server so an
 // agent's `bannerkit inspect` sees what the human selected (spec: "sent to the
 // server on change (debounced)"). Only the latest Selection is ever sent.
+import { debounce } from './debounce.ts'
 
 export const SELECTION_SYNC_DELAY_MS = 200
 
@@ -21,19 +22,6 @@ export function createSelectionSync(
   send: (layerIds: string[]) => Promise<unknown>,
   { delay = SELECTION_SYNC_DELAY_MS, onError = () => {} }: SelectionSyncOptions = {},
 ): SelectionSync {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const cancel = () => {
-    if (timer !== undefined) clearTimeout(timer)
-    timer = undefined
-  }
-  return {
-    schedule(layerIds) {
-      cancel()
-      timer = setTimeout(() => {
-        timer = undefined
-        send(layerIds).catch(onError)
-      }, delay)
-    },
-    cancel,
-  }
+  const timer = debounce((layerIds: string[]) => void send(layerIds).catch(onError), delay)
+  return { schedule: (layerIds) => timer.schedule(layerIds), cancel: () => timer.cancel() }
 }
