@@ -7,6 +7,7 @@ import { api, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 import { ExportControl } from './ExportControl.tsx'
+import { createSelectionSync } from './selection-sync.ts'
 
 const VIEWPORT_PADDING = 32
 const ZOOM_STEP = 1.25
@@ -80,7 +81,12 @@ export function App() {
       },
       { onError: (e) => !cancelled && (setSave('failed'), setError(`Not saved: ${(e as Error).message}`)) },
     )
+    // The Selection goes to the server (debounced) so an agent's `inspect` sees it.
+    const selectionSync = createSelectionSync((ids) => api.writeSelection(project, doc, ids), {
+      onError: (e) => console.warn('Selection not recorded:', e),
+    })
     let unsubscribe = () => {}
+    let unsubscribeSelection = () => {}
     api
       .readDocument(project, doc)
       .then(async ({ document }) => {
@@ -93,6 +99,8 @@ export function App() {
           setSave('unsaved')
           autosave.schedule(event.document)
         })
+        unsubscribeSelection = editor.on('selection', ({ layerIds }) => selectionSync.schedule(layerIds))
+        selectionSync.schedule(editor.getSelection())
         setError(null)
         setSave('saved')
         setLoaded(true)
@@ -101,6 +109,8 @@ export function App() {
     return () => {
       cancelled = true
       unsubscribe()
+      unsubscribeSelection()
+      selectionSync.cancel()
       // Switching Documents saves the last edits of this one right away.
       void autosave.flush()
     }

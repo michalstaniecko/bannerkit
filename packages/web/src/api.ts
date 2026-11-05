@@ -35,6 +35,13 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(document),
     }),
+  /** Records the editor's Selection in the Project's `.state.json`, where `bannerkit inspect` reads it. */
+  writeSelection: (project: string, doc: string, selectedLayerIds: string[]) =>
+    requestJson<{ doc: string; selectedLayerIds: string[] }>(`/api/projects/${seg(project)}/selection`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ doc, selectedLayerIds }),
+    }),
   /** The same-origin URL of a Document's project-relative Asset `src` (e.g. `assets/shoe.png`). */
   assetUrl: (project: string, src: string) => `/api/projects/${seg(project)}/${src.split('/').map(seg).join('/')}`,
 }
