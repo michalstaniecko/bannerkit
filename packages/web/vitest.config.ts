@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     name: 'web',
     environment: 'jsdom',
+    // Lets <img> load (data: URLs), so FabricImage.fromURL resolves or rejects.
+    environmentOptions: { jsdom: { resources: 'usable' } },
     include: ['test/**/*.test.ts'],
   },
 })

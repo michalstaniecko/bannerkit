@@ -66,7 +66,7 @@ export function App() {
       .readDocument(project, doc)
       .then(async ({ document }) => {
         if (cancelled || !editorRef.current) return
-        await editorRef.current.load(document)
+        await editorRef.current.load(document, { assetUrl: (src) => api.assetUrl(project, src) })
         setError(null)
         setLoaded(true)
       })

@@ -9,15 +9,34 @@
 // (12), snapshots (13), Layer list actions (14), `apply` (15), `on('change')` (16),
 // `on('selection')` (17) and `export` (18).
 import type { Document, Layer } from '@bannerkit/core'
-import { Canvas, type FabricObject } from 'fabric'
+import { Canvas, Textbox, type FabricObject } from 'fabric'
+import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { layerToObject, objectToLayer } from './mapper.ts'
 import { fitZoom, type Size } from './zoom.ts'
+
+export type EditorOptions = {
+  /**
+   * Loads the fonts a Document uses before any text is created. Defaults to the
+   * browser loader (`@font-face` from the font manifest + `document.fonts.load`);
+   * tests without a FontFaceSet inject their own.
+   */
+  loadFonts?: LoadFonts
+}
+
+export type LoadOptions = {
+  /** The URL an image Layer's project-relative `src` loads from. Defaults to `src` itself. */
+  assetUrl?: (src: string) => string
+}
 
 export type Editor = {
   /** Creates the Fabric canvas inside `container`. Call once, before `load`. */
   mount(container: HTMLElement): void
-  /** Replaces whatever is shown with `document`. */
-  load(document: Document): Promise<void>
+  /**
+   * Replaces whatever is shown with `document`, once its fonts and Assets have
+   * loaded. A missing Asset shows as a hatched placeholder; a font that cannot be
+   * loaded rejects, since text is never laid out in a fallback font.
+   */
+  load(document: Document, options?: LoadOptions): Promise<void>
   /** The Document as currently shown. */
   getDocument(): Document
   /** The Fabric object showing a Layer, for adapters that need it (Selection, tests). */
@@ -32,11 +51,13 @@ export type Editor = {
 
 type Entry = { base: Layer; object: FabricObject }
 
-export function createEditor(): Editor {
+export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {}): Editor {
   let canvas: Canvas | undefined
   let current: Document | undefined
   let entries: Entry[] = []
   let zoom = 1
+  /** Bumped by every `load`, so only the latest one shows its Document. */
+  let loads = 0
 
   const requireCanvas = (): Canvas => {
     if (!canvas) throw new Error('Editor is not mounted; call mount(container) first')
@@ -61,12 +82,23 @@ export function createEditor(): Editor {
       canvas = new Canvas(element, { preserveObjectStacking: true })
     },
 
-    async load(document) {
+    async load(document, { assetUrl = (src: string) => src } = {}) {
       const c = requireCanvas()
+      const token = ++loads
+      const next = structuredClone(document)
+      // Fonts first: text is laid out (AutoFit, wrapping) only with the real font.
+      await loadFonts(facesUsed(next))
+      if (token !== loads || canvas !== c) return
+      // Fabric caches glyph widths per family; anything still shown is re-measured.
+      for (const object of c.getObjects()) if (object instanceof Textbox) object.initDimensions()
+      c.requestRenderAll()
+
+      const objects = await Promise.all(next.layers.map((layer) => layerToObject(layer, { assetUrl, measure: measureText })))
+      if (token !== loads || canvas !== c) return // a newer load (or destroy) won
       c.discardActiveObject()
       c.remove(...c.getObjects())
-      current = structuredClone(document)
-      entries = current.layers.map((layer) => ({ base: layer, object: layerToObject(layer) }))
+      current = next
+      entries = next.layers.map((layer, i) => ({ base: layer, object: objects[i]! }))
       c.backgroundColor = current.canvas.background ?? ''
       c.add(...entries.map((e) => e.object))
       applyZoom()
