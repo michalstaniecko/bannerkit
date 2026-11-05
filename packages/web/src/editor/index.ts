@@ -416,7 +416,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 }
 
 export type { Size } from './zoom.ts'
-export { EXPORT_FORMATS, exportFileName, type ExportFormat, type ExportOptions, type ExportResult, type ExportScale } from './export.ts'
+export type { ExportOptions, ExportResult } from './export.ts'
 
 /**
  * A drag, resize or rotate lands on whole pixels (`x`, `y`, `width`, `height`) and

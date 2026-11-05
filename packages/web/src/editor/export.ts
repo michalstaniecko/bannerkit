@@ -3,12 +3,17 @@
 // size* (never the screen's `devicePixelRatio`, never the editor zoom), downsampled
 // to exactly `width × height × scale`, then encoded. PNG and WebP keep alpha; JPEG is
 // flattened onto the Canvas background, white if it is transparent.
-import type { Document } from '@bannerkit/core'
+import {
+  DEFAULT_EXPORT_QUALITY,
+  EXPORT_MIME,
+  SUPERSAMPLE,
+  isExportFormat,
+  isExportScale,
+  type Document,
+  type ExportFormat,
+  type ExportScale,
+} from '@bannerkit/core'
 import { FabricImage, type StaticCanvas } from 'fabric'
-
-export const EXPORT_FORMATS = ['png', 'jpg', 'webp'] as const
-export type ExportFormat = (typeof EXPORT_FORMATS)[number]
-export type ExportScale = 1 | 2
 
 export type ExportOptions = {
   /** Default png. */
@@ -21,16 +26,6 @@ export type ExportOptions = {
 
 export type ExportResult = { blob: Blob; width: number; height: number; format: ExportFormat; scale: ExportScale }
 
-/** Every Export is drawn at 2 × scale and downsampled, like the server. */
-export const SUPERSAMPLE = 2
-export const DEFAULT_QUALITY = 90
-
-const MIME: Record<ExportFormat, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
-
-/** `<doc>.<w>x<h>[@2x].<ext>`, the server's Export file name. */
-export const exportFileName = (name: string, canvas: Document['canvas'], scale: number, format: ExportFormat) =>
-  `${name}.${canvas.width}x${canvas.height}${scale === 1 ? '' : `@${scale}x`}.${format}`
-
 /**
  * Exports what `canvas` shows of a Document whose Canvas is `size`. The caller has
  * loaded the Document's fonts; every image is decoded here before drawing.
@@ -38,10 +33,10 @@ export const exportFileName = (name: string, canvas: Document['canvas'], scale: 
 export async function exportCanvas(
   canvas: StaticCanvas,
   size: Document['canvas'],
-  { format = 'png', scale = 1, quality = DEFAULT_QUALITY }: ExportOptions = {},
+  { format = 'png', scale = 1, quality = DEFAULT_EXPORT_QUALITY }: ExportOptions = {},
 ): Promise<ExportResult> {
-  if (!(EXPORT_FORMATS as readonly string[]).includes(format)) throw new Error(`Unknown Export format "${format}"`)
-  if (scale !== 1 && scale !== 2) throw new Error(`Export scale must be 1 or 2, got ${scale}`)
+  if (!isExportFormat(format)) throw new Error(`Unknown Export format "${format}"`)
+  if (!isExportScale(scale)) throw new Error(`Export scale must be 1 or 2, got ${scale}`)
   if (!(quality >= 1 && quality <= 100)) throw new Error(`Export quality must be 1-100, got ${quality}`)
 
   await Promise.all(
@@ -69,8 +64,8 @@ export async function exportCanvas(
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(supersampled, 0, 0, out.width, out.height)
 
-  const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, MIME[format], quality / 100))
-  if (!blob || blob.type !== MIME[format]) throw new Error(`This browser cannot encode ${format}`)
+  const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, EXPORT_MIME[format], quality / 100))
+  if (!blob || blob.type !== EXPORT_MIME[format]) throw new Error(`This browser cannot encode ${format}`)
   return { blob, width: out.width, height: out.height, format, scale }
 }
 

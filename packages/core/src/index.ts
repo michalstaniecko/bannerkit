@@ -1,6 +1,7 @@
 // @bannerkit/core: schema, validation, Presets, geometry and Text Layout shared by every renderer.
 // No DOM or Node APIs here.
 export * from './document.ts'
+export * from './export.ts'
 export * from './fit.ts'
 export * from './fonts.ts'
 export * from './geometry.ts'

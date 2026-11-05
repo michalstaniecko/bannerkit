@@ -24,7 +24,7 @@ export {
   type ValidateResult,
 } from './validation.ts'
 export { preview, type PreviewResult } from './preview.ts'
-export { exportFileName, render, type ExportFile, type RenderInput, type RenderResult } from './render.ts'
+export { exportDocument, render, type ExportDocumentInput, type ExportFile, type RenderInput, type RenderResult } from './render.ts'
 export {
   inspect,
   type InspectResult,

@@ -1,7 +1,8 @@
 // The top bar's Export control: format and scale pickers and a button that saves
 // the editor's browser Export to a file, named like the server's (`<doc>.<w>x<h>[@2x].<ext>`).
 import { useState, type RefObject } from 'react'
-import { EXPORT_FORMATS, exportFileName, type Editor, type ExportFormat, type ExportScale } from './editor/index.ts'
+import { EXPORT_FORMATS, EXPORT_SCALES, exportFileName, type ExportFormat, type ExportScale } from '@bannerkit/core'
+import type { Editor } from './editor/index.ts'
 
 type Props = {
   editor: RefObject<Editor | null>
@@ -50,8 +51,11 @@ export function ExportControl({ editor, name, disabled, onError }: Props) {
       <label>
         Scale{' '}
         <select value={scale} onChange={(e) => setScale(Number(e.target.value) as ExportScale)} disabled={disabled}>
-          <option value={1}>1×</option>
-          <option value={2}>2×</option>
+          {EXPORT_SCALES.map((s) => (
+            <option key={s} value={s}>
+              {s}×
+            </option>
+          ))}
         </select>
       </label>
       <button type="button" onClick={saveExport} disabled={disabled || busy}>

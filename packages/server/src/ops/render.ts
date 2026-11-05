@@ -1,7 +1,16 @@
 import { join } from 'node:path'
-import { SizeSchema, formatSize, type Document } from '@bannerkit/core'
+import {
+  DEFAULT_EXPORT_QUALITY,
+  EXPORT_FORMATS,
+  EXPORT_SCALES,
+  SizeSchema,
+  exportFileName,
+  type Document,
+  type ExportFormat,
+  type ExportScale,
+} from '@bannerkit/core'
 import { z } from 'zod'
-import { DEFAULT_QUALITY, RENDER_FORMATS, renderDocument, type RenderFormat } from '../render/renderDocument.ts'
+import { renderDocument } from '../render/renderDocument.ts'
 import { listDocuments, readDocument } from './documents.ts'
 import { OpError, parseInput } from './errors.ts'
 import { writeFileAtomic } from './fs.ts'
@@ -14,9 +23,9 @@ const RenderInput = z.object({
   docs: z.array(Name).optional(),
   /** Only Documents whose Canvas is one of these sizes. */
   sizes: z.array(SizeSchema).optional(),
-  format: z.enum(RENDER_FORMATS).default('png'),
-  scale: z.union([z.literal(1), z.literal(2)]).default(1),
-  quality: z.number().int().min(1).max(100).default(DEFAULT_QUALITY),
+  format: z.enum(EXPORT_FORMATS).default('png'),
+  scale: z.union(EXPORT_SCALES.map((s) => z.literal(s))).default(1),
+  quality: z.number().int().min(1).max(100).default(DEFAULT_EXPORT_QUALITY),
 })
 
 export type RenderInput = z.input<typeof RenderInput>
@@ -27,15 +36,11 @@ export type ExportFile = {
   /** Pixel dimensions of the written file: Canvas size × scale. */
   width: number
   height: number
-  format: RenderFormat
-  scale: 1 | 2
+  format: ExportFormat
+  scale: ExportScale
 }
 
 export type RenderResult = { project: string; files: ExportFile[] }
-
-/** `<doc>.<w>x<h>[@2x].<ext>`, where w×h is the Canvas size. */
-export const exportFileName = (name: string, doc: Document, scale: number, format: RenderFormat) =>
-  `${name}.${formatSize(doc.canvas)}${scale === 1 ? '' : `@${scale}x`}.${format}`
 
 /**
  * Batch Export: renders every Document in a Project (optionally filtered by name
@@ -43,6 +48,24 @@ export const exportFileName = (name: string, doc: Document, scale: number, forma
  * read and validated before anything is written.
  */
 export async function render(input: RenderInput): Promise<RenderResult> {
+  const { project } = parseInput(RenderInput, input)
+  return { project, files: (await renderExports(input)).map((e) => e.file) }
+}
+
+const ExportDocumentInput = RenderInput.omit({ docs: true, sizes: true }).extend({ name: Name })
+export type ExportDocumentInput = z.input<typeof ExportDocumentInput>
+
+/**
+ * One Document's Export, written like `render` writes it and answered with its
+ * encoded bytes too (what the REST render of one Document sends back).
+ */
+export async function exportDocument(input: ExportDocumentInput): Promise<{ file: ExportFile; image: Uint8Array }> {
+  const { name, ...options } = parseInput(ExportDocumentInput, input)
+  return (await renderExports({ ...options, docs: [name] }))[0]!
+}
+
+/** Renders and writes the selected Documents' Exports; see `render`. */
+async function renderExports(input: RenderInput): Promise<{ file: ExportFile; image: Uint8Array }[]> {
   const { root, project, docs, sizes, format, scale, quality } = parseInput(RenderInput, input)
   const available = (await listDocuments({ root, project })).map((d) => d.name)
 
@@ -68,18 +91,12 @@ export async function render(input: RenderInput): Promise<RenderResult> {
     rendered.push({ name, document, image })
   }
 
-  const files: ExportFile[] = []
+  const exports: { file: ExportFile; image: Uint8Array }[] = []
   for (const { name, document, image } of rendered) {
-    const path = join(exportsDir(root, project), exportFileName(name, document, scale, format))
+    const path = join(exportsDir(root, project), exportFileName(name, document.canvas, scale, format))
     await writeFileAtomic(path, image)
-    files.push({
-      name,
-      path,
-      width: document.canvas.width * scale,
-      height: document.canvas.height * scale,
-      format,
-      scale,
-    })
+    const file: ExportFile = { name, path, width: document.canvas.width * scale, height: document.canvas.height * scale, format, scale }
+    exports.push({ file, image })
   }
-  return { project, files }
+  return exports
 }

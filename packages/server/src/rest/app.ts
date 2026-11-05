@@ -6,13 +6,14 @@
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import { readFile } from 'node:fs/promises'
+import { EXPORT_MIME } from '@bannerkit/core'
 import {
   OpError,
   addAssets,
   createDocument,
   createProject,
   duplicateDocument,
+  exportDocument,
   listDocuments,
   listProjects,
   readDocument,
@@ -23,7 +24,6 @@ import {
   type CreateDocumentInput,
   type CreateProjectInput,
   type DuplicateDocumentInput,
-  type ExportFile,
   type OpErrorCode,
   type RenderInput,
 } from '../ops/index.ts'
@@ -93,9 +93,8 @@ export function createApp({ root, webDir }: AppOptions) {
 
   api.post('/projects/:project/documents/:doc/render', async (c) => {
     const { format, scale, quality } = (await jsonObject(c, { empty: 'allowed' })) as Omit<RenderInput, 'root' | 'project'>
-    const result = await render({ format, scale, quality, root, project: c.req.param('project'), docs: [c.req.param('doc')] })
-    const file = result.files[0]!
-    return c.body(new Uint8Array(await readFile(file.path)), 200, { 'content-type': RENDER_MIME[file.format] })
+    const { file, image } = await exportDocument({ format, scale, quality, root, project: c.req.param('project'), name: c.req.param('doc') })
+    return c.body(new Uint8Array(image), 200, { 'content-type': EXPORT_MIME[file.format] })
   })
 
   // Selection (the `readSelection`/`writeSelection` ops, the same `.state.json` that
@@ -170,8 +169,6 @@ export function createApp({ root, webDir }: AppOptions) {
   if (webDir) app.use('*', serveStatic({ root: webDir }))
   return app
 }
-
-const RENDER_MIME: Record<ExportFile['format'], string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
 
 /**
  * The request body as a JSON object; the op validates its fields. Bad JSON and

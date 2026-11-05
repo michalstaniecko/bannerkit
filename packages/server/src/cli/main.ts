@@ -3,7 +3,18 @@
 // filesystem itself, and it returns an exit code instead of calling process.exit.
 import { isAbsolute, resolve } from 'node:path'
 import { parseArgs, type ParseArgsConfig } from 'node:util'
-import { parseSize, type Issue, type PresetId, type Size } from '@bannerkit/core'
+import {
+  EXPORT_FORMATS,
+  EXPORT_SCALES,
+  isExportFormat,
+  isExportScale,
+  parseSize,
+  type ExportFormat,
+  type ExportScale,
+  type Issue,
+  type PresetId,
+  type Size,
+} from '@bannerkit/core'
 import {
   OpError,
   addAssets,
@@ -95,6 +106,27 @@ function intFlag(values: Values, name: string): number | undefined {
   if (text === undefined) return undefined
   if (!/^\d+$/.test(text)) throw new UsageError(`--${name} must be a whole number, got "${text}"`)
   return Number(text)
+}
+
+/**
+ * `--format`, when given, as an ExportFormat. Anything else is the op's INVALID_INPUT
+ * (exit 1), the same error `render` gives for an unsupported format.
+ */
+function formatFlag(values: Values): ExportFormat | undefined {
+  const text = values.format as string | undefined
+  if (text === undefined || isExportFormat(text)) return text
+  throw new OpError('INVALID_INPUT', `format: expected one of ${EXPORT_FORMATS.join(', ')}, got "${text}"`, [
+    { path: 'format', message: `expected one of ${EXPORT_FORMATS.join(', ')}` },
+  ])
+}
+
+/** `--scale`, when given, as an ExportScale: not a whole number is a usage error, an unsupported one INVALID_INPUT. */
+function scaleFlag(values: Values): ExportScale | undefined {
+  const scale = intFlag(values, 'scale')
+  if (scale === undefined || isExportScale(scale)) return scale
+  throw new OpError('INVALID_INPUT', `scale: expected ${EXPORT_SCALES.join(' or ')}, got ${scale}`, [
+    { path: 'scale', message: `expected ${EXPORT_SCALES.join(' or ')}` },
+  ])
 }
 
 /** One issue as a human-readable line: `path: message (did you mean "x"?)`. */
@@ -219,8 +251,8 @@ const COMMANDS: Record<string, Command> = {
         project: project!,
         docs: values.doc as string[] | undefined,
         sizes: (values.size as string[] | undefined)?.map(parseSizeFlag),
-        format: values.format as never,
-        scale: intFlag(values, 'scale') as never,
+        format: formatFlag(values),
+        scale: scaleFlag(values),
         quality: intFlag(values, 'quality'),
       }),
     human: (r: RenderResult) =>

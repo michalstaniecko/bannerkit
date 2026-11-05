@@ -1,5 +1,8 @@
 import {
+  DEFAULT_EXPORT_QUALITY,
+  SUPERSAMPLE,
   boxTransform,
+  type ExportFormat,
   type Document,
   type Layer,
   layoutText,
@@ -12,24 +15,16 @@ import { Canvas, type CanvasRenderingContext2D } from 'skia-canvas'
 import { applyFont, measureText } from './fonts.ts'
 import { drawImageLayer, type LayerImages, loadLayerImages } from './images.ts'
 
-export const RENDER_FORMATS = ['png', 'jpg', 'webp'] as const
-export type RenderFormat = (typeof RENDER_FORMATS)[number]
-
 export type RenderOptions = {
   /** Output scale relative to the Canvas size (1 or 2). Default 1. */
   scale?: number
   /** Default png. PNG keeps alpha; JPEG is flattened onto the Canvas background (white if null). */
-  format?: RenderFormat
+  format?: ExportFormat
   /** JPEG/WebP quality 1-100. Default 90. Ignored for PNG, which is always lossless. */
   quality?: number
   /** The Project directory that image Layer `src` paths are relative to. Required for image Layers. */
   projectDir?: string
 }
-
-export const DEFAULT_QUALITY = 90
-
-/** Every Render is drawn at 2 × scale and downsampled with Lanczos (ADR 0006). */
-export const SUPERSAMPLE = 2
 
 /**
  * Renders a Document to an encoded image at exactly `width × height × scale`.
@@ -58,10 +53,10 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
     height * scale,
     { kernel: 'lanczos3', fit: 'fill' },
   )
-  return encode(resized, options.format ?? 'png', options.quality ?? DEFAULT_QUALITY, background).toBuffer()
+  return encode(resized, options.format ?? 'png', options.quality ?? DEFAULT_EXPORT_QUALITY, background).toBuffer()
 }
 
-function encode(image: Sharp, format: RenderFormat, quality: number, background: string | null): Sharp {
+function encode(image: Sharp, format: ExportFormat, quality: number, background: string | null): Sharp {
   switch (format) {
     case 'png':
       // No quality/effort: either switches sharp to lossy palette PNG.
