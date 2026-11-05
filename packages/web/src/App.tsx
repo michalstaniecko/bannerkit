@@ -52,6 +52,8 @@ export function App() {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
+  /** Saves the open Document now, through live reload's conditional save (null while none is open). */
+  const saveNowRef = useRef<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
     const editor = createEditor()
@@ -141,10 +143,12 @@ export function App() {
         setSave('saved')
         setLoaded(true)
         live.ready(hash)
+        saveNowRef.current = () => live.saveNow(editor.getDocument())
       })
       .catch((e: Error) => !cancelled && setError(e.message))
     return () => {
       cancelled = true
+      saveNowRef.current = null
       live.stop()
       setConflict(null)
       unsubscribe()
@@ -228,7 +232,7 @@ export function App() {
             ))}
           </select>
         </label>
-        <DocumentActions editor={editorRef} project={project} doc={doc} loaded={loaded} disabled={conflict !== null} onOpen={openDocument} onError={setError} />
+        <DocumentActions saveNow={saveNowRef} project={project} doc={doc} loaded={loaded} disabled={conflict !== null} onOpen={openDocument} onError={setError} />
         <LayerToolbar editor={editorRef} project={project} loaded={loaded} onError={setError} />
         <span className="spacer" />
         {loaded && (

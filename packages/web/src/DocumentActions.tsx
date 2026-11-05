@@ -4,10 +4,15 @@
 import { PRESET_IDS, type PresetId } from '@bannerkit/core'
 import { useState, type RefObject } from 'react'
 import { api } from './api.ts'
-import type { Editor } from './editor/index.ts'
+import { SaveConflict } from './live-reload.ts'
 
 type Props = {
-  editor: RefObject<Editor | null>
+  /**
+   * Saves the open Document now, only over the version the editor last had (live
+   * reload's conditional save). Rejects with SaveConflict, banner shown, if the file
+   * changed on disk.
+   */
+  saveNow: RefObject<(() => Promise<void>) | null>
   project: string
   /** The open Document, or '' when none is. */
   doc: string
@@ -19,7 +24,7 @@ type Props = {
   onError: (message: string) => void
 }
 
-export function DocumentActions({ editor, project, doc, loaded, disabled, onOpen, onError }: Props) {
+export function DocumentActions({ saveNow, project, doc, loaded, disabled, onOpen, onError }: Props) {
   const [preset, setPreset] = useState<PresetId>(PRESET_IDS[0]!)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -31,6 +36,8 @@ export function DocumentActions({ editor, project, doc, loaded, disabled, onOpen
       setName('')
       onOpen(created.name)
     } catch (e) {
+      // A refused save shows the reload / keep mine banner; nothing is duplicated.
+      if (e instanceof SaveConflict) return
       onError((e as Error).message)
     } finally {
       setBusy(false)
@@ -39,11 +46,11 @@ export function DocumentActions({ editor, project, doc, loaded, disabled, onOpen
 
   const create = () => act(() => api.createDocument(project, name.trim(), preset))
 
-  // The copy is made from disk, so the open Document is saved first.
+  // The copy is made from disk, so the open Document is saved first (never over a
+  // change made on disk: that raises the reload / keep mine banner and aborts).
   const duplicate = () =>
     act(async () => {
-      const current = editor.current
-      if (current && loaded) await api.writeDocument(project, doc, current.getDocument())
+      if (loaded) await saveNow.current?.()
       return api.duplicateDocument(project, doc, preset, name.trim() || undefined)
     })
 

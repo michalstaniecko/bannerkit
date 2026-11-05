@@ -5,7 +5,7 @@ import type { Document, Layer } from '@bannerkit/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAutosave } from '../src/autosave.ts'
 import { createEditor, type Editor } from '../src/editor/index.ts'
-import { createLiveReload, type Conflict } from '../src/live-reload.ts'
+import { createLiveReload, SaveConflict, type Conflict } from '../src/live-reload.ts'
 
 const rect = (x: number): Layer => ({ id: 'rect-1', type: 'rect', x, y: 100, width: 100, height: 50, fill: '#ff0000' })
 const doc = (x: number): Document => ({ version: 1, name: 'hero', canvas: { width: 400, height: 300, background: '#ffffff' }, layers: [rect(x)] })
@@ -183,5 +183,27 @@ describe('live reload', () => {
     expect(conflicts.at(-1)).toBeNull()
     expect(disk.document).toEqual(doc(120))
     expect(editor.getDocument()).toEqual(doc(120))
+  })
+
+  it('saveNow writes the editor\'s Document over the version it last had', async () => {
+    const { editor, live, disk, conflicts } = await open()
+    await edit(editor, 120)
+
+    await live.saveNow(editor.getDocument())
+
+    expect(conflicts).toEqual([])
+    expect(disk.document).toEqual(doc(120))
+  })
+
+  it('saveNow over a file changed on disk raises a conflict and rejects, leaving the file alone', async () => {
+    const { editor, live, disk, write, conflicts } = await open()
+    write(doc(250)) // changed on disk; its event has not arrived yet
+    await edit(editor, 120)
+
+    await expect(live.saveNow(editor.getDocument())).rejects.toBeInstanceOf(SaveConflict)
+
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0]).not.toBeNull()
+    expect(disk.document).toEqual(doc(250))
   })
 })

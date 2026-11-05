@@ -51,6 +51,13 @@ export type LiveReload = {
    * Document stays unsaved (and held) until the human decides.
    */
   save(document: Document): Promise<void>
+  /**
+   * Saves `document` now, after autosave has finished (so saves never overlap), with
+   * the same precondition as `save`: a file changed on disk raises the Conflict and
+   * rejects with SaveConflict. For actions that read the file right after, e.g.
+   * "Duplicate to size".
+   */
+  saveNow(document: Document): Promise<void>
   /** Handles a `document-changed` for the open Document; resolves once handled. */
   changed(hash: string): Promise<void>
 }
@@ -124,16 +131,23 @@ export function createLiveReload({ editor, autosave, read, write, onConflict, on
     await reload()
   }
 
+  const save = async (document: Document) => {
+    const result = await write(document, force ? undefined : current)
+    if ('conflict' in result) {
+      raise()
+      throw new SaveConflict()
+    }
+    force = false
+    remember(result.hash)
+  }
+
   return {
     known: remember,
-    async save(document) {
-      const result = await write(document, force ? undefined : current)
-      if ('conflict' in result) {
-        raise()
-        throw new SaveConflict()
-      }
-      force = false
-      remember(result.hash)
+    save,
+    async saveNow(document) {
+      await autosave.flush()
+      if (conflict) throw new SaveConflict()
+      await save(document)
     },
     changed(hash) {
       queue = queue.then(() => handle(hash)).catch(onError)
