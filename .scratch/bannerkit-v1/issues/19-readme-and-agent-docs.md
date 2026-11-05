@@ -4,9 +4,13 @@
 
 **Blocked by:** 07, 08, 09, 14, 15, 16, 17, 18
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The README covers install (`pnpm i`, Node 22, Apple Silicon), running (dev and `pnpm start`), editing a banner by pasting JSON, and batch rendering; it uses `examples/demo`
-- [ ] An agent guide alongside the existing agent docs covers the schema and its conventions (Box, rotation, gradient angle, Fit, AutoFit, ids), every CLI command with `--json`, Selection, and the edit → validate → preview → look loop
-- [ ] `AGENTS.md` links to the agent guide
-- [ ] Every command and example in both documents is checked against the actual CLI
+- [x] The README covers install (`pnpm i`, Node 22, Apple Silicon), running (dev and `pnpm start`), editing a banner by pasting JSON, and batch rendering; it uses `examples/demo`
+- [x] An agent guide alongside the existing agent docs covers the schema and its conventions (Box, rotation, gradient angle, Fit, AutoFit, ids), every CLI command with `--json`, Selection, and the edit → validate → preview → look loop
+- [x] `AGENTS.md` links to the agent guide
+- [x] Every command and example in both documents is checked against the actual CLI
+
+## Comments
+
+- Merged `worktree-agent-a4b3353a073a388d9` into `bannerkit-v1` (fast-forward to 0f2abcc); tests and typecheck pass.
