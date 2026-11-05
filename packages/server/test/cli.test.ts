@@ -102,6 +102,41 @@ describe('bannerkit preview', () => {
     expect(json.json()).toEqual({ ok: true, result: { project: 'p', name: 'hero', path, width: 300, height: 250 } })
     expect((await sharp(path).metadata()).width).toBe(300)
   })
+
+  it('draws image Layers from the Project Assets, and exits 1 naming the Layer when one cannot load', async () => {
+    const root = await tempRoot()
+    await cli(['project', 'new', 'p', '--root', root])
+    const red = join(root, 'red.png')
+    await sharp({ create: { width: 4, height: 4, channels: 3, background: '#ff0000' } }).png().toFile(red)
+    await cli(['asset', 'add', 'p', red, '--root', root])
+    const docPath = join(root, 'p', 'documents', 'hero.json')
+    const hero = (src: string) =>
+      JSON.stringify({
+        version: 1,
+        name: 'hero',
+        canvas: { width: 20, height: 20, background: '#ffffff' },
+        layers: [{ id: 'image-1', type: 'image', x: 0, y: 0, width: 10, height: 20, src, fit: 'stretch' }],
+      })
+    await writeFile(docPath, hero('assets/red.png'))
+
+    const ok = await cli(['preview', 'p', 'hero', '--root', root, '--json'])
+    expect(ok.exitCode).toBe(0)
+    const { data } = await sharp(ok.json().result.path).raw().toBuffer({ resolveWithObject: true })
+    expect([...data.subarray(0, 3)]).toEqual([255, 0, 0])
+
+    // The file exists, so validation passes, but it cannot be decoded.
+    await writeFile(join(root, 'p', 'assets', 'red.png'), 'not a png')
+    const broken = await cli(['preview', 'p', 'hero', '--root', root, '--json'])
+    expect(broken.exitCode).toBe(1)
+    expect(broken.json()).toEqual({
+      ok: false,
+      error: {
+        code: 'RENDER_FAILED',
+        message: expect.stringMatching(/"image-1".*"assets\/red\.png"/),
+        issues: [{ path: 'layers[0].src', message: expect.any(String) }],
+      },
+    })
+  })
 })
 
 describe('errors', () => {
