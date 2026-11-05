@@ -10,6 +10,7 @@ import {
   validateDocument,
   type Document,
   type DocumentRule,
+  type ImageLayer,
   type Issue,
   type RuleIssue,
   type ValidationResult,
@@ -25,10 +26,11 @@ import { listDocumentFiles, requireProject } from './store.ts'
 
 /**
  * How a missing Asset file counts. The CLI (`validate`, `render`, `preview`) and
- * agents keep it an `error`; the editor's REST read and save make it a `warning`,
- * so a Document whose Asset was deleted still opens (as a placeholder) and saves.
+ * agents keep it an `error`; the editor's REST read makes it a `warning`, so a
+ * Document whose Asset was deleted still opens (as a placeholder). A function
+ * decides per image Layer (the editor's save: see writeDocument's `'unchanged'`).
  */
-export type MissingAssets = 'error' | 'warning'
+export type MissingAssets = 'error' | 'warning' | ((layer: ImageLayer) => 'error' | 'warning')
 
 /** Where a Document lives, for rules that look at the Project around it. */
 export type DocumentContext = { projectDir: string; missingAssets?: MissingAssets }
@@ -50,8 +52,8 @@ export const SERVER_DOCUMENT_RULES: DocumentRule[] = [
 
 /**
  * Every image Layer's `src` names a file inside the Project. A miss suggests
- * the closest existing Asset; it is an error unless `missingAssets` is
- * `'warning'`. A `src` that leaves the Project is always an error.
+ * the closest existing Asset; it is an error unless `missingAssets` makes it
+ * a `'warning'`. A `src` that leaves the Project is always an error.
  */
 export const assetsExist: ServerRule = async (document, { projectDir, missingAssets = 'error' }) => {
   const issues: RuleIssue[] = []
@@ -71,7 +73,9 @@ export const assetsExist: ServerRule = async (document, { projectDir, missingAss
       path,
       message: `Asset "${src}" not found in Project "${basename(projectDir)}"`,
       ...(suggestion === undefined ? {} : { suggestion }),
-      ...(missingAssets === 'warning' ? { severity: 'warning' as const } : {}),
+      ...((typeof missingAssets === 'function' ? missingAssets(layer) : missingAssets) === 'warning'
+        ? { severity: 'warning' as const }
+        : {}),
     })
   }
   return issues

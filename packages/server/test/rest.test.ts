@@ -91,6 +91,30 @@ describe('REST: Projects and Documents', () => {
   })
 })
 
+describe('REST: creating a Project', () => {
+  const post = (app: ReturnType<typeof createApp>, body: string) =>
+    app.request('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+
+  it('creates a Project via the createProject op and answers 201', async () => {
+    const app = createApp({ root })
+
+    const res = await post(app, JSON.stringify({ name: 'winter' }))
+
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({ name: 'winter' })
+    expect((await getJson(app, '/api/projects')).body.map((p: { name: string }) => p.name)).toEqual(['autumn', 'summer', 'winter'])
+  })
+
+  it('refuses an existing name with 409 and a bad body with 400', async () => {
+    const app = createApp({ root })
+
+    expect((await post(app, JSON.stringify({ name: 'summer' }))).status).toBe(409)
+    expect((await post(app, JSON.stringify({ name: '.hidden' }))).status).toBe(400)
+    expect((await post(app, '{')).status).toBe(400)
+    expect((await post(app, '[]')).status).toBe(400)
+  })
+})
+
 describe('REST: missing Assets are warnings for the editor', () => {
   const withImage = (src: string): Document => ({
     ...hero,
@@ -133,19 +157,51 @@ describe('REST: saving a Document', () => {
     expect(await onDisk('hero')).toEqual(moved)
   })
 
-  it('saves a Document whose image src is missing, with a warning', async () => {
-    const withMissing: Document = {
-      ...hero,
-      layers: [...hero.layers, { id: 'image-1', type: 'image', x: 0, y: 0, width: 50, height: 50, src: 'assets/gone.png', fit: 'cover' }],
-    }
+  const withMissing: Document = {
+    ...hero,
+    layers: [...hero.layers, { id: 'image-1', type: 'image', x: 0, y: 0, width: 50, height: 50, src: 'assets/gone.png', fit: 'cover' }],
+  }
 
-    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', withMissing)
+  it('saves a Document whose image src was already missing on disk, with a warning', async () => {
+    await writeFile(join(root, 'summer', 'documents', 'hero.json'), JSON.stringify(withMissing))
+    const edited: Document = { ...withMissing, layers: [{ ...hero.layers[0]!, x: 42 }, withMissing.layers[1]!] }
+
+    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', edited)
 
     expect(res.status).toBe(200)
     expect(((await res.json()) as any).warnings).toEqual([
       { path: 'layers[1].src', message: 'Asset "assets/gone.png" not found in Project "summer"' },
     ])
-    expect(await onDisk('hero')).toEqual(withMissing)
+    expect(await onDisk('hero')).toEqual(edited)
+  })
+
+  it.each([
+    ['a new Layer', withMissing],
+    ['a changed src', { ...withMissing, layers: [hero.layers[0]!, { ...withMissing.layers[1]!, src: 'assets/gnoe.png' }] }],
+  ])('refuses a missing src on %s with 422 at its path', async (_, document) => {
+    if (document !== withMissing) await writeFile(join(root, 'summer', 'documents', 'hero.json'), JSON.stringify(withMissing))
+    const before = await onDisk('hero')
+
+    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', document)
+
+    expect(res.status).toBe(422)
+    expect(((await res.json()) as any).error.issues).toEqual([expect.objectContaining({ path: 'layers[1].src' })])
+    expect(await onDisk('hero')).toEqual(before)
+  })
+
+  it('with If-Match, saves over that version only; a changed file answers 409 with it', async () => {
+    const app = createApp({ root })
+    const { body: loaded } = await getJson(app, '/api/projects/summer/documents/hero')
+    const ifMatch = (hash: string) => ({ 'content-type': 'application/json', 'if-match': `"${hash}"` })
+
+    const saved = await app.request('/api/projects/summer/documents/hero', { method: 'PUT', headers: ifMatch(loaded.hash), body: JSON.stringify(moved) })
+    const savedBody = (await saved.json()) as any
+    const stale = await app.request('/api/projects/summer/documents/hero', { method: 'PUT', headers: ifMatch(loaded.hash), body: JSON.stringify(hero) })
+
+    expect(saved.status).toBe(200)
+    expect(stale.status).toBe(409)
+    expect(((await stale.json()) as any).error).toMatchObject({ code: 'CONFLICT', current: { document: moved, hash: savedBody.hash } })
+    expect(await onDisk('hero')).toEqual(moved)
   })
 
   it.each([

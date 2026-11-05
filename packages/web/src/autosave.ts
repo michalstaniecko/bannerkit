@@ -16,7 +16,10 @@ export type AutosaveOptions = {
 export type Autosave = {
   /** Saves `document` once no other change has come for `delay` ms. */
   schedule(document: Document): void
-  /** Saves the pending Document now (if any) and resolves when every save has finished. */
+  /**
+   * Saves the pending Document now (if any) and resolves when every save has finished.
+   * While held it saves nothing: the waiting change stays waiting for `release`.
+   */
   flush(): Promise<void>
   /** Drops the pending Document, e.g. when another Document is opened. */
   cancel(): void
@@ -24,7 +27,7 @@ export type Autosave = {
   dirty(): boolean
   /** Resolves once no save is in flight; a waiting change stays waiting. */
   idle(): Promise<void>
-  /** Stops saving on its own: changes wait (and stay dirty) until `release` or `flush`. */
+  /** Stops saving: changes wait (and stay dirty) until `release`. */
   hold(): void
   /** Undoes `hold`: a waiting change is saved `delay` ms from now. */
   release(): void
@@ -72,7 +75,7 @@ export function createAutosave(
       clearTimer()
       if (!held) timer = setTimeout(run, delay)
     },
-    flush: run,
+    flush: () => (held ? saving : run()),
     cancel() {
       clearTimer()
       pending = undefined

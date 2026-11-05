@@ -6,6 +6,7 @@ export type OpErrorCode =
   | 'INVALID_DOCUMENT'
   | 'NOT_FOUND'
   | 'ALREADY_EXISTS'
+  | 'CONFLICT'
   | 'RENDER_FAILED'
   | 'UNSUPPORTED_ASSET'
 
@@ -19,18 +20,24 @@ export type OpIssue = Issue
 export class OpError extends Error {
   readonly code: OpErrorCode
   readonly issues: OpIssue[]
+  /** CONFLICT only: the file as it is now, which the caller did not expect (see writeDocument). */
+  readonly current?: ConflictCurrent
 
-  constructor(code: OpErrorCode, message: string, issues: OpIssue[] = []) {
+  constructor(code: OpErrorCode, message: string, issues: OpIssue[] = [], current?: ConflictCurrent) {
     super(message)
     this.name = 'OpError'
     this.code = code
     this.issues = issues
+    if (current) this.current = current
   }
 
   toJSON() {
-    return { code: this.code, message: this.message, issues: this.issues }
+    return { code: this.code, message: this.message, issues: this.issues, ...(this.current ? { current: this.current } : {}) }
   }
 }
+
+/** A Document file as it is on disk: its parsed JSON (not validated) and content hash. */
+export type ConflictCurrent = { document: unknown; hash: string }
 
 export { formatPath }
 

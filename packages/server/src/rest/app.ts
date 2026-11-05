@@ -11,6 +11,7 @@ import {
   OpError,
   addAssets,
   createDocument,
+  createProject,
   duplicateDocument,
   listDocuments,
   listProjects,
@@ -20,6 +21,7 @@ import {
   writeDocument,
   writeSelection,
   type CreateDocumentInput,
+  type CreateProjectInput,
   type DuplicateDocumentInput,
   type ExportFile,
   type OpErrorCode,
@@ -39,6 +41,7 @@ const STATUS: Record<OpErrorCode, ContentfulStatusCode> = {
   INVALID_INPUT: 400,
   NOT_FOUND: 404,
   ALREADY_EXISTS: 409,
+  CONFLICT: 409,
   INVALID_DOCUMENT: 422,
   UNSUPPORTED_ASSET: 415,
   RENDER_FAILED: 500,
@@ -52,24 +55,31 @@ export function createApp({ root, webDir }: AppOptions) {
 
   api.get('/projects', async (c) => c.json(await listProjects({ root })))
 
+  // POST /projects with `{ name }`: the `createProject` op. Answers 201 with `{ name, path }`.
+  api.post('/projects', async (c) => c.json(await createProject({ ...(await jsonObject(c)), root } as CreateProjectInput), 201))
+
   api.get('/projects/:project/documents', async (c) =>
     c.json(await listDocuments({ root, project: c.req.param('project') })),
   )
 
-  // The editor's read and save: a missing Asset file is a warning (the editor shows a
-  // placeholder and the Document stays editable), not a rejection. Everything else is
-  // enforced, and a save is validated and written atomically by writeDocument.
+  // The editor's read and save. Reading, a missing Asset file is a warning (the editor
+  // shows a placeholder and the Document stays editable). Saving, it stays a warning
+  // only on a Layer that already had that missing `src` on disk; a newly introduced
+  // one is rejected. Everything else is enforced, and a save is validated and written
+  // atomically by writeDocument.
+  // A save with `If-Match: "<hash>"` (the version the editor last loaded or saved) is
+  // written only over that version; otherwise it answers 409 CONFLICT with the file as
+  // it is now (`error.current: { document, hash }`). Without If-Match it overwrites.
   api.get('/projects/:project/documents/:doc', async (c) =>
     c.json(await readDocument({ root, project: c.req.param('project'), name: c.req.param('doc'), missingAssets: 'warning' })),
   )
 
   api.put('/projects/:project/documents/:doc', async (c) => {
-    const document = await c.req.json().catch(() => {
-      throw new OpError('INVALID_INPUT', 'The request body is not valid JSON')
-    })
+    const document = await jsonObject(c)
     const project = c.req.param('project')
     const name = c.req.param('doc')
-    return c.json(await writeDocument({ root, project, name, document, missingAssets: 'warning' }))
+    const expectedHash = ifMatch(c)
+    return c.json(await writeDocument({ root, project, name, document, missingAssets: 'unchanged', expectedHash }))
   })
 
   // Render (ADR 0005: the same `render` op as `bannerkit render`) --------------------
@@ -78,11 +88,11 @@ export function createApp({ root, webDir }: AppOptions) {
   // POST /projects/:p/documents/:doc/render with `{ format?, scale?, quality? }` renders one
   // Document the same way and answers with the image itself.
   api.post('/projects/:project/render', async (c) =>
-    c.json(await render({ ...(await renderOptions(c)), root, project: c.req.param('project') })),
+    c.json(await render({ ...(await jsonObject(c, { empty: 'allowed' })), root, project: c.req.param('project') } as RenderInput)),
   )
 
   api.post('/projects/:project/documents/:doc/render', async (c) => {
-    const { format, scale, quality } = await renderOptions(c)
+    const { format, scale, quality } = (await jsonObject(c, { empty: 'allowed' })) as Omit<RenderInput, 'root' | 'project'>
     const result = await render({ format, scale, quality, root, project: c.req.param('project'), docs: [c.req.param('doc')] })
     const file = result.files[0]!
     return c.body(new Uint8Array(await readFile(file.path)), 200, { 'content-type': RENDER_MIME[file.format] })
@@ -95,14 +105,8 @@ export function createApp({ root, webDir }: AppOptions) {
   api.get('/projects/:project/selection', async (c) => c.json(await readSelection({ root, project: c.req.param('project') })))
 
   api.put('/projects/:project/selection', async (c) => {
-    const body = await c.req.json().catch(() => {
-      throw new OpError('INVALID_INPUT', 'The request body is not valid JSON')
-    })
     // Only the two fields are passed on; the op validates them.
-    const { doc, selectedLayerIds } = (typeof body === 'object' && body !== null ? body : {}) as {
-      doc: string
-      selectedLayerIds: string[]
-    }
+    const { doc, selectedLayerIds } = (await jsonObject(c)) as { doc: string; selectedLayerIds: string[] }
     return c.json(await writeSelection({ root, project: c.req.param('project'), doc, selectedLayerIds }))
   })
 
@@ -169,31 +173,31 @@ export function createApp({ root, webDir }: AppOptions) {
 
 const RENDER_MIME: Record<ExportFile['format'], string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
 
-/** A render request's JSON body (empty → defaults). The op validates the fields. */
-async function renderOptions(c: Context): Promise<Omit<RenderInput, 'root' | 'project'>> {
+/**
+ * The request body as a JSON object; the op validates its fields. Bad JSON and
+ * anything but an object are INVALID_INPUT. With `empty: 'allowed'` an empty body
+ * is `{}` (every field defaulted).
+ */
+async function jsonObject(c: Context, { empty = 'refused' }: { empty?: 'allowed' | 'refused' } = {}): Promise<Record<string, unknown>> {
   const text = await c.req.text()
-  if (text.trim() === '') return {}
+  if (empty === 'allowed' && text.trim() === '') return {}
   let body: unknown
   try {
     body = JSON.parse(text)
   } catch {
-    throw new OpError('INVALID_INPUT', 'Request body is not valid JSON', [{ path: '', message: 'expected a JSON object' }])
+    throw new OpError('INVALID_INPUT', 'The request body is not valid JSON', [{ path: '', message: 'expected a JSON object' }])
   }
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw new OpError('INVALID_INPUT', 'Request body must be a JSON object', [{ path: '', message: 'expected a JSON object' }])
-  }
-  return body as Omit<RenderInput, 'root' | 'project'>
-}
-
-/** A JSON object request body; the op validates its fields. */
-async function jsonObject(c: Context): Promise<Record<string, unknown>> {
-  const body = await c.req.json().catch(() => {
-    throw new OpError('INVALID_INPUT', 'The request body is not valid JSON')
-  })
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw new OpError('INVALID_INPUT', 'Request body must be a JSON object', [{ path: '', message: 'expected a JSON object' }])
+    throw new OpError('INVALID_INPUT', 'The request body must be a JSON object', [{ path: '', message: 'expected a JSON object' }])
   }
   return body as Record<string, unknown>
+}
+
+/** The hash in an `If-Match: "<hash>"` header (quotes optional), or undefined without one. */
+function ifMatch(c: Context): string | undefined {
+  const value = c.req.header('if-match')?.trim()
+  if (!value) return undefined
+  return value.replace(/^W\//, '').replace(/^"(.*)"$/, '$1')
 }
 
 function notFound(c: Context) {

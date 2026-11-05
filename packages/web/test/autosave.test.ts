@@ -136,6 +136,21 @@ describe('autosave', () => {
     expect(saved).toEqual(['b'])
   })
 
+  it('flush while held saves nothing: the held change waits for release', async () => {
+    const saved: string[] = []
+    const autosave = createAutosave(async (d) => void saved.push(d.name))
+    autosave.schedule(doc('a'))
+    autosave.hold()
+
+    await autosave.flush()
+
+    expect(saved).toEqual([])
+    expect(autosave.dirty()).toBe(true)
+    autosave.release()
+    await autosave.flush()
+    expect(saved).toEqual(['a'])
+  })
+
   it('a failed save stays dirty until a later save succeeds; flush retries it', async () => {
     const saved: string[] = []
     let fail = true

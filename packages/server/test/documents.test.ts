@@ -99,6 +99,7 @@ describe('duplicateDocument', () => {
 
     expect(result.name).toBe('square')
     expect(await readDocFile('square')).toEqual({
+      $schema: expect.stringMatching(/document\.schema\.json$/),
       version: 1,
       name: 'square',
       canvas: { width: 1080, height: 1080, background: '#111111' },
@@ -149,6 +150,28 @@ describe('writeDocument', () => {
       writeDocument({ root, project: 'p', name: 'hero', document: { version: 1, name: 'hero' } }),
     ).rejects.toMatchObject({ code: 'INVALID_DOCUMENT', issues: expect.arrayContaining([expect.objectContaining({ path: 'canvas' })]) })
     expect((await readDocFile('hero')).canvas.width).toBe(728)
+  })
+
+  it('with an expected hash, writes only over that version of the file', async () => {
+    const created = await createDocument({ root, project: 'p', name: 'hero', preset: '728x90' })
+    const edited = { ...created.document, canvas: { ...created.document.canvas, background: '#000000' } }
+
+    const saved = await writeDocument({ root, project: 'p', name: 'hero', document: edited, expectedHash: created.hash })
+
+    expect(saved.hash).not.toBe(created.hash)
+    await expect(
+      writeDocument({ root, project: 'p', name: 'hero', document: created.document, expectedHash: created.hash }),
+    ).rejects.toMatchObject({ code: 'CONFLICT', current: { document: edited, hash: saved.hash } })
+    expect(await readDocFile('hero')).toEqual(edited)
+  })
+
+  it('without an expected hash, writes unconditionally', async () => {
+    const created = await createDocument({ root, project: 'p', name: 'hero', preset: '728x90' })
+    await writeDocument({ root, project: 'p', name: 'hero', document: { ...created.document, name: 'other' } })
+
+    await writeDocument({ root, project: 'p', name: 'hero', document: created.document })
+
+    expect(await readDocFile('hero')).toEqual(created.document)
   })
 
   it('leaves no temp files behind', async () => {
