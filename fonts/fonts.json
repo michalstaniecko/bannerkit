@@ -1,0 +1,11 @@
+[
+  { "family": "Inter", "weight": 100, "style": "normal", "file": "Inter-Thin.ttf" },
+  { "family": "Inter", "weight": 200, "style": "normal", "file": "Inter-ExtraLight.ttf" },
+  { "family": "Inter", "weight": 300, "style": "normal", "file": "Inter-Light.ttf" },
+  { "family": "Inter", "weight": 400, "style": "normal", "file": "Inter-Regular.ttf" },
+  { "family": "Inter", "weight": 500, "style": "normal", "file": "Inter-Medium.ttf" },
+  { "family": "Inter", "weight": 600, "style": "normal", "file": "Inter-SemiBold.ttf" },
+  { "family": "Inter", "weight": 700, "style": "normal", "file": "Inter-Bold.ttf" },
+  { "family": "Inter", "weight": 800, "style": "normal", "file": "Inter-ExtraBold.ttf" },
+  { "family": "Inter", "weight": 900, "style": "normal", "file": "Inter-Black.ttf" }
+]

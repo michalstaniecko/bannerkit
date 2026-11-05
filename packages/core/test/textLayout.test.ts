@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutText, type MeasureText, type TextLayer } from '../src/index.ts'
+import { layoutText, textOverflow, validateDocument, type MeasureText, type TextLayer } from '../src/index.ts'
 
 /**
  * A monospace stand-in for a canvas: every grapheme (space included) advances
@@ -120,6 +120,26 @@ describe('layoutText: AutoFit', () => {
     expect(fit({ text: 'Supercalifragilistic' }).overflow).toBe(true)
     // Without a height the Box grows with the text.
     expect(fit({ text: 'a\nb\nc\nd' }).overflow).toBe(false)
+  })
+})
+
+describe('textOverflow rule', () => {
+  const manifest = [{ family: 'Inter', weight: 400 as const, style: 'normal' as const, file: 'Inter-Regular.ttf' }]
+  const doc = (layers: TextLayer[]) => ({ version: 1, name: 'd', canvas: { width: 100, height: 100, background: null }, layers })
+
+  it('warns for overflowing text Layers and skips fonts outside the manifest', () => {
+    const result = validateDocument(
+      doc([
+        text({ id: 'a', text: 'Supercalifragilistic', height: 50, autoFit: { minFontSize: 12 } }),
+        text({ id: 'b', text: 'fits' }),
+        text({ id: 'c', text: 'Supercalifragilistic', fontWeight: 700 }),
+      ]),
+      { rules: [textOverflow(manifest, mono)] },
+    )
+    expect(result).toMatchObject({
+      ok: true,
+      warnings: [{ path: 'layers[0].text', message: 'text overflows its Box even at autoFit.minFontSize 12px; it renders clipped' }],
+    })
   })
 })
 

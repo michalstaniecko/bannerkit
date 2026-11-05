@@ -3,7 +3,9 @@ import { createRequire } from 'node:module'
 import { basename, dirname, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  fontsInManifest,
   splitRuleIssues,
+  textOverflow,
   validateDocument,
   type Document,
   type DocumentRule,
@@ -12,6 +14,7 @@ import {
   type ValidationResult,
 } from '@bannerkit/core'
 import { z } from 'zod'
+import { fontManifest, measureText } from '../render/fonts.ts'
 import { OpError, parseInput } from './errors.ts'
 import { Name, Root, documentFile, projectDir as projectDirOf } from './paths.ts'
 import { listDocumentFiles, requireProject } from './store.ts'
@@ -28,8 +31,14 @@ export type DocumentContext = { projectDir: string }
  */
 export type ServerRule = (document: Document, context: DocumentContext) => Promise<RuleIssue[]>
 
-/** Sync rules beyond CORE_RULES that the server applies (e.g. the font manifest, ticket 06). */
-export const SERVER_DOCUMENT_RULES: DocumentRule[] = []
+/**
+ * Sync rules beyond CORE_RULES that the server applies: font family/weight in
+ * the font manifest (error), and text overflowing its Box (warning).
+ */
+export const SERVER_DOCUMENT_RULES: DocumentRule[] = [
+  fontsInManifest(fontManifest()),
+  textOverflow(fontManifest(), measureText),
+]
 /** Async, filesystem-backed rules the server applies. */
 export const SERVER_RULES: ServerRule[] = []
 

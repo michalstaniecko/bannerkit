@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { FONT_WEIGHTS } from './document.ts'
 import { closest } from './suggest.ts'
+import { layoutText, type MeasureText } from './textLayout.ts'
 import type { DocumentRule, RuleIssue } from './validate.ts'
 
 // Font manifest (ADR 0003): `fonts/fonts.json` lists every font face both
@@ -31,6 +32,22 @@ export function parseFontManifest(value: unknown): FontManifest {
     seen.add(key)
   }
   return manifest
+}
+
+/**
+ * A warning rule: text Layers whose Text Layout overflows the Box (at
+ * `autoFit.minFontSize` when AutoFit is on). Overflowing text still renders,
+ * clipped. Layers whose font is not in `manifest` are left to `fontsInManifest`.
+ */
+export function textOverflow(manifest: FontManifest, measure: MeasureText): DocumentRule {
+  const faces = new Set(manifest.map((f) => `${f.family}/${f.weight}`))
+  return (document) =>
+    document.layers.flatMap((layer, i): RuleIssue[] => {
+      if (layer.type !== 'text' || !faces.has(`${layer.fontFamily}/${layer.fontWeight}`)) return []
+      if (!layoutText(layer, measure).overflow) return []
+      const at = layer.autoFit ? `even at autoFit.minFontSize ${layer.autoFit.minFontSize}px` : `at fontSize ${layer.fontSize}px`
+      return [{ path: `layers[${i}].text`, message: `text overflows its Box ${at}; it renders clipped`, severity: 'warning' }]
+    })
 }
 
 /** A validation rule: every text Layer's family/weight pair is in `manifest`. */
