@@ -4,7 +4,7 @@
 
 **Blocked by:** 11, 08, 09
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] The editor module exposes `export(options)`: an offscreen render at 2 × scale using `toDataURL({ multiplier })` relative to the logical Canvas size (never `devicePixelRatio`), downsampled to the target size and encoded
 - [x] JPEG is flattened onto the Canvas background (white if transparent); PNG keeps alpha
@@ -23,3 +23,4 @@
   3. Chrome's default `textRendering` hints and snaps glyphs, so the browser drew about 10% more ink and letter-spaced lines drifted. Text now uses `geometricPrecision`, both in Fabric's `Textbox` (measuring and drawing) and in the browser `measureText`.
 - Measured after the fixes (1×, PNG): demo hero 0.001%, rectangle 0.027%, square 0.001%; Preset Documents 1200x628 0.003%, 1080x1080 0.004%, 1080x1920 0.002%, 300x250 0.029%, 728x90 0.087%. To write the images and diffs to a directory for diagnosis, set `BANNERKIT_PARITY_DUMP=<dir>`.
 - REST: `POST /api/projects/:p/render` (`{ docs?, sizes?, format?, scale?, quality? }`, answers with `RenderResult`) and `POST /api/projects/:p/documents/:doc/render` (answers with the image bytes). Both call the `render` op and write to `exports/`.
+- Merged `worktree-agent-a11ef489f7b35489d` into `bannerkit-v1` (fast-forward); all checks green, max parity diff 0.087% (728x90).
