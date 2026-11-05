@@ -47,3 +47,31 @@ test('shows Assets with their Fit, a hatched placeholder for one that fails to l
   expect(new Set(hatch.map(String)).size).toBeGreaterThan(1)
   expect(await page.evaluate(() => document.fonts.check('800 32px "Inter"'))).toBe(true)
 })
+
+type Checked = { id: string; image: boolean } | { id: string; lines: string[]; core: string[] }
+
+for (const name of ['hero', 'rectangle', 'square']) {
+  test(`the demo ${name} banner shows every Asset and breaks text like core`, async ({ harness }) => {
+    const result = await harness.evaluate(async (name) => {
+      const { createEditor, core, fonts, host } = window.bannerkit
+      const { document } = (await (await fetch(`/api/projects/demo/documents/${name}`)).json()) as { document: Document }
+      const editor = createEditor()
+      editor.mount(host())
+      await editor.load(document, { assetUrl: (src) => `/api/projects/demo/${src}` })
+      return document.layers.flatMap((layer): Checked[] => {
+        const object = editor.objectFor(layer.id)!
+        if (layer.type === 'image') return [{ id: layer.id, image: object.isType('image') }]
+        if (layer.type !== 'text') return []
+        const layout = core.layoutText(layer, fonts.measureText)
+        return [{ id: layer.id, lines: (object as unknown as { textLines: string[] }).textLines, core: layout.lines.map((l) => l.text) }]
+      })
+    }, name)
+
+    expect(result.some((r) => 'image' in r)).toBe(true)
+    expect(result.some((r) => 'lines' in r)).toBe(true)
+    for (const r of result) {
+      if ('image' in r) expect(r.image, r.id).toBe(true)
+      else expect(r.lines, r.id).toEqual(r.core)
+    }
+  })
+}
