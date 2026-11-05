@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] The editor module exposes `undo` / `redo`, backed by in-memory Document snapshots capped at 100
-- [ ] A snapshot is pushed at the end of each modification and on text edit exit
-- [ ] The snapshot mechanism is reusable by later actions (Layer list actions, JSON apply, reload from disk)
-- [ ] Undo/redo buttons in the top bar and keyboard shortcuts
-- [ ] Undoing triggers autosave like any other change
-- [ ] S2 tests cover undo/redo granularity
+- [x] The editor module exposes `undo` / `redo`, backed by in-memory Document snapshots capped at 100
+- [x] A snapshot is pushed at the end of each modification and on text edit exit
+- [x] The snapshot mechanism is reusable by later actions (Layer list actions, JSON apply, reload from disk)
+- [x] Undo/redo buttons in the top bar and keyboard shortcuts
+- [x] Undoing triggers autosave like any other change
+- [x] S2 tests cover undo/redo granularity

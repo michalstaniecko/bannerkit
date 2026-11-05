@@ -80,3 +80,34 @@ test('double-clicking a text Layer edits it inline; leaving the edit saves the t
 
   await expect.poll(async () => (await projects.read('s3-text', 'banner')).layers[1]).toMatchObject({ text: 'Winter sale', x: 200, y: 120, width: 180 })
 })
+
+test('Undo and Redo in the top bar, and their shortcuts, step whole drags and are autosaved', async ({ page, projects }) => {
+  await projects.write('s3-undo', { documents: { banner } })
+  const at = await open(page, projects.appUrl('s3-undo', 'banner'))
+  const undo = page.getByRole('button', { name: 'Undo' })
+  const redo = page.getByRole('button', { name: 'Redo' })
+  const rectOnDisk = async () => (await projects.read('s3-undo', 'banner')).layers[0]!
+  await expect(undo).toBeDisabled()
+  await expect(redo).toBeDisabled()
+
+  const from = at(90, 70)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 40 * from.zoom, from.y + 20 * from.zoom, { steps: 10 })
+  await page.mouse.up()
+  await expect.poll(async () => (await rectOnDisk()).x).toBeCloseTo(80, 0)
+
+  await undo.click()
+  await expect.poll(rectOnDisk).toMatchObject({ x: 40, y: 40 })
+  await expect(undo).toBeDisabled()
+  await expect(redo).toBeEnabled()
+
+  await redo.click()
+  await expect.poll(async () => (await rectOnDisk()).x).toBeCloseTo(80, 0)
+
+  await page.keyboard.press('ControlOrMeta+Z')
+  await expect.poll(rectOnDisk).toMatchObject({ x: 40, y: 40 })
+  await page.keyboard.press('ControlOrMeta+Shift+Z')
+  await expect.poll(async () => (await rectOnDisk()).x).toBeCloseTo(80, 0)
+  await expect(page.locator('.save')).toHaveText('Saved')
+})
