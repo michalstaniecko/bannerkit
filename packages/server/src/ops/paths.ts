@@ -20,3 +20,5 @@ export const exportsDir = (root: string, project: string) => join(root, project,
 export const previewsDir = (root: string, project: string) => join(root, project, 'exports', '.preview')
 export const documentFile = (root: string, project: string, doc: string) =>
   join(documentsDir(root, project), `${doc}.json`)
+/** The editor's Selection, `{ doc, selectedLayerIds }`; git-ignored. */
+export const stateFile = (root: string, project: string) => join(root, project, '.state.json')
