@@ -4,9 +4,13 @@
 
 **Blocked by:** 12, 07
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] On selection change, the editor sends `{ doc, selectedLayerIds }` to REST (debounced), and the server writes `.state.json` via `writeSelection`
-- [ ] A REST endpoint reads the Selection via `readSelection`
-- [ ] `bannerkit inspect` shows the Layers currently selected in the browser
-- [ ] An S3 test asserts that the Selection reaches `.state.json`
+- [x] On selection change, the editor sends `{ doc, selectedLayerIds }` to REST (debounced), and the server writes `.state.json` via `writeSelection`
+- [x] A REST endpoint reads the Selection via `readSelection`
+- [x] `bannerkit inspect` shows the Layers currently selected in the browser
+- [x] An S3 test asserts that the Selection reaches `.state.json`
+
+## Comments
+
+- Merged `worktree-agent-a8cdd35f4f262c7c6` into `bannerkit-v1` (fast-forward to c933d79).
