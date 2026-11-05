@@ -262,3 +262,7 @@ Background removal, AI image generation, a templates marketplace, animation and 
 - ADRs 0001–0006 and `GLOSSARY.md` record the reasoning behind these decisions. ADR 0004 replaces the brief's skia-canvas `textWrap = true`; ADR 0006 replaces "supersample small sizes only".
 - Training data mixes Fabric 5, 6 and 7 APIs. Verify every Fabric call against the 7.4.x type definitions in `node_modules`, not from memory.
 - Agent documentation for driving Bannerkit lives alongside the existing agent docs and is linked from `AGENTS.md`; keep it current with the CLI.
+
+## Comments
+
+Implemented on `bannerkit-v1`; code review findings fixed in `worktree-agent-aac4e8d2884d7c46e` + d94dce2.
