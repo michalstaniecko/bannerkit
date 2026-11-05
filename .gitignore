@@ -6,3 +6,4 @@ coverage/
 # Working Projects stay out of git; committed example Projects live in examples/.
 /projects/
 .state.json
+packages/server/test/__snapshots__/__diff__/
