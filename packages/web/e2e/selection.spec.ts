@@ -56,6 +56,6 @@ test('selecting Layers records the Selection in .state.json for bannerkit inspec
     'rect-2',
   ])
 
-  await page.mouse.click(...at(190, 20))
+  await page.mouse.click(...at(380, 20))
   await expect.poll(() => readState(projects.root, 's3-selection')).toEqual({ doc: 'banner', selectedLayerIds: [] })
 })
