@@ -9,6 +9,10 @@
 // `verticalAlign`. The object is placed so that its local Box centre lands on the
 // Box centre, rotated around it, as in core's `boxTransform`.
 //
+// `applyLayer` does that in place, on an existing object: `layerToObject` creates
+// the object and applies the Layer, and the editor bakes a finished modification
+// by applying the Layer `objectToLayer` reads back (ADR 0001).
+//
 // Fabric → Document: `objectToLayer(object, base)` maps the local Box back through
 // the object's transform (centre, size × scale, angle, opacity, visibility) and
 // keeps every other field from `base`, the Layer the object was made from.
@@ -42,19 +46,35 @@ const localBoxes = new WeakMap<FabricObject, LocalBox>()
 
 /** Lays a Layer out as a Fabric object. An image whose Asset fails to load becomes a hatched placeholder. */
 export async function layerToObject(layer: Layer, env: MapperEnv): Promise<FabricObject> {
-  const { object, box } =
+  const object =
     layer.type === 'rect'
-      ? whole(rectObject(layer))
+      ? new Rect()
       : layer.type === 'text'
-        ? textObject(layer, env)
-        : await imageObject(layer, env)
+        ? new Textbox(layer.text)
+        : ((await loadImage(env.assetUrl(layer.src))) ?? new Rect())
+  applyLayer(object, layer, env)
+  return object
+}
+
+/**
+ * Lays `layer` out on `object` (made by `layerToObject` for a Layer of the same
+ * type) in place. Whatever scale, size or position a transform left on the object
+ * is replaced by the Layer's: scale returns to the Fit's (1 for rects and text) and
+ * the Box is in `width`/`height`.
+ */
+export function applyLayer(object: FabricObject, layer: Layer, env: MapperEnv): void {
+  let box: LocalBox
+  if (layer.type === 'text' && object instanceof Textbox) box = applyText(object, layer, env)
+  else if (layer.type === 'image' && object instanceof FabricImage) box = applyImage(object, layer)
+  else if (layer.type === 'image' && object instanceof Rect) box = applyPlaceholder(object, layer)
+  else if (layer.type === 'rect' && object instanceof Rect) box = applyRect(object, layer)
+  else throw new Error(`Layer "${layer.id}" (${layer.type}) cannot be applied to a ${object.type}`)
   object.set(commonProps(layer))
   localBoxes.set(object, box)
   // Put the local Box centre on the Box centre: centre = boxCentre − R(angle)·(cx·scaleX, cy·scaleY).
   const offset = new Point(box.cx * object.scaleX, box.cy * object.scaleY).rotate(util.degreesToRadians(object.angle))
   object.set({ left: layer.x + box.width * object.scaleX / 2 - offset.x, top: layer.y + box.height * object.scaleY / 2 - offset.y })
   object.setCoords()
-  return object
 }
 
 /** The Layer `object` now shows, with the fields Fabric does not own taken from `base`. */
@@ -71,49 +91,81 @@ export function objectToLayer(object: FabricObject, base: Layer): Layer {
   return layer
 }
 
+/** An edge of a text Layer's Box that a resize handle moves. */
+export type TextEdge = 'left' | 'right' | 'bottom'
+
+/**
+ * The text Layer `object` shows, with one edge of its Box dragged to `point`
+ * (scene px) and the opposite edge kept in place. Side edges change only `width`,
+ * the bottom edge only `height`, so glyphs are never stretched. Sizes stay ≥ 1px.
+ */
+export function resizeTextLayer(object: FabricObject, base: TextLayer, edge: TextEdge, point: Point): TextLayer {
+  const box = localBoxes.get(object)
+  if (!box) throw new Error(`Layer "${base.id}" is not laid out on this object`)
+  const matrix = object.calcTransformMatrix()
+  const local = point.transform(util.invertTransform(matrix))
+  let left = box.cx - box.width / 2
+  const top = box.cy - box.height / 2
+  let { width, height } = box
+  if (edge === 'right') width = Math.max(1, local.x - left)
+  if (edge === 'left') {
+    width = Math.max(1, left + box.width - local.x)
+    left += box.width - width
+  }
+  if (edge === 'bottom') height = Math.max(1, local.y - top)
+  const centre = new Point(left + width / 2, top + height / 2).transform(matrix)
+  const layer = objectToLayer(object, base) as TextLayer
+  const resized: TextLayer = { ...layer, x: clean(centre.x - width / 2), y: clean(centre.y - height / 2), width: clean(width) }
+  if (edge === 'bottom' || layer.height !== undefined) resized.height = clean(height)
+  return resized
+}
+
 // Document → Fabric ---------------------------------------------------------------
 
-type Mapped = { object: FabricObject; box: LocalBox }
+const wholeBox = (width: number, height: number): LocalBox => ({ cx: 0, cy: 0, width, height })
 
-const whole = (object: FabricObject): Mapped => ({
-  object,
-  box: { cx: 0, cy: 0, width: object.width, height: object.height },
-})
+async function loadImage(url: string): Promise<FabricImage | undefined> {
+  const image = await FabricImage.fromURL(url).catch(() => undefined)
+  return image && image.width > 0 && image.height > 0 ? image : undefined
+}
 
-function rectObject(layer: RectLayer): Rect {
+function applyRect(object: Rect, layer: RectLayer): LocalBox {
   // Fabric clamps rx and ry separately (elliptical corners); the server clamps to the
   // shorter side, so clamp here to match it.
   const radius = Math.min(layer.cornerRadius ?? 0, layer.width / 2, layer.height / 2)
-  return new Rect({
+  object.set({
     width: layer.width,
     height: layer.height,
+    scaleX: 1,
+    scaleY: 1,
     rx: radius,
     ry: radius,
     fill: typeof layer.fill === 'string' ? layer.fill : linearGradient(layer.fill, layer.width, layer.height),
   })
+  return wholeBox(layer.width, layer.height)
 }
 
 /**
- * An image scaled by its Fit (the core helper shared with the server) and clipped
- * to its Box. `source` (intrinsic px) lands on `dest` (Box px), so in intrinsic px
- * the Box is `width / scale` wide and starts `dest.x / scale` left of `source.x`.
+ * An image placed by its Fit (the core helper shared with the server): Fabric's
+ * crop is the Fit's `source` rect (intrinsic px) and its scale is
+ * `dest / source`, so the object covers exactly the `dest` rect of the Box and its
+ * handles sit on what is drawn. That is the whole Box for `cover` and `stretch`,
+ * and the letterboxed image inside it for `contain`. Nothing lands outside the
+ * Box, so nothing is clipped. In the object's local px the Box is `width / scale`
+ * wide, centred `(Box centre − dest centre) / scale` from the object centre.
  */
-async function imageObject(layer: ImageLayer, env: MapperEnv): Promise<Mapped> {
-  const image = await FabricImage.fromURL(env.assetUrl(layer.src)).catch(() => undefined)
-  if (!image || !(image.width > 0) || !(image.height > 0)) return whole(placeholderObject(layer))
-  const { source, dest } = fitImage(layer.fit, layer, { width: image.width, height: image.height })
-  const scaleX = dest.width / source.width
-  const scaleY = dest.height / source.height
-  const width = layer.width / scaleX
-  const height = layer.height / scaleY
-  const box: LocalBox = {
-    cx: source.x - dest.x / scaleX + width / 2 - image.width / 2,
-    cy: source.y - dest.y / scaleY + height / 2 - image.height / 2,
-    width,
-    height,
+function applyImage(image: FabricImage, layer: ImageLayer): LocalBox {
+  const { source, dest } = fitImage(layer.fit, layer, image.getOriginalSize())
+  // A zero-sized Box draws nothing; keep the scale finite so the Box still maps back.
+  const scaleX = dest.width > 0 ? dest.width / source.width : 1e-9
+  const scaleY = dest.height > 0 ? dest.height / source.height : 1e-9
+  image.set({ cropX: source.x, cropY: source.y, width: source.width, height: source.height, scaleX, scaleY })
+  return {
+    cx: (layer.width / 2 - dest.x - dest.width / 2) / scaleX,
+    cy: (layer.height / 2 - dest.y - dest.height / 2) / scaleY,
+    width: layer.width / scaleX,
+    height: layer.height / scaleY,
   }
-  image.set({ scaleX, scaleY, clipPath: boxRect(box) })
-  return { object: image, box }
 }
 
 /**
@@ -123,10 +175,13 @@ async function imageObject(layer: ImageLayer, env: MapperEnv): Promise<Mapped> {
  * sits in the Box by `verticalAlign`, and overflowing text is clipped to the Box,
  * like the server.
  */
-function textObject(layer: TextLayer, env: MapperEnv): Mapped {
+function applyText(textbox: Textbox, layer: TextLayer, env: MapperEnv): LocalBox {
   const layout = layoutText(layer, env.measure)
-  const textbox = new Textbox(layer.text, {
+  textbox.set({
+    text: layer.text,
     width: layer.width,
+    scaleX: 1,
+    scaleY: 1,
     fontFamily: layer.fontFamily,
     fontWeight: layer.fontWeight,
     fontSize: layout.fontSize,
@@ -145,8 +200,8 @@ function textObject(layer: TextLayer, env: MapperEnv): Mapped {
     width: layer.width,
     height: layout.height,
   }
-  if (layout.overflow) textbox.set({ clipPath: boxRect(box) })
-  return { object: textbox, box }
+  textbox.set({ clipPath: layout.overflow ? boxRect(box) : undefined })
+  return box
 }
 
 /** A clip rect covering `box`, in the clipped object's local coordinates. */
@@ -163,8 +218,9 @@ function boxRect(box: LocalBox): Rect {
 }
 
 /** A missing Asset: a hatched rect over the Box, still movable and editable. */
-function placeholderObject(layer: ImageLayer): Rect {
-  return new Rect({ width: layer.width, height: layer.height, fill: hatch() })
+function applyPlaceholder(object: Rect, layer: ImageLayer): LocalBox {
+  object.set({ width: layer.width, height: layer.height, scaleX: 1, scaleY: 1, rx: 0, ry: 0, fill: hatch() })
+  return wholeBox(layer.width, layer.height)
 }
 
 let hatchTile: HTMLCanvasElement | undefined
@@ -219,6 +275,10 @@ function commonProps(layer: Layer) {
     visible: layer.visible ?? true,
     selectable: !layer.locked,
     evented: !layer.locked,
+    // A Layer never flips or skews: the Document has no field for either.
+    lockScalingFlip: true,
+    lockSkewingX: true,
+    lockSkewingY: true,
     shadow: layer.shadow
       ? new Shadow({
           color: layer.shadow.color,
