@@ -1,6 +1,7 @@
 packages:
   - packages/*
 onlyBuiltDependencies:
+  - canvas
   - esbuild
   - sharp
   - skia-canvas

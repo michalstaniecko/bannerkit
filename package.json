@@ -8,6 +8,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -F @bannerkit/web build",
+    "start": "pnpm build && pnpm -F @bannerkit/server serve",
     "bannerkit": "bannerkit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1,0 +1,48 @@
+/* Layout only (spec: plain HTML, minimal layout CSS, no UI styling). */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #ccc;
+}
+
+.topbar .spacer {
+  flex: 1;
+}
+
+.topbar .zoom {
+  min-width: 4em;
+  text-align: center;
+}
+
+.error {
+  padding: 6px 8px;
+  color: #b00;
+}
+
+.viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  background: #eee;
+}
+
+.canvas-host[hidden] {
+  display: none;
+}
