@@ -21,6 +21,7 @@ const STATUS: Record<OpErrorCode, ContentfulStatusCode> = {
   NOT_FOUND: 404,
   ALREADY_EXISTS: 409,
   INVALID_DOCUMENT: 422,
+  UNSUPPORTED_ASSET: 415,
   RENDER_FAILED: 500,
 }
 
