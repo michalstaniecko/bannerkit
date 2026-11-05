@@ -47,7 +47,7 @@ body,
   display: none;
 }
 
-/* Layer list (left) beside the Canvas viewport; the top bar wraps when crowded. */
+/* The top bar wraps when crowded. */
 .topbar {
   flex-wrap: wrap;
 }
@@ -62,6 +62,7 @@ body,
   min-width: 0;
 }
 
+/* Layer list (left) beside the Canvas viewport. */
 .layer-list {
   width: 200px;
   overflow: auto;
@@ -90,4 +91,33 @@ body,
   border: none;
   background: none;
   cursor: grab;
+}
+
+.json-panel {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #ccc;
+}
+
+.json-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.json-errors {
+  margin: 0;
+  padding: 6px 8px 6px 24px;
+  color: #b00;
+}
+
+.json-code {
+  flex: 1;
+  min-height: 0;
+}
+
+.json-code .cm-editor {
+  height: 100%;
 }

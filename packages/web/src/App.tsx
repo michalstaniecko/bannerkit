@@ -8,6 +8,7 @@ import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 import { DocumentActions } from './DocumentActions.tsx'
 import { ExportControl } from './ExportControl.tsx'
+import { JsonPanel } from './JsonPanel.tsx'
 import { LayerList } from './LayerList.tsx'
 import { LayerToolbar } from './LayerToolbar.tsx'
 import { createSelectionSync } from './selection-sync.ts'
@@ -225,6 +226,7 @@ export function App() {
           <div className="canvas-host" ref={hostRef} hidden={!loaded} />
           {!loaded && !error && <p className="hint">Pick a Project and a Document.</p>}
         </main>
+        <JsonPanel editor={editorRef} loaded={loaded} />
       </div>
     </div>
   )
