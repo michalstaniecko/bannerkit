@@ -11,9 +11,6 @@ importers:
       '@bannerkit/server':
         specifier: workspace:*
         version: link:packages/server
-      '@playwright/test':
-        specifier: 1.64.1
-        version: 1.64.1
       '@types/node':
         specifier: 22.20.5
         version: 22.20.5
@@ -77,6 +74,9 @@ importers:
         specifier: 19.3.1
         version: 19.3.1(react@19.3.1)
     devDependencies:
+      '@playwright/test':
+        specifier: 1.64.1
+        version: 1.64.1
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0

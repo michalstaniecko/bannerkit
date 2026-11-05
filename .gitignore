@@ -7,3 +7,6 @@ coverage/
 /projects/
 .state.json
 packages/server/test/__snapshots__/__diff__/
+# Playwright (S3) output
+test-results/
+playwright-report/
