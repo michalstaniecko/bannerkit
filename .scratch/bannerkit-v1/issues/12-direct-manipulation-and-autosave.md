@@ -4,7 +4,7 @@
 
 **Blocked by:** 11
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] On `object:modified`, scale is baked into `width`/`height` and reset to 1, and the centre-based position is converted back to the unrotated top-left (ADR 0001)
 - [x] Text Layers hide corner controls: side handles change only `width` and the bottom handle changes `height`; glyphs are never stretched
@@ -14,3 +14,7 @@
 - [x] The editor emits `change` and `selection` events
 - [x] A debounced (500 ms) PUT saves the whole Document through REST, validated and written atomically via the `writeDocument` op
 - [x] S2 tests: a lossless Document → Fabric → Document round-trip for every Layer type, including rotation and every Fit; scale applied to `width`/`height` after a simulated resize
+
+## Comments
+
+- Merged branch `worktree-agent-abb1dc72680cc42a0` into `bannerkit-v1` (fast-forward to c6c7467); `pnpm test` (328), `pnpm typecheck` and `pnpm test:e2e` (21) pass. The REST read no longer 422s on a missing `src`, so ticket 11's missing-Asset placeholder box is now ticked.
