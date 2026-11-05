@@ -3,7 +3,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { documentJsonSchema } from '@bannerkit/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createDocument, createProject, validate, writeDocument } from '../src/ops/index.ts'
+import sharp from 'sharp'
+import { addAssets, createDocument, createProject, validate, writeDocument } from '../src/ops/index.ts'
 import { schemaRefFrom } from '../src/ops/validation.ts'
 import { repoRoot, tempRoot } from './harness.ts'
 
@@ -172,6 +173,56 @@ describe('writes go through validation', () => {
       writeDocument({ root, project: 'p', name: 'hero', document: { ...docWith('hero', []), layer: [] } }),
     ).rejects.toMatchObject({
       issues: expect.arrayContaining([{ path: 'layer', message: 'unknown key "layer"', suggestion: 'layers' }]),
+    })
+  })
+})
+
+describe('image Layer src must exist in the Project', () => {
+  const imageLayer = (id: string, src: string) => ({
+    id,
+    type: 'image',
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    src,
+    fit: 'contain',
+  })
+
+  it('reports each image Layer whose src is missing, with a hint to a close Asset', async () => {
+    const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#336699' } }).png().toBuffer()
+    await addAssets({ root, project: 'p', files: [{ filename: 'shoe.png', data: png }] })
+    await handEdit(
+      'hero',
+      docWith('hero', [
+        imageLayer('image-1', 'assets/shoe.png'),
+        imageLayer('image-2', 'assets/shoes.png'),
+        imageLayer('image-3', 'assets/logo.svg'),
+        imageLayer('image-4', '../other/assets/shoe.png'),
+        imageLayer('image-5', 'assets'),
+      ]),
+    )
+
+    const [doc] = (await validate({ root, project: 'p' })).documents
+
+    expect(doc!.errors).toEqual([
+      {
+        path: 'layers[1].src',
+        message: 'Asset "assets/shoes.png" not found in Project "p"',
+        suggestion: 'assets/shoe.png',
+      },
+      { path: 'layers[2].src', message: 'Asset "assets/logo.svg" not found in Project "p"' },
+      { path: 'layers[3].src', message: 'src "../other/assets/shoe.png" must be a project-relative path inside the Project' },
+      { path: 'layers[4].src', message: 'Asset "assets" not found in Project "p"' },
+    ])
+  })
+
+  it('writeDocument refuses a Document that references a missing Asset', async () => {
+    await expect(
+      writeDocument({ root, project: 'p', name: 'hero', document: docWith('hero', [imageLayer('image-1', 'assets/x.png')]) }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_DOCUMENT',
+      issues: [{ path: 'layers[0].src', message: 'Asset "assets/x.png" not found in Project "p"' }],
     })
   })
 })

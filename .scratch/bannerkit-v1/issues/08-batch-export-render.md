@@ -4,11 +4,15 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `render <project> [--doc …] [--size WxH …] [--format png|jpg|webp] [--scale 1|2] [--quality N]`, defaulting to PNG, scale 1, quality 90
-- [ ] Exports are written to the Project's exports folder as `<doc>.<w>x<h>[@2x].<ext>`
-- [ ] Every Export is supersampled at 2 × scale and downsampled with Lanczos to exactly `width × height × scale`
-- [ ] JPEG is flattened onto the Canvas background (white if transparent); PNG keeps alpha; WebP is encoded via sharp
-- [ ] S1 tests assert exact dimensions for every Preset at 1× and 2×, JPEG flattening and PNG alpha
-- [ ] `--json` lists the written files
+- [x] `render <project> [--doc …] [--size WxH …] [--format png|jpg|webp] [--scale 1|2] [--quality N]`, defaulting to PNG, scale 1, quality 90
+- [x] Exports are written to the Project's exports folder as `<doc>.<w>x<h>[@2x].<ext>`
+- [x] Every Export is supersampled at 2 × scale and downsampled with Lanczos to exactly `width × height × scale`
+- [x] JPEG is flattened onto the Canvas background (white if transparent); PNG keeps alpha; WebP is encoded via sharp
+- [x] S1 tests assert exact dimensions for every Preset at 1× and 2×, JPEG flattening and PNG alpha
+- [x] `--json` lists the written files
+
+## Comments
+
+- Merged branch `worktree-agent-af794e7f93f7a15e4` into `bannerkit-v1` (fast-forward); tests and typecheck pass.
