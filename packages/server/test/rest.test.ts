@@ -1,6 +1,6 @@
 // The REST adapter (ADR 0005): a thin Hono app over the same operations as the CLI.
 // Exercised in-process through `app.request`, against a temporary projects root.
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Document } from '@bannerkit/core'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -87,6 +87,89 @@ describe('REST: Projects and Documents', () => {
 
     expect(status).toBe(404)
     expect(body.error.code).toBe('NOT_FOUND')
+  })
+})
+
+describe('REST: missing Assets are warnings for the editor', () => {
+  const withImage = (src: string): Document => ({
+    ...hero,
+    layers: [...hero.layers, { id: 'image-1', type: 'image', x: 0, y: 0, width: 50, height: 50, src, fit: 'cover' }],
+  })
+  const missing = { path: 'layers[1].src', message: 'Asset "assets/gone.png" not found in Project "summer"' }
+
+  it('reads a Document whose image src is missing, with a warning instead of a 422', async () => {
+    await writeFile(join(root, 'summer', 'documents', 'hero.json'), JSON.stringify(withImage('assets/gone.png')))
+
+    const { status, body } = await getJson(createApp({ root }), '/api/projects/summer/documents/hero')
+
+    expect(status).toBe(200)
+    expect(body.document).toEqual(withImage('assets/gone.png'))
+    expect(body.warnings).toEqual([missing])
+  })
+
+  it('reports no warnings for a Document whose Assets all exist', async () => {
+    const { body } = await getJson(createApp({ root }), '/api/projects/summer/documents/hero')
+
+    expect(body.warnings).toEqual([])
+  })
+})
+
+describe('REST: saving a Document', () => {
+  const put = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    })
+  const onDisk = async (name: string) => JSON.parse(await readFile(join(root, 'summer', 'documents', `${name}.json`), 'utf8'))
+  const moved: Document = { ...hero, layers: [{ ...hero.layers[0]!, x: 42 }] }
+
+  it('writes the whole Document and answers with it', async () => {
+    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', moved)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ project: 'summer', name: 'hero', document: moved, warnings: [] })
+    expect(await onDisk('hero')).toEqual(moved)
+  })
+
+  it('saves a Document whose image src is missing, with a warning', async () => {
+    const withMissing: Document = {
+      ...hero,
+      layers: [...hero.layers, { id: 'image-1', type: 'image', x: 0, y: 0, width: 50, height: 50, src: 'assets/gone.png', fit: 'cover' }],
+    }
+
+    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', withMissing)
+
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).warnings).toEqual([
+      { path: 'layers[1].src', message: 'Asset "assets/gone.png" not found in Project "summer"' },
+    ])
+    expect(await onDisk('hero')).toEqual(withMissing)
+  })
+
+  it.each([
+    ['an invalid Document', { ...hero, version: 2 }, 'version'],
+    ['a src outside the Project', { ...hero, layers: [{ id: 'i', type: 'image', x: 0, y: 0, width: 1, height: 1, src: '../x.png', fit: 'cover' }] }, 'layers[0].src'],
+  ])('refuses %s with 422 and leaves the file alone', async (_, document, path) => {
+    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', document)
+
+    expect(res.status).toBe(422)
+    expect(((await res.json()) as any).error.issues[0].path).toBe(path)
+    expect(await onDisk('hero')).toEqual(hero)
+  })
+
+  it('refuses a body that is not JSON with 400', async () => {
+    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', '{nope')
+
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error.code).toBe('INVALID_INPUT')
+    expect(await onDisk('hero')).toEqual(hero)
+  })
+
+  it('answers a missing Project with 404', async () => {
+    const res = await put(createApp({ root }), '/api/projects/winter/documents/hero', hero)
+
+    expect(res.status).toBe(404)
   })
 })
 

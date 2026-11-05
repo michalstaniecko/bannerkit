@@ -5,6 +5,7 @@ import {
   resolveSize,
   sizeChoiceShape,
   type Document,
+  type Issue,
   type SizeChoice,
 } from '@bannerkit/core'
 import { z } from 'zod'
@@ -15,7 +16,7 @@ import { listDocumentFiles, requireProject } from './store.ts'
 import { readJsonFile, requireValidDocument, schemaRefFrom } from './validation.ts'
 
 export type DocumentRef = { project: string; name: string; path: string }
-export type DocumentResult = DocumentRef & { document: Document }
+export type DocumentResult = DocumentRef & { document: Document; warnings: Issue[] }
 
 // listDocuments ---------------------------------------------------------------
 
@@ -30,15 +31,18 @@ export async function listDocuments(input: z.input<typeof ListDocumentsInput>): 
 
 // readDocument / writeDocument ------------------------------------------------
 
-const ReadDocumentInput = z.object({ root: Root, project: Name, name: Name })
+/** See MissingAssets: `'warning'` is for the editor; everything else keeps the default. */
+const MissingAssetsInput = z.enum(['error', 'warning']).default('error')
+
+const ReadDocumentInput = z.object({ root: Root, project: Name, name: Name, missingAssets: MissingAssetsInput })
 
 export async function readDocument(input: z.input<typeof ReadDocumentInput>): Promise<DocumentResult> {
-  const { root, project, name } = parseInput(ReadDocumentInput, input)
+  const { root, project, name, missingAssets } = parseInput(ReadDocumentInput, input)
   await requireProject(root, project)
   const path = documentFile(root, project, name)
   const json = await readJsonFile(path, `Document "${name}" not found in Project "${project}"`)
-  const document = await requireValidDocument(json, { projectDir: projectDir(root, project) }, path)
-  return { project, name, path, document }
+  const { document, warnings } = await requireValidDocument(json, { projectDir: projectDir(root, project), missingAssets }, path)
+  return { project, name, path, document, warnings }
 }
 
 const WriteDocumentInput = z.object({
@@ -48,19 +52,20 @@ const WriteDocumentInput = z.object({
   document: z.unknown(),
   /** When false, refuses to replace an existing Document. */
   overwrite: z.boolean().default(true),
+  missingAssets: MissingAssetsInput,
 })
 
 /** Validates (schema, core and server rules), then writes atomically. Invalid Documents never reach disk. */
 export async function writeDocument(input: z.input<typeof WriteDocumentInput>): Promise<DocumentResult> {
-  const { root, project, name, document, overwrite } = parseInput(WriteDocumentInput, input)
+  const { root, project, name, document, overwrite, missingAssets } = parseInput(WriteDocumentInput, input)
   await requireProject(root, project)
   const path = documentFile(root, project, name)
-  const valid = await requireValidDocument(document, { projectDir: projectDir(root, project) }, `Document "${name}"`)
+  const valid = await requireValidDocument(document, { projectDir: projectDir(root, project), missingAssets }, `Document "${name}"`)
   if (!overwrite && (await pathExists(path))) {
     throw new OpError('ALREADY_EXISTS', `Document "${name}" already exists in Project "${project}"`)
   }
-  await writeJsonAtomic(path, valid)
-  return { project, name, path, document: valid }
+  await writeJsonAtomic(path, valid.document)
+  return { project, name, path, ...valid }
 }
 
 // createDocument / duplicateDocument ------------------------------------------

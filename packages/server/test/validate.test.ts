@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { documentJsonSchema } from '@bannerkit/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import sharp from 'sharp'
-import { addAssets, createDocument, createProject, validate, writeDocument } from '../src/ops/index.ts'
+import { addAssets, createDocument, createProject, preview, render, validate, writeDocument } from '../src/ops/index.ts'
 import { schemaRefFrom } from '../src/ops/validation.ts'
 import { repoRoot, tempRoot } from './harness.ts'
 
@@ -224,6 +224,31 @@ describe('image Layer src must exist in the Project', () => {
       code: 'INVALID_DOCUMENT',
       issues: [{ path: 'layers[0].src', message: 'Asset "assets/x.png" not found in Project "p"' }],
     })
+  })
+
+  // The editor's REST read and save treat a missing Asset as a warning (rest.test.ts);
+  // the CLI ops keep it an error.
+  it('validate, render and preview keep a missing Asset an error', async () => {
+    await handEdit('hero', docWith('hero', [imageLayer('image-1', 'assets/x.png')]))
+    const issue = { path: 'layers[0].src', message: 'Asset "assets/x.png" not found in Project "p"' }
+
+    const [validated] = (await validate({ root, project: 'p' })).documents
+
+    expect(validated).toMatchObject({ ok: false, errors: [issue], warnings: [] })
+    await expect(render({ root, project: 'p' })).rejects.toMatchObject({ code: 'INVALID_DOCUMENT', issues: [issue] })
+    await expect(preview({ root, project: 'p', name: 'hero' })).rejects.toMatchObject({ code: 'INVALID_DOCUMENT', issues: [issue] })
+  })
+
+  it('the editor mode turns only a missing Asset into a warning', async () => {
+    const outside = docWith('hero', [imageLayer('image-1', '../x.png')])
+    const gone = docWith('hero', [imageLayer('image-1', 'assets/x.png')])
+
+    const saved = await writeDocument({ root, project: 'p', name: 'hero', document: gone, missingAssets: 'warning' })
+
+    expect(saved.warnings).toEqual([{ path: 'layers[0].src', message: 'Asset "assets/x.png" not found in Project "p"' }])
+    await expect(
+      writeDocument({ root, project: 'p', name: 'hero', document: outside, missingAssets: 'warning' }),
+    ).rejects.toMatchObject({ code: 'INVALID_DOCUMENT' })
   })
 })
 

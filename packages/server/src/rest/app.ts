@@ -6,7 +6,7 @@
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import { OpError, listDocuments, listProjects, readDocument, type OpErrorCode } from '../ops/index.ts'
+import { OpError, listDocuments, listProjects, readDocument, writeDocument, type OpErrorCode } from '../ops/index.ts'
 import { Name } from '../ops/paths.ts'
 
 export type AppOptions = {
@@ -37,9 +37,21 @@ export function createApp({ root, webDir }: AppOptions) {
     c.json(await listDocuments({ root, project: c.req.param('project') })),
   )
 
+  // The editor's read and save: a missing Asset file is a warning (the editor shows a
+  // placeholder and the Document stays editable), not a rejection. Everything else is
+  // enforced, and a save is validated and written atomically by writeDocument.
   api.get('/projects/:project/documents/:doc', async (c) =>
-    c.json(await readDocument({ root, project: c.req.param('project'), name: c.req.param('doc') })),
+    c.json(await readDocument({ root, project: c.req.param('project'), name: c.req.param('doc'), missingAssets: 'warning' })),
   )
+
+  api.put('/projects/:project/documents/:doc', async (c) => {
+    const document = await c.req.json().catch(() => {
+      throw new OpError('INVALID_INPUT', 'The request body is not valid JSON')
+    })
+    const project = c.req.param('project')
+    const name = c.req.param('doc')
+    return c.json(await writeDocument({ root, project, name, document, missingAssets: 'warning' }))
+  })
 
   // Assets live at the Document's project-relative `src`: /api/projects/<p>/assets/<file>.
   // serveStatic rejects `..`, `%`-encoded paths and doubled separators.

@@ -23,8 +23,15 @@ import { listDocumentFiles, requireProject } from './store.ts'
 // Server-side validation: core's validateDocument plus rules that need the
 // filesystem. Every read and write of a Document goes through checkDocument.
 
+/**
+ * How a missing Asset file counts. The CLI (`validate`, `render`, `preview`) and
+ * agents keep it an `error`; the editor's REST read and save make it a `warning`,
+ * so a Document whose Asset was deleted still opens (as a placeholder) and saves.
+ */
+export type MissingAssets = 'error' | 'warning'
+
 /** Where a Document lives, for rules that look at the Project around it. */
-export type DocumentContext = { projectDir: string }
+export type DocumentContext = { projectDir: string; missingAssets?: MissingAssets }
 
 /**
  * A rule that needs server resources, run after the schema and CORE_RULES pass.
@@ -43,9 +50,10 @@ export const SERVER_DOCUMENT_RULES: DocumentRule[] = [
 
 /**
  * Every image Layer's `src` names a file inside the Project. A miss suggests
- * the closest existing Asset.
+ * the closest existing Asset; it is an error unless `missingAssets` is
+ * `'warning'`. A `src` that leaves the Project is always an error.
  */
-export const assetsExist: ServerRule = async (document, { projectDir }) => {
+export const assetsExist: ServerRule = async (document, { projectDir, missingAssets = 'error' }) => {
   const issues: RuleIssue[] = []
   let assets: string[] | undefined
   for (const [i, layer] of document.layers.entries()) {
@@ -63,6 +71,7 @@ export const assetsExist: ServerRule = async (document, { projectDir }) => {
       path,
       message: `Asset "${src}" not found in Project "${basename(projectDir)}"`,
       ...(suggestion === undefined ? {} : { suggestion }),
+      ...(missingAssets === 'warning' ? { severity: 'warning' as const } : {}),
     })
   }
   return issues
@@ -91,10 +100,17 @@ export async function checkDocument(value: unknown, context: DocumentContext): P
   return splitRuleIssues([...core.warnings.map((w) => ({ ...w, severity: 'warning' as const })), ...found], core.document)
 }
 
-/** Validates, throwing INVALID_DOCUMENT with the issues when the value is not a valid Document. */
-export async function requireValidDocument(value: unknown, context: DocumentContext, where: string): Promise<Document> {
+/**
+ * Validates, throwing INVALID_DOCUMENT with the issues when the value is not a
+ * valid Document; otherwise returns it with its warnings.
+ */
+export async function requireValidDocument(
+  value: unknown,
+  context: DocumentContext,
+  where: string,
+): Promise<{ document: Document; warnings: Issue[] }> {
   const result = await checkDocument(value, context)
-  if (result.ok) return result.document
+  if (result.ok) return { document: result.document, warnings: result.warnings }
   throw new OpError('INVALID_DOCUMENT', `${where} is not a valid Document (${result.errors.length} issue(s))`, result.errors)
 }
 
