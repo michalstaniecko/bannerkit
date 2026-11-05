@@ -89,6 +89,38 @@ describe('validate a Project', () => {
     ])
   })
 
+  it('rejects font families and weights missing from the font manifest', async () => {
+    await handEdit('fonts', docWith('fonts', [textLayer('text-1', { fontFamily: 'Helvetica' })]))
+
+    const [doc] = (await validate({ root, project: 'p' })).documents
+
+    expect(doc!.errors).toEqual([
+      { path: 'layers[0].fontFamily', message: 'font family "Helvetica" is not in the font manifest (available: Inter)' },
+    ])
+  })
+
+  it('warns, without failing, when text overflows its Box at the minimum font size', async () => {
+    await handEdit(
+      'overflow',
+      docWith('overflow', [
+        textLayer('text-1', { text: 'Supercalifragilistic', width: 60, height: 40, autoFit: { minFontSize: 12 } }),
+        textLayer('text-2', { text: 'one\ntwo\nthree', height: 20 }),
+        textLayer('text-3', { text: 'fits', height: 40, autoFit: { minFontSize: 12 } }),
+      ]),
+    )
+
+    const [doc] = (await validate({ root, project: 'p' })).documents
+
+    expect(doc).toMatchObject({
+      ok: true,
+      errors: [],
+      warnings: [
+        { path: 'layers[0].text', message: 'text overflows its Box even at autoFit.minFontSize 12px; it renders clipped' },
+        { path: 'layers[1].text', message: 'text overflows its Box at fontSize 20px; it renders clipped' },
+      ],
+    })
+  })
+
   it('fails with NOT_FOUND for a missing Project', async () => {
     await expect(validate({ root, project: 'nope' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })

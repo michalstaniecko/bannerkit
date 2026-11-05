@@ -1,6 +1,15 @@
-import { boxTransform, type Document, type Layer, linearGradientLine, type RectLayer } from '@bannerkit/core'
+import {
+  boxTransform,
+  type Document,
+  type Layer,
+  layoutText,
+  linearGradientLine,
+  type RectLayer,
+  type TextLayer,
+} from '@bannerkit/core'
 import sharp, { type Sharp } from 'sharp'
 import { Canvas, type CanvasRenderingContext2D } from 'skia-canvas'
+import { applyFont, measureText } from './fonts.ts'
 import { drawImageLayer, type LayerImages, loadLayerImages } from './images.ts'
 
 export const RENDER_FORMATS = ['png', 'jpg', 'webp'] as const
@@ -86,8 +95,8 @@ function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, drawScale: numbe
     case 'image':
       drawImageLayer(ctx, layer, images.get(layer.id)!, drawScale)
       break
-    default:
-      // text Layers are drawn from ticket 06 on.
+    case 'text':
+      drawText(ctx, layer)
       break
   }
   ctx.restore()
@@ -113,5 +122,26 @@ function drawRect(ctx: CanvasRenderingContext2D, layer: RectLayer): void {
   } else {
     ctx.fillRect(0, 0, width, height)
   }
+  ctx.restore()
+}
+
+/**
+ * Draws the core Text Layout (ADR 0004): one `fillText` per pre-broken line at
+ * core's positions, never skia-canvas `textWrap`. Overflowing text is clipped to the Box.
+ */
+function drawText(ctx: CanvasRenderingContext2D, layer: TextLayer): void {
+  const layout = layoutText(layer, measureText)
+  ctx.save()
+  ctx.transform(...boxTransform({ ...layer, height: layout.height }))
+  if (layout.overflow) {
+    ctx.beginPath()
+    ctx.rect(0, 0, layer.width, layout.height)
+    ctx.clip()
+  }
+  applyFont(ctx, { family: layer.fontFamily, weight: layer.fontWeight, size: layout.fontSize }, layer.letterSpacing ?? 0)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = layer.fill
+  for (const line of layout.lines) ctx.fillText(line.text, line.x, line.baselineY)
   ctx.restore()
 }
