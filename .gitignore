@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+# Working Projects stay out of git; committed example Projects live in examples/.
+/projects/
+.state.json

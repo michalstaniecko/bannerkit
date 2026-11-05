@@ -1,0 +1,13 @@
+{
+  "name": "@bannerkit/web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@bannerkit/core": "workspace:*"
+  }
+}
