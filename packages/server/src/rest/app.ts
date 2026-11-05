@@ -112,7 +112,7 @@ export function createApp({ root, webDir }: AppOptions) {
 
   // Structure (the editor's toolbar and top bar) ------------------------------------
   // POST /projects/:p/assets, multipart with one or more `file` parts: the `addAssets` op,
-  // so uploads follow the CLI's ingest rules. Answers 201 with `{ project, assets }`.
+  // so added files follow the CLI's ingest rules. Answers 201 with `{ project, assets }`.
   // POST /projects/:p/documents with `{ name, preset | size }`: `createDocument`.
   // POST /projects/:p/documents/:doc/duplicate with `{ name?, preset | size }`: `duplicateDocument`.
   api.post('/projects/:project/assets', async (c) => {
@@ -126,7 +126,7 @@ export function createApp({ root, webDir }: AppOptions) {
         .map(async (file) => ({ filename: file.name, data: new Uint8Array(await file.arrayBuffer()) })),
     )
     if (files.length === 0) {
-      throw new OpError('INVALID_INPUT', 'No files uploaded', [{ path: 'file', message: 'expected at least one file part' }])
+      throw new OpError('INVALID_INPUT', 'No files given', [{ path: 'file', message: 'expected at least one file part' }])
     }
     return c.json(await addAssets({ root, project: c.req.param('project'), files }), 201)
   })

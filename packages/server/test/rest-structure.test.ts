@@ -1,4 +1,4 @@
-// REST routes behind the editor's toolbar and top bar: Asset upload (multipart, the
+// REST routes behind the editor's toolbar and top bar: adding Assets (multipart, the
 // `addAssets` op), new Document from a Preset and duplicate to another size (the
 // `createDocument` / `duplicateDocument` ops). Exercised in-process via `app.request`.
 import { readFile, readdir } from 'node:fs/promises'
@@ -27,7 +27,7 @@ beforeEach(async () => {
 const png = (width: number, height: number) =>
   sharp({ create: { width, height, channels: 3, background: { r: 10, g: 120, b: 200 } } }).png().toBuffer()
 
-const upload = async (files: { name: string; data: Uint8Array }[], project = 'summer') => {
+const addAssets = async (files: { name: string; data: Uint8Array }[], project = 'summer') => {
   const form = new FormData()
   for (const { name, data } of files) form.append('file', new File([new Uint8Array(data)], name))
   const res = await createApp({ root }).request(`/api/projects/${project}/assets`, { method: 'POST', body: form })
@@ -43,10 +43,10 @@ const postJson = async (path: string, body: unknown) => {
   return { status: res.status, body: (await res.json()) as any }
 }
 
-describe('REST: uploading Assets', () => {
+describe('REST: adding Assets', () => {
   it('ingests multipart files like the CLI: sanitised, de-duplicated names and intrinsic sizes', async () => {
-    const first = await upload([{ name: 'My Shoe.PNG', data: await png(8, 6) }])
-    const second = await upload([{ name: 'my shoe.png', data: await png(4, 4) }])
+    const first = await addAssets([{ name: 'My Shoe.PNG', data: await png(8, 6) }])
+    const second = await addAssets([{ name: 'my shoe.png', data: await png(4, 4) }])
 
     expect(first.status).toBe(201)
     expect(first.body.assets).toEqual([expect.objectContaining({ src: 'assets/my-shoe.png', format: 'png', width: 8, height: 6 })])
@@ -55,7 +55,7 @@ describe('REST: uploading Assets', () => {
   })
 
   it('refuses a file that is not an image with 415 and writes nothing', async () => {
-    const { status, body } = await upload([{ name: 'notes.png', data: new TextEncoder().encode('hello') }])
+    const { status, body } = await addAssets([{ name: 'notes.png', data: new TextEncoder().encode('hello') }])
 
     expect(status).toBe(415)
     expect(body.error.code).toBe('UNSUPPORTED_ASSET')
@@ -66,7 +66,7 @@ describe('REST: uploading Assets', () => {
     const empty = await createApp({ root }).request('/api/projects/summer/assets', { method: 'POST', body: new FormData() })
     expect(empty.status).toBe(400)
 
-    expect((await upload([{ name: 'a.png', data: await png(2, 2) }], 'winter')).status).toBe(404)
+    expect((await addAssets([{ name: 'a.png', data: await png(2, 2) }], 'winter')).status).toBe(404)
   })
 })
 

@@ -1,5 +1,5 @@
 // The top bar's Layer toolbar: add a text, rect or image Layer (images are picked with
-// the file picker and uploaded as Assets first), and delete or duplicate the selected
+// the file picker and added as Assets first), and delete or duplicate the selected
 // Layers. Each action is one undo step and leaves its result selected.
 import { useRef, type RefObject } from 'react'
 import { api } from './api.ts'
@@ -32,13 +32,13 @@ export function LayerToolbar({ editor, project, loaded, onError }: Props) {
       return { document, select }
     })
 
-  const upload = async (files: File[]) => {
+  const addAssets = async (files: File[]) => {
     if (files.length === 0) return
     try {
-      const { assets } = await api.uploadAssets(project, files)
+      const { assets } = await api.addAssets(project, files)
       await add(assets.map(({ src, width, height }) => ({ type: 'image', src, width, height })))
     } catch (e) {
-      onError(`Upload failed: ${(e as Error).message}`)
+      onError(`Adding Assets failed: ${(e as Error).message}`)
     }
   }
 
@@ -64,7 +64,7 @@ export function LayerToolbar({ editor, project, loaded, onError }: Props) {
         onChange={(e) => {
           const files = [...(e.target.files ?? [])]
           e.target.value = ''
-          void upload(files)
+          void addAssets(files)
         }}
       />
       <button type="button" disabled={none} onClick={() => void run((d) => ({ document: deleteLayers(d, selection), select: [] }))}>

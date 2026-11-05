@@ -1,14 +1,8 @@
 // Same-origin client for the REST adapter (packages/server/src/rest/app.ts).
-import type { Document, PresetId } from '@bannerkit/core'
+import type { Document, DocumentRef, DocumentResult, Issue, PresetId } from '@bannerkit/core'
 
+export type { DocumentRef, DocumentResult }
 export type ProjectRef = { name: string }
-export type DocumentRef = { project: string; name: string }
-export type Issue = { path: string; message: string; suggestion?: string }
-/**
- * A Document as read or saved. `warnings` include missing Assets, which the editor shows as placeholders.
- * `hash` is the content hash of the file on disk, the one live-reload `document-changed` events carry.
- */
-export type DocumentResult = DocumentRef & { document: Document; warnings: Issue[]; hash: string }
 export type ApiError = { code: string; message: string; issues: Issue[] }
 
 export class ApiRequestError extends Error {
@@ -27,8 +21,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-/** An Asset as stored by an upload: its project-relative `src` and intrinsic size. */
-export type UploadedAsset = { src: string; width: number; height: number }
+/** An Asset as the `addAssets` op stored it: its project-relative `src` and intrinsic size. */
+export type AddedAsset = { src: string; width: number; height: number }
 
 const jsonPost = (body: unknown): RequestInit => ({
   method: 'POST',
@@ -61,11 +55,11 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ doc, selectedLayerIds }),
     }),
-  /** Uploads image files as Assets (the `addAssets` op: sanitised names, normalised images). */
-  uploadAssets: (project: string, files: readonly File[]) => {
+  /** Adds image files as Assets (the `addAssets` op: sanitised names, normalised images). */
+  addAssets: (project: string, files: readonly File[]) => {
     const form = new FormData()
     for (const file of files) form.append('file', file)
-    return requestJson<{ project: string; assets: UploadedAsset[] }>(`/api/projects/${seg(project)}/assets`, { method: 'POST', body: form })
+    return requestJson<{ project: string; assets: AddedAsset[] }>(`/api/projects/${seg(project)}/assets`, { method: 'POST', body: form })
   },
   /** Creates an empty Document of a Preset's size. */
   createDocument: (project: string, name: string, preset: PresetId) =>

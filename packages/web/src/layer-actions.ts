@@ -29,7 +29,7 @@ export function setLayerFlag(document: Document, id: string, flag: LayerFlag, va
   return next
 }
 
-/** What the toolbar adds. An image refers to an uploaded Asset and its intrinsic size. */
+/** What the toolbar adds. An image refers to an added Asset and its intrinsic size. */
 export type NewLayer = { type: 'rect' } | { type: 'text' } | { type: 'image'; src: string; width: number; height: number }
 
 /** Share of the Canvas a new rect or image takes at most, per side. */

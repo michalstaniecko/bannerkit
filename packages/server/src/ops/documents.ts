@@ -6,7 +6,8 @@ import {
   resolveSize,
   sizeChoiceShape,
   type Document,
-  type Issue,
+  type DocumentRef,
+  type DocumentResult,
   type SizeChoice,
 } from '@bannerkit/core'
 import { z } from 'zod'
@@ -16,9 +17,7 @@ import { Name, Root, documentFile, documentsDir, projectDir } from './paths.ts'
 import { listDocumentFiles, requireProject } from './store.ts'
 import { readJsonFileBytes, requireValidDocument, schemaRefFrom, type MissingAssets } from './validation.ts'
 
-export type DocumentRef = { project: string; name: string; path: string }
-/** `hash` is the content hash of the Document file's bytes (see contentHash). */
-export type DocumentResult = DocumentRef & { document: Document; warnings: Issue[]; hash: string }
+export type { DocumentRef, DocumentResult }
 
 // listDocuments ---------------------------------------------------------------
 

@@ -103,7 +103,7 @@ test('the toolbar adds text and rect Layers, and deletes and duplicates a multi-
   await expect(rows(page)).toHaveCount(7)
 })
 
-test('adding an image uploads the picked file as an Asset', async ({ page, projects }) => {
+test('adding an image adds the picked file as an Asset', async ({ page, projects }) => {
   await projects.write('s3-image', { documents: { banner } })
   await open(page, projects.appUrl('s3-image', 'banner'))
 

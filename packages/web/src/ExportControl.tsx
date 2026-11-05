@@ -1,5 +1,5 @@
-// The top bar's Export control: format and scale pickers and a button that downloads
-// the editor's browser Export, named like the server's (`<doc>.<w>x<h>[@2x].<ext>`).
+// The top bar's Export control: format and scale pickers and a button that saves
+// the editor's browser Export to a file, named like the server's (`<doc>.<w>x<h>[@2x].<ext>`).
 import { useState, type RefObject } from 'react'
 import { EXPORT_FORMATS, exportFileName, type Editor, type ExportFormat, type ExportScale } from './editor/index.ts'
 
@@ -16,7 +16,7 @@ export function ExportControl({ editor, name, disabled, onError }: Props) {
   const [scale, setScale] = useState<ExportScale>(1)
   const [busy, setBusy] = useState(false)
 
-  const download = async () => {
+  const saveExport = async () => {
     const current = editor.current
     if (!current) return
     setBusy(true)
@@ -54,7 +54,7 @@ export function ExportControl({ editor, name, disabled, onError }: Props) {
           <option value={2}>2×</option>
         </select>
       </label>
-      <button type="button" onClick={download} disabled={disabled || busy}>
+      <button type="button" onClick={saveExport} disabled={disabled || busy}>
         Export
       </button>
     </>

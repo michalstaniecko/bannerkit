@@ -101,7 +101,7 @@ describe('addLayer', () => {
     expect(document.layers[0]).toMatchObject({ type: 'text', fontFamily: 'Inter', text: expect.any(String) })
   })
 
-  it('adds an image Layer for an uploaded Asset, keeping its aspect ratio inside the Canvas', () => {
+  it('adds an image Layer for an added Asset, keeping its aspect ratio inside the Canvas', () => {
     const { document, id } = addLayer(doc([]), { type: 'image', src: 'assets/shoe.png', width: 1000, height: 500 })
 
     expect(id).toBe('image-1')

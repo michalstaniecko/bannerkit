@@ -43,7 +43,7 @@ test('Export is exactly the Canvas size × scale for every Preset on a 2× scree
   }
 })
 
-test('the top bar Export control downloads the chosen format and scale, named like the server', async ({ page }) => {
+test('the top bar Export control saves the chosen format and scale, named like the server', async ({ page }) => {
   await page.goto('/?project=demo&doc=square')
   await expect(page.locator('canvas.lower-canvas')).toBeVisible()
 

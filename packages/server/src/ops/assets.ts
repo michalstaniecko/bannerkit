@@ -10,7 +10,7 @@ import { requireProject } from './store.ts'
 
 // addAssets: normalises image files on ingest so renderers never deal with EXIF
 // rotation, wide-gamut colour or name collisions. Takes buffers plus filenames
-// (a REST multipart upload) or paths (the CLI), which it reads itself.
+// (a REST multipart request) or paths (the CLI), which it reads itself.
 
 const AssetFile = z.union([
   z.object({ filename: z.string().min(1), data: z.custom<Uint8Array>((v) => v instanceof Uint8Array, 'expected file bytes') }),
