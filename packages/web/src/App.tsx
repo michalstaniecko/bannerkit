@@ -6,7 +6,11 @@ import { useEffect, useRef, useState } from 'react'
 import { api, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
+import { DocumentActions } from './DocumentActions.tsx'
 import { ExportControl } from './ExportControl.tsx'
+import { JsonPanel } from './JsonPanel.tsx'
+import { LayerList } from './LayerList.tsx'
+import { LayerToolbar } from './LayerToolbar.tsx'
 import { openLiveReload, type Conflict } from './live-reload.ts'
 import { ReloadBanner } from './ReloadBanner.tsx'
 import { createSelectionSync } from './selection-sync.ts'
@@ -160,6 +164,12 @@ export function App() {
     return () => observer.disconnect()
   }, [loaded, fit, zoom])
 
+  // A Document made by the top bar's New / Duplicate to size: list it and open it.
+  const openDocument = (name: string) => {
+    api.listDocuments(project).then(setDocuments, (e: Error) => setError(e.message))
+    setDoc(name)
+  }
+
   const zoomBy = (factor: number) => {
     setFit(false)
     setZoom((z) => z * factor)
@@ -196,6 +206,8 @@ export function App() {
             ))}
           </select>
         </label>
+        <DocumentActions editor={editorRef} project={project} doc={doc} loaded={loaded} onOpen={openDocument} onError={setError} />
+        <LayerToolbar editor={editorRef} project={project} loaded={loaded} onError={setError} />
         <span className="spacer" />
         {loaded && (
           <span className="save" data-state={save}>
@@ -225,10 +237,14 @@ export function App() {
       </header>
       <ReloadBanner conflict={conflict} />
       {error && <div className="error">{error}</div>}
-      <main className="viewport" ref={viewportRef}>
-        <div className="canvas-host" ref={hostRef} hidden={!loaded} />
-        {!loaded && !error && <p className="hint">Pick a Project and a Document.</p>}
-      </main>
+      <div className="workspace">
+        <LayerList editor={editorRef} loaded={loaded} onError={setError} />
+        <main className="viewport" ref={viewportRef}>
+          <div className="canvas-host" ref={hostRef} hidden={!loaded} />
+          {!loaded && !error && <p className="hint">Pick a Project and a Document.</p>}
+        </main>
+        <JsonPanel editor={editorRef} loaded={loaded} />
+      </div>
     </div>
   )
 }

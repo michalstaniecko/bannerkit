@@ -96,6 +96,8 @@ export type Editor = {
   canRedo(): boolean
   /** The ids of the selected Layers, bottom → top. */
   getSelection(): string[]
+  /** Selects the Layers `ids` (none for `[]`), skipping locked, hidden and unknown ones. */
+  select(ids: readonly string[]): void
   /** Subscribes to an editor event; returns the unsubscribe function. */
   on<K extends keyof EditorEvents>(type: K, listener: (event: EditorEvents[K]) => void): () => void
   /** The Fabric object showing a Layer, for adapters that need it (Selection, tests). */
@@ -351,6 +353,19 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     canRedo: () => current !== undefined && history.canRedo(),
 
     getSelection: () => [...selected],
+
+    select(ids) {
+      const c = requireCanvas()
+      finishTextEdit()
+      const objects = entries
+        .filter((e) => ids.includes(e.base.id) && !e.base.locked && e.base.visible !== false)
+        .map((e) => e.object)
+      c.discardActiveObject()
+      if (objects.length === 1) c.setActiveObject(objects[0]!)
+      else if (objects.length > 1) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
+      c.requestRenderAll()
+      reportSelection()
+    },
 
     on(type, listener) {
       listeners[type].add(listener)

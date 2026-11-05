@@ -12,6 +12,10 @@
   },
   "dependencies": {
     "@bannerkit/core": "workspace:*",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
     "fabric": "7.4.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
