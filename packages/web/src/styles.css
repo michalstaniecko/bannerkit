@@ -46,3 +46,42 @@ body,
 .canvas-host[hidden] {
   display: none;
 }
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.workspace .viewport {
+  min-width: 0;
+}
+
+.json-panel {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #ccc;
+}
+
+.json-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.json-errors {
+  margin: 0;
+  padding: 6px 8px 6px 24px;
+  color: #b00;
+}
+
+.json-code {
+  flex: 1;
+  min-height: 0;
+}
+
+.json-code .cm-editor {
+  height: 100%;
+}

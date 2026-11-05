@@ -7,6 +7,7 @@ import { api, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 import { ExportControl } from './ExportControl.tsx'
+import { JsonPanel } from './JsonPanel.tsx'
 import { createSelectionSync } from './selection-sync.ts'
 
 const VIEWPORT_PADDING = 32
@@ -208,10 +209,13 @@ export function App() {
         </button>
       </header>
       {error && <div className="error">{error}</div>}
-      <main className="viewport" ref={viewportRef}>
-        <div className="canvas-host" ref={hostRef} hidden={!loaded} />
-        {!loaded && !error && <p className="hint">Pick a Project and a Document.</p>}
-      </main>
+      <div className="workspace">
+        <main className="viewport" ref={viewportRef}>
+          <div className="canvas-host" ref={hostRef} hidden={!loaded} />
+          {!loaded && !error && <p className="hint">Pick a Project and a Document.</p>}
+        </main>
+        <JsonPanel editor={editorRef} loaded={loaded} />
+      </div>
     </div>
   )
 }
