@@ -102,6 +102,41 @@ describe('bannerkit preview', () => {
     expect(json.json()).toEqual({ ok: true, result: { project: 'p', name: 'hero', path, width: 300, height: 250 } })
     expect((await sharp(path).metadata()).width).toBe(300)
   })
+
+  it('draws image Layers from the Project Assets, and exits 1 naming the Layer when one cannot load', async () => {
+    const root = await tempRoot()
+    await cli(['project', 'new', 'p', '--root', root])
+    const red = join(root, 'red.png')
+    await sharp({ create: { width: 4, height: 4, channels: 3, background: '#ff0000' } }).png().toFile(red)
+    await cli(['asset', 'add', 'p', red, '--root', root])
+    const docPath = join(root, 'p', 'documents', 'hero.json')
+    const hero = (src: string) =>
+      JSON.stringify({
+        version: 1,
+        name: 'hero',
+        canvas: { width: 20, height: 20, background: '#ffffff' },
+        layers: [{ id: 'image-1', type: 'image', x: 0, y: 0, width: 10, height: 20, src, fit: 'stretch' }],
+      })
+    await writeFile(docPath, hero('assets/red.png'))
+
+    const ok = await cli(['preview', 'p', 'hero', '--root', root, '--json'])
+    expect(ok.exitCode).toBe(0)
+    const { data } = await sharp(ok.json().result.path).raw().toBuffer({ resolveWithObject: true })
+    expect([...data.subarray(0, 3)]).toEqual([255, 0, 0])
+
+    // The file exists, so validation passes, but it cannot be decoded.
+    await writeFile(join(root, 'p', 'assets', 'red.png'), 'not a png')
+    const broken = await cli(['preview', 'p', 'hero', '--root', root, '--json'])
+    expect(broken.exitCode).toBe(1)
+    expect(broken.json()).toEqual({
+      ok: false,
+      error: {
+        code: 'RENDER_FAILED',
+        message: expect.stringMatching(/"image-1".*"assets\/red\.png"/),
+        issues: [{ path: 'layers[0].src', message: expect.any(String) }],
+      },
+    })
+  })
 })
 
 describe('errors', () => {
@@ -245,5 +280,64 @@ describe('bannerkit validate', () => {
 
     expect(run.exitCode).toBe(0)
     expect(run.json().result.documents).toEqual([expect.objectContaining({ name: 'good', ok: true })])
+  })
+})
+
+describe('bannerkit asset add', () => {
+  const setup = async () => {
+    const root = await tempRoot()
+    const inbox = await tempRoot()
+    await cli(['project', 'new', 'p', '--root', root])
+    const shoe = join(inbox, 'Shoe Photo.png')
+    await writeFile(shoe, await sharp({ create: { width: 30, height: 20, channels: 3, background: '#cc6633' } }).png().toBuffer())
+    const logo = join(inbox, 'logo.svg')
+    await writeFile(logo, '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="16"/>')
+    return { root, inbox, shoe, logo }
+  }
+
+  it('prints each Asset src with its dimensions', async () => {
+    const { root, inbox } = await setup()
+
+    const run = await cli(['asset', 'add', 'p', 'Shoe Photo.png', 'logo.svg', '--root', root], { cwd: inbox })
+
+    expect(run.exitCode).toBe(0)
+    expect(run.stdout).toBe('assets/shoe-photo.png 30x20\nassets/logo.svg 64x16\n')
+  })
+
+  it('reports the Assets as JSON', async () => {
+    const { root, shoe, logo } = await setup()
+
+    const run = await cli(['asset', 'add', 'p', shoe, logo, '--root', root, '--json'])
+
+    expect(run.json()).toEqual({
+      ok: true,
+      result: {
+        project: 'p',
+        assets: [
+          { src: 'assets/shoe-photo.png', path: join(root, 'p', 'assets', 'shoe-photo.png'), format: 'png', width: 30, height: 20 },
+          { src: 'assets/logo.svg', path: join(root, 'p', 'assets', 'logo.svg'), format: 'svg', width: 64, height: 16 },
+        ],
+      },
+    })
+  })
+
+  it('fails clearly for an unsupported or missing file', async () => {
+    const { root, inbox } = await setup()
+    const notes = join(inbox, 'notes.txt')
+    await writeFile(notes, 'hello')
+
+    const unsupported = await cli(['asset', 'add', 'p', notes, '--root', root, '--json'])
+    const missing = await cli(['asset', 'add', 'p', join(inbox, 'ghost.png'), '--root', root])
+
+    expect(unsupported.exitCode).toBe(1)
+    expect(unsupported.json().error).toMatchObject({ code: 'UNSUPPORTED_ASSET', message: expect.stringContaining('notes.txt') })
+    expect(missing.exitCode).toBe(1)
+    expect(missing.stderr).toBe(`error: File ${join(inbox, 'ghost.png')} not found\n`)
+  })
+
+  it('needs at least one file', async () => {
+    const { root } = await setup()
+
+    expect((await cli(['asset', 'add', 'p', '--root', root])).exitCode).toBe(2)
   })
 })

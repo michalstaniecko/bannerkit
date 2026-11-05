@@ -1,24 +1,44 @@
-import { boxTransform, type Document, type Layer, linearGradientLine, type RectLayer } from '@bannerkit/core'
-import sharp from 'sharp'
+import {
+  boxTransform,
+  type Document,
+  type Layer,
+  layoutText,
+  linearGradientLine,
+  type RectLayer,
+  type TextLayer,
+} from '@bannerkit/core'
+import sharp, { type Sharp } from 'sharp'
 import { Canvas, type CanvasRenderingContext2D } from 'skia-canvas'
+import { applyFont, measureText } from './fonts.ts'
+import { drawImageLayer, type LayerImages, loadLayerImages } from './images.ts'
 
-export type RenderFormat = 'png'
+export const RENDER_FORMATS = ['png', 'jpg', 'webp'] as const
+export type RenderFormat = (typeof RENDER_FORMATS)[number]
 
 export type RenderOptions = {
   /** Output scale relative to the Canvas size (1 or 2). Default 1. */
   scale?: number
+  /** Default png. PNG keeps alpha; JPEG is flattened onto the Canvas background (white if null). */
   format?: RenderFormat
+  /** JPEG/WebP quality 1-100. Default 90. Ignored for PNG, which is always lossless. */
+  quality?: number
+  /** The Project directory that image Layer `src` paths are relative to. Required for image Layers. */
+  projectDir?: string
 }
+
+export const DEFAULT_QUALITY = 90
 
 /** Every Render is drawn at 2 × scale and downsampled with Lanczos (ADR 0006). */
 export const SUPERSAMPLE = 2
 
 /**
  * Renders a Document to an encoded image at exactly `width × height × scale`.
- * Pure with respect to the filesystem; callers decide where bytes go.
+ * Reads Assets from `projectDir` but writes nothing; callers decide where bytes go.
+ * Throws a RENDER_FAILED OpError naming the Layer and `src` when an Asset cannot be loaded.
  */
 export async function renderDocument(doc: Document, options: RenderOptions = {}): Promise<Buffer> {
   const scale = options.scale ?? 1
+  const images = await loadLayerImages(doc, options.projectDir)
   const { width, height, background } = doc.canvas
   const drawScale = scale * SUPERSAMPLE
   // CPU raster: the default GPU backend is not deterministic enough for snapshots.
@@ -30,13 +50,27 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
     ctx.fillStyle = background
     ctx.fillRect(0, 0, width, height)
   }
-  for (const layer of doc.layers) drawLayer(ctx, layer, drawScale)
+  for (const layer of doc.layers) drawLayer(ctx, layer, drawScale, images)
 
   const raw = await canvas.toBuffer('raw', { colorType: 'rgba', premultiplied: false })
-  return sharp(raw, { raw: { width: canvas.width, height: canvas.height, channels: 4 } })
-    .resize(width * scale, height * scale, { kernel: 'lanczos3', fit: 'fill' })
-    .png()
-    .toBuffer()
+  const resized = sharp(raw, { raw: { width: canvas.width, height: canvas.height, channels: 4 } }).resize(
+    width * scale,
+    height * scale,
+    { kernel: 'lanczos3', fit: 'fill' },
+  )
+  return encode(resized, options.format ?? 'png', options.quality ?? DEFAULT_QUALITY, background).toBuffer()
+}
+
+function encode(image: Sharp, format: RenderFormat, quality: number, background: string | null): Sharp {
+  switch (format) {
+    case 'png':
+      // No quality/effort: either switches sharp to lossy palette PNG.
+      return image.png()
+    case 'jpg':
+      return image.flatten({ background: background ?? '#ffffff' }).jpeg({ quality })
+    case 'webp':
+      return image.webp({ quality })
+  }
 }
 
 /**
@@ -44,7 +78,7 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
  * `drawScale` is the device pixels per Canvas pixel; shadows ignore the transform, so their
  * blur and offsets are scaled by hand.
  */
-function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, drawScale: number): void {
+function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, drawScale: number, images: LayerImages): void {
   if (layer.visible === false) return
   ctx.save()
   ctx.globalAlpha = layer.opacity ?? 1
@@ -58,8 +92,11 @@ function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, drawScale: numbe
     case 'rect':
       drawRect(ctx, layer)
       break
-    default:
-      // image and text Layers are drawn from tickets 05 and 06 on.
+    case 'image':
+      drawImageLayer(ctx, layer, images.get(layer.id)!, drawScale)
+      break
+    case 'text':
+      drawText(ctx, layer)
       break
   }
   ctx.restore()
@@ -85,5 +122,26 @@ function drawRect(ctx: CanvasRenderingContext2D, layer: RectLayer): void {
   } else {
     ctx.fillRect(0, 0, width, height)
   }
+  ctx.restore()
+}
+
+/**
+ * Draws the core Text Layout (ADR 0004): one `fillText` per pre-broken line at
+ * core's positions, never skia-canvas `textWrap`. Overflowing text is clipped to the Box.
+ */
+function drawText(ctx: CanvasRenderingContext2D, layer: TextLayer): void {
+  const layout = layoutText(layer, measureText)
+  ctx.save()
+  ctx.transform(...boxTransform({ ...layer, height: layout.height }))
+  if (layout.overflow) {
+    ctx.beginPath()
+    ctx.rect(0, 0, layer.width, layout.height)
+    ctx.clip()
+  }
+  applyFont(ctx, { family: layer.fontFamily, weight: layer.fontWeight, size: layout.fontSize }, layer.letterSpacing ?? 0)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = layer.fill
+  for (const line of layout.lines) ctx.fillText(line.text, line.x, line.baselineY)
   ctx.restore()
 }

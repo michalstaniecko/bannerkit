@@ -6,12 +6,16 @@ import { parseArgs, type ParseArgsConfig } from 'node:util'
 import { parseSize, type Issue, type PresetId, type Size } from '@bannerkit/core'
 import {
   OpError,
+  addAssets,
   createDocument,
   createProject,
   duplicateDocument,
   preview,
+  render,
   resolveProjectsRoot,
+  type RenderResult,
   validate,
+  type AddAssetsResult,
   type ValidateResult,
 } from '../ops/index.ts'
 
@@ -27,7 +31,7 @@ export const EXIT_ERROR = 1
 export const EXIT_USAGE = 2
 
 type Options = NonNullable<ParseArgsConfig['options']>
-type Values = Record<string, string | boolean | undefined>
+type Values = Record<string, string | string[] | boolean | undefined>
 type Context = { root: string; cwd: string; args: string[]; values: Values }
 
 type Command = {
@@ -54,19 +58,41 @@ const GLOBAL_OPTIONS: Options = {
   help: { type: 'boolean', short: 'h' },
 }
 
+// --size is repeatable (render filters by several sizes); commands that take one size reject repeats.
 const SIZE_OPTIONS: Options = {
   preset: { type: 'string' },
-  size: { type: 'string' },
+  size: { type: 'string', multiple: true },
+}
+
+const RENDER_OPTIONS: Options = {
+  doc: { type: 'string', multiple: true },
+  size: { type: 'string', multiple: true },
+  format: { type: 'string' },
+  scale: { type: 'string' },
+  quality: { type: 'string' },
+}
+
+function parseSizeFlag(text: string): Size {
+  const size = parseSize(text)
+  if (!size) throw new UsageError(`--size must look like WxH (e.g. 970x250), got "${text}"`)
+  return size
 }
 
 function sizeChoice(values: Values): { preset?: PresetId; size?: Size } {
   const preset = values.preset as string | undefined
-  const sizeText = values.size as string | undefined
-  if ((preset === undefined) === (sizeText === undefined)) throw new UsageError('give exactly one of --preset or --size')
+  const sizes = (values.size as string[] | undefined) ?? []
+  if (sizes.length > 1) throw new UsageError('give --size once')
+  if ((preset === undefined) === (sizes.length === 0)) throw new UsageError('give exactly one of --preset or --size')
   if (preset !== undefined) return { preset: preset as PresetId }
-  const size = parseSize(sizeText!)
-  if (!size) throw new UsageError(`--size must look like WxH (e.g. 970x250), got "${sizeText}"`)
-  return { size }
+  return { size: parseSizeFlag(sizes[0]!) }
+}
+
+/** A numeric flag; range and allowed values are checked by the op. */
+function intFlag(values: Values, name: string): number | undefined {
+  const text = values[name] as string | undefined
+  if (text === undefined) return undefined
+  if (!/^\d+$/.test(text)) throw new UsageError(`--${name} must be a whole number, got "${text}"`)
+  return Number(text)
 }
 
 /** One issue as a human-readable line: `path: message (did you mean "x"?)`. */
@@ -120,6 +146,15 @@ const COMMANDS: Record<string, Command> = {
       duplicateDocument({ root, project: project!, from: from!, ...(name ? { name } : {}), ...sizeChoice(values) }),
     human: (r) => `Created Document ${r.name} (${r.document.canvas.width}x${r.document.canvas.height}) at ${r.path}`,
   },
+  'asset add': {
+    usage: 'bannerkit asset add <project> <files...>',
+    summary: 'Ingest PNG, JPEG, WebP or SVG files into assets/ and print each src and size',
+    positionals: [2, Infinity],
+    options: {},
+    run: ({ root, cwd, args: [project, ...paths] }) =>
+      addAssets({ root, project: project!, files: paths.map((p) => ({ path: resolve(cwd, p) })) }),
+    human: (r: AddAssetsResult) => r.assets.map((a) => `${a.src} ${a.width}x${a.height}`).join('\n'),
+  },
   validate: {
     usage: 'bannerkit validate <project | path/to/doc.json>',
     summary: 'Check Documents against the schema and rules; prints path-located errors and exits 1 if any',
@@ -139,6 +174,24 @@ const COMMANDS: Record<string, Command> = {
     options: {},
     run: ({ root, args: [project, name] }) => preview({ root, project: project!, name: name! }),
     human: (r) => r.path,
+  },
+  render: {
+    usage: 'bannerkit render <project> [--doc <name> ...] [--size WxH ...] [--format png|jpg|webp] [--scale 1|2] [--quality N]',
+    summary: 'Export Documents to exports/<doc>.<w>x<h>[@2x].<ext> (default: all, PNG, 1x, quality 90)',
+    positionals: [1, 1],
+    options: RENDER_OPTIONS,
+    run: ({ root, args: [project], values }) =>
+      render({
+        root,
+        project: project!,
+        docs: values.doc as string[] | undefined,
+        sizes: (values.size as string[] | undefined)?.map(parseSizeFlag),
+        format: values.format as never,
+        scale: intFlag(values, 'scale') as never,
+        quality: intFlag(values, 'quality'),
+      }),
+    human: (r: RenderResult) =>
+      r.files.length === 0 ? 'No Documents matched; nothing exported' : r.files.map((f) => f.path).join('\n'),
   },
 }
 

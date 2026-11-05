@@ -1,6 +1,7 @@
-import type { Document, Layer } from '@bannerkit/core'
+import { layoutText, type Document, type Layer, type TextLayer } from '@bannerkit/core'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
+import { measureText } from '../src/render/fonts.ts'
 import { renderDocument } from '../src/render/renderDocument.ts'
 import { expectImageSnapshot } from './snapshot.ts'
 
@@ -20,6 +21,116 @@ async function pixels(png: Buffer) {
 function near(actual: number[], expected: number[], tol = 3) {
   expect(actual.every((v, i) => Math.abs(v - expected[i]!) <= tol), `${actual} ≈ ${expected}`).toBe(true)
 }
+
+/** Bounding box of pixels darker than mid-grey (the ink of black text on white). */
+async function inkBounds(png: Buffer) {
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      if (data[(y * info.width + x) * 4]! < 128) {
+        minX = Math.min(minX, x)
+        maxX = Math.max(maxX, x)
+        minY = Math.min(minY, y)
+        maxY = Math.max(maxY, y)
+      }
+    }
+  }
+  return { minX, minY, maxX, maxY }
+}
+
+const textLayer = (extra: Partial<TextLayer>): TextLayer => ({
+  id: 'text-1',
+  type: 'text',
+  x: 20,
+  y: 10,
+  width: 160,
+  text: 'Hello',
+  fontFamily: 'Inter',
+  fontWeight: 700,
+  fontSize: 24,
+  fill: '#000000',
+  ...extra,
+})
+
+describe('renderDocument: text Layers', () => {
+  it('wraps at the Box width and draws each core line at its position', async () => {
+    const layer = textLayer({ text: 'Spring sale on every shoe', lineHeight: 1.2 })
+    const layout = layoutText(layer, measureText)
+    expect(layout.lines.length).toBeGreaterThan(1)
+
+    const png = await renderDocument(doc([layer], '#ffffff', 200, 120))
+    const ink = await inkBounds(png)
+    // Left aligned at the Box left; the last baseline is where core put it (descender-free text sits on it).
+    expect(ink.minX).toBeGreaterThanOrEqual(20)
+    expect(ink.minX).toBeLessThanOrEqual(23)
+    expect(ink.maxX).toBeLessThanOrEqual(180)
+    expect(ink.minY).toBeGreaterThanOrEqual(10)
+    await expectImageSnapshot('text-wrap-left', png)
+  })
+
+  it('honours align, verticalAlign and letterSpacing', async () => {
+    const layer = textLayer({ text: 'SALE', align: 'right', verticalAlign: 'bottom', height: 100, letterSpacing: 4 })
+    const png = await renderDocument(doc([layer], '#ffffff', 200, 120))
+    const ink = await inkBounds(png)
+    const [line] = layoutText(layer, measureText).lines
+    // Right aligned: the drawn line ends at the Box right edge (the trailing letterSpacing is not part of it).
+    expect(ink.maxX).toBeGreaterThanOrEqual(176)
+    expect(ink.maxX).toBeLessThanOrEqual(180)
+    expect(ink.minX).toBeCloseTo(20 + line!.x, -1)
+    // Bottom aligned: "SALE" has no descenders, so its ink ends on the baseline.
+    expect(ink.maxY).toBeCloseTo(10 + line!.baselineY, -0.5)
+    await expectImageSnapshot('text-align-right-bottom', png)
+  })
+
+  it('AutoFits a headline into its Box', async () => {
+    const layer = textLayer({
+      text: 'Everything must go this weekend',
+      fontSize: 48,
+      height: 80,
+      align: 'center',
+      verticalAlign: 'middle',
+      autoFit: { minFontSize: 10 },
+    })
+    const layout = layoutText(layer, measureText)
+    expect(layout.fontSize).toBeLessThan(48)
+    expect(layout.overflow).toBe(false)
+    const png = await renderDocument(doc([layer], '#ffffff', 200, 100))
+    const ink = await inkBounds(png)
+    expect(ink.minY).toBeGreaterThanOrEqual(10)
+    expect(ink.maxY).toBeLessThanOrEqual(90)
+    await expectImageSnapshot('text-autofit-center-middle', png)
+  })
+
+  it('clips text that still overflows at the minimum size to the Box', async () => {
+    const layer = textLayer({ text: 'Supercalifragilistic', width: 100, height: 30, autoFit: { minFontSize: 20 } })
+    expect(layoutText(layer, measureText)).toMatchObject({ fontSize: 20, overflow: true })
+    const png = await renderDocument(doc([layer], '#ffffff', 200, 60))
+    const ink = await inkBounds(png)
+    expect(ink.maxX).toBeLessThanOrEqual(120)
+    expect(ink.maxX).toBeGreaterThan(115)
+    await expectImageSnapshot('text-overflow-clipped', png)
+  })
+
+  it('rotates text with its Box and applies opacity and shadow', async () => {
+    const layer = textLayer({
+      text: 'New in',
+      fill: '#ffffff',
+      height: 40,
+      align: 'center',
+      verticalAlign: 'middle',
+      rotation: -15,
+      opacity: 0.9,
+      shadow: { color: 'rgba(0,0,0,0.7)', blur: 4, offsetX: 2, offsetY: 3 },
+    })
+    const png = await renderDocument(doc([{ id: 'rect-1', type: 'rect', x: 0, y: 0, width: 200, height: 60, fill: '#3366ff' }, layer], '#ffffff', 200, 60))
+    await expectImageSnapshot('text-rotated-shadow', png)
+  })
+
+  it('refuses to draw a font missing from the manifest instead of falling back', async () => {
+    await expect(renderDocument(doc([textLayer({ fontFamily: 'Helvetica' })]))).rejects.toThrow(/not registered/)
+  })
+})
 
 describe('renderDocument: rect Layers', () => {
   it('fills a linear gradient along the CSS angle (90 = to right)', async () => {

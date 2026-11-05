@@ -1,9 +1,12 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { basename, dirname, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  closest,
+  fontsInManifest,
   splitRuleIssues,
+  textOverflow,
   validateDocument,
   type Document,
   type DocumentRule,
@@ -12,6 +15,7 @@ import {
   type ValidationResult,
 } from '@bannerkit/core'
 import { z } from 'zod'
+import { fontManifest, measureText } from '../render/fonts.ts'
 import { OpError, parseInput } from './errors.ts'
 import { Name, Root, documentFile, projectDir as projectDirOf } from './paths.ts'
 import { listDocumentFiles, requireProject } from './store.ts'
@@ -24,14 +28,60 @@ export type DocumentContext = { projectDir: string }
 
 /**
  * A rule that needs server resources, run after the schema and CORE_RULES pass.
- * Ticket 04 adds the "`src` exists in the Project" rule here.
+ * See assetsExist.
  */
 export type ServerRule = (document: Document, context: DocumentContext) => Promise<RuleIssue[]>
 
-/** Sync rules beyond CORE_RULES that the server applies (e.g. the font manifest, ticket 06). */
-export const SERVER_DOCUMENT_RULES: DocumentRule[] = []
+/**
+ * Sync rules beyond CORE_RULES that the server applies: font family/weight in
+ * the font manifest (error), and text overflowing its Box (warning).
+ */
+export const SERVER_DOCUMENT_RULES: DocumentRule[] = [
+  fontsInManifest(fontManifest()),
+  textOverflow(fontManifest(), measureText),
+]
+
+/**
+ * Every image Layer's `src` names a file inside the Project. A miss suggests
+ * the closest existing Asset.
+ */
+export const assetsExist: ServerRule = async (document, { projectDir }) => {
+  const issues: RuleIssue[] = []
+  let assets: string[] | undefined
+  for (const [i, layer] of document.layers.entries()) {
+    if (layer.type !== 'image') continue
+    const path = `layers[${i}].src`
+    const { src } = layer
+    if (isAbsolute(src) || /^[A-Za-z]:/.test(src) || src.split(/[\\/]/).includes('..')) {
+      issues.push({ path, message: `src "${src}" must be a project-relative path inside the Project` })
+      continue
+    }
+    if (await isFile(join(projectDir, src))) continue
+    assets ??= await listAssets(projectDir)
+    const suggestion = closest(src, assets)
+    issues.push({
+      path,
+      message: `Asset "${src}" not found in Project "${basename(projectDir)}"`,
+      ...(suggestion === undefined ? {} : { suggestion }),
+    })
+  }
+  return issues
+}
+
+/** Project-relative paths of every file under assets/. */
+async function listAssets(projectDir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(join(projectDir, 'assets'), { recursive: true, withFileTypes: true })
+    return entries
+      .filter((e) => e.isFile() && !e.name.startsWith('.'))
+      .map((e) => relative(projectDir, join(e.parentPath, e.name)).split(sep).join('/'))
+  } catch {
+    return []
+  }
+}
+
 /** Async, filesystem-backed rules the server applies. */
-export const SERVER_RULES: ServerRule[] = []
+export const SERVER_RULES: ServerRule[] = [assetsExist]
 
 /** Validates a parsed value as a Document with every core and server rule. */
 export async function checkDocument(value: unknown, context: DocumentContext): Promise<ValidationResult> {
