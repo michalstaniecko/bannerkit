@@ -24,6 +24,7 @@ export {
   type ValidateResult,
 } from './validation.ts'
 export { preview, type PreviewResult } from './preview.ts'
+export { exportFileName, render, type ExportFile, type RenderInput, type RenderResult } from './render.ts'
 export { DEFAULT_PROJECTS_DIR, resolveProjectsRoot } from './root.ts'
 export {
   addAssets,
