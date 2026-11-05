@@ -281,3 +281,41 @@ describe('REST: Render', () => {
     expect(missing.status).toBe(404)
   })
 })
+
+describe('REST: the Selection', () => {
+  const putSelection = (app: ReturnType<typeof createApp>, project: string, body: string) =>
+    app.request(`/api/projects/${project}/selection`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body })
+
+  it('reads null before the editor records a Selection', async () => {
+    expect(await getJson(createApp({ root }), '/api/projects/summer/selection')).toEqual({ status: 200, body: null })
+  })
+
+  it('records the Selection in .state.json and reads it back', async () => {
+    const app = createApp({ root })
+
+    const res = await putSelection(app, 'summer', JSON.stringify({ doc: 'hero', selectedLayerIds: ['rect-1'] }))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ doc: 'hero', selectedLayerIds: ['rect-1'] })
+    expect(JSON.parse(await readFile(join(root, 'summer', '.state.json'), 'utf8'))).toEqual({
+      doc: 'hero',
+      selectedLayerIds: ['rect-1'],
+    })
+    expect(await getJson(app, '/api/projects/summer/selection')).toEqual({
+      status: 200,
+      body: { doc: 'hero', selectedLayerIds: ['rect-1'] },
+    })
+  })
+
+  it('refuses a Selection in a missing Document with 404, and a malformed one with 400', async () => {
+    const app = createApp({ root })
+
+    const missing = await putSelection(app, 'summer', JSON.stringify({ doc: 'nope', selectedLayerIds: [] }))
+    const malformed = await putSelection(app, 'summer', JSON.stringify({ doc: 'hero', selectedLayerIds: 'rect-1' }))
+    const notJson = await putSelection(app, 'summer', '{')
+
+    expect(missing.status).toBe(404)
+    expect(malformed.status).toBe(400)
+    expect(notJson.status).toBe(400)
+  })
+})

@@ -12,8 +12,10 @@ import {
   listDocuments,
   listProjects,
   readDocument,
+  readSelection,
   render,
   writeDocument,
+  writeSelection,
   type ExportFile,
   type OpErrorCode,
   type RenderInput,
@@ -78,6 +80,24 @@ export function createApp({ root, webDir }: AppOptions) {
     const result = await render({ format, scale, quality, root, project: c.req.param('project'), docs: [c.req.param('doc')] })
     const file = result.files[0]!
     return c.body(new Uint8Array(await readFile(file.path)), 200, { 'content-type': RENDER_MIME[file.format] })
+  })
+
+  // Selection (the `readSelection`/`writeSelection` ops, the same `.state.json` that
+  // `bannerkit inspect` reads) ----------------------------------------------------------
+  // GET answers the recorded `{ doc, selectedLayerIds }`, or null when none is.
+  // PUT with `{ doc, selectedLayerIds }` replaces it; the editor sends it, debounced.
+  api.get('/projects/:project/selection', async (c) => c.json(await readSelection({ root, project: c.req.param('project') })))
+
+  api.put('/projects/:project/selection', async (c) => {
+    const body = await c.req.json().catch(() => {
+      throw new OpError('INVALID_INPUT', 'The request body is not valid JSON')
+    })
+    // Only the two fields are passed on; the op validates them.
+    const { doc, selectedLayerIds } = (typeof body === 'object' && body !== null ? body : {}) as {
+      doc: string
+      selectedLayerIds: string[]
+    }
+    return c.json(await writeSelection({ root, project: c.req.param('project'), doc, selectedLayerIds }))
   })
 
   // Assets live at the Document's project-relative `src`: /api/projects/<p>/assets/<file>.
