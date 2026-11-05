@@ -1,5 +1,5 @@
 // Chrome around the editor module: a top bar (Project and Document pickers, save
-// state, zoom) and the Canvas viewport. React holds names, the zoom and the save
+// state, undo/redo, zoom) and the Canvas viewport. React holds names, the zoom and the save
 // state only; the Document and every Fabric object live inside the editor module.
 // Edits reach disk through autosave, fed by the editor's `change` events.
 import { useEffect, useRef, useState } from 'react'
@@ -40,6 +40,7 @@ export function App() {
   const [fit, setFit] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [save, setSave] = useState<SaveState>('saved')
+  const [history, setHistory] = useState({ undo: false, redo: false })
 
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -94,7 +95,11 @@ export function App() {
         if (cancelled || !editor) return
         await editor.load(document, { assetUrl: (src) => api.assetUrl(project, src) })
         if (cancelled) return
+        const syncHistory = () => setHistory({ undo: editor.canUndo(), redo: editor.canRedo() })
+        syncHistory()
+        // Undo and redo are changes too, so they are autosaved like any edit.
         unsubscribe = editor.on('change', (event) => {
+          syncHistory()
           changes++
           setSave('unsaved')
           autosave.schedule(event.document)
@@ -181,6 +186,12 @@ export function App() {
             {SAVE_LABEL[save]}
           </span>
         )}
+        <button type="button" onClick={() => void editorRef.current?.undo()} disabled={!loaded || !history.undo} title="Undo (Ctrl/Cmd+Z)">
+          Undo
+        </button>
+        <button type="button" onClick={() => void editorRef.current?.redo()} disabled={!loaded || !history.redo} title="Redo (Ctrl/Cmd+Shift+Z)">
+          Redo
+        </button>
         <ExportControl editor={editorRef} name={doc} disabled={!loaded} onError={setError} />
         <button type="button" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={!loaded}>
           −

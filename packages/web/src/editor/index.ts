@@ -11,17 +11,25 @@
 // exit with changed text, an arrow-key nudge) the editor commits it: each touched
 // Layer is read back with `objectToLayer`, stored as its Entry's base, and applied
 // again with `applyLayer`, which bakes scale into `width`/`height` (ADR 0001). Then
-// exactly one `change` event carries the new Document. Autosave, undo snapshots (13)
-// and anything else that follows edits hang on `change`.
+// exactly one `change` event carries the new Document. Autosave and anything else
+// that follows edits hang on `change`.
 //
-// Later tickets extend this file: snapshots (13), Layer list actions (14),
-// `apply` (15) and Selection sent to the server (17); `export` (18) renders the
-// shown Canvas offscreen (export.ts).
+// Undo (history.ts): every step ends with a Document snapshot. A direct
+// manipulation records one when it is committed; any other action that replaces
+// the Document (Layer list actions, JSON apply, reload from disk) goes through
+// `apply(document, { cause })`, which shows it and records exactly one step.
+// `undo` / `redo` show a snapshot again and emit `change` like any other edit, so
+// autosave follows them. `load` starts a fresh history.
+//
+// Later tickets extend this file: Layer list actions (14), JSON apply (15),
+// reload from disk (16) and Selection sent to the server (17); `export` (18)
+// renders the shown Canvas offscreen (export.ts).
 import type { Document, Layer, TextLayer } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
+import { createHistory } from './history.ts'
 import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
 import { fitZoom, type Size } from './zoom.ts'
 
@@ -39,15 +47,24 @@ export type LoadOptions = {
   assetUrl?: (src: string) => string
 }
 
-/** What ended a logical modification. */
-export type ChangeCause = 'transform' | 'text' | 'nudge'
+/** What ended a direct manipulation. */
+export type ManipulationCause = 'transform' | 'text' | 'nudge'
+
+/** An action that replaces the whole Document through `apply`. */
+export type ApplyCause = 'layers' | 'json' | 'reload'
+
+/** What made one undo step (or moved through the history). */
+export type ChangeCause = ManipulationCause | ApplyCause | 'undo' | 'redo'
 
 /**
- * One logical modification by the human has ended: a move, resize or rotate is
- * released, a text edit is left with new text, or an arrow key nudged. Fired once
- * per modification, never for `load`.
+ * The shown Document changed by one step: a move, resize or rotate is released, a
+ * text edit is left with new text, an arrow key nudged, an `apply`, an `undo` or a
+ * `redo`. Fired once per step, never for `load`. `layerIds` are the Layers that
+ * changed, appeared or disappeared.
  */
 export type ChangeEvent = { document: Document; cause: ChangeCause; layerIds: string[] }
+
+export type ApplyOptions = { cause: ApplyCause }
 
 /** The selected Layers changed. Ids are bottom → top; empty when nothing is selected. */
 export type SelectionEvent = { layerIds: string[] }
@@ -65,6 +82,18 @@ export type Editor = {
   load(document: Document, options?: LoadOptions): Promise<void>
   /** The Document as currently shown. */
   getDocument(): Document
+  /**
+   * Shows `document` (already valid) in place of the current one, keeping the
+   * Asset URLs of `load`, records it as one undo step and emits one `change`.
+   * Resolves once it shows; does nothing when it equals the shown Document.
+   */
+  apply(document: Document, options: ApplyOptions): Promise<void>
+  /** Steps back one undo step (ending a text edit first). Resolves false when there is none. */
+  undo(): Promise<boolean>
+  /** Steps forward one undone step. Resolves false when there is none. */
+  redo(): Promise<boolean>
+  canUndo(): boolean
+  canRedo(): boolean
   /** The ids of the selected Layers, bottom → top. */
   getSelection(): string[]
   /** Subscribes to an editor event; returns the unsubscribe function. */
@@ -96,6 +125,17 @@ const ARROWS: Record<string, [number, number]> = {
   ArrowDown: [0, 1],
 }
 
+/** Keys typed into these go to the field, not the editor. */
+const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
+
+/** Ids of the Layers that differ between two Documents, in `after` order then removed ones. */
+function changedLayerIds(before: Document, after: Document): string[] {
+  const old = new Map(before.layers.map((l) => [l.id, JSON.stringify(l)]))
+  const ids = after.layers.filter((l) => old.get(l.id) !== JSON.stringify(l)).map((l) => l.id)
+  const kept = new Set(after.layers.map((l) => l.id))
+  return [...ids, ...before.layers.filter((l) => !kept.has(l.id)).map((l) => l.id)]
+}
+
 export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {}): Editor {
   let canvas: Canvas | undefined
   let current: Document | undefined
@@ -105,6 +145,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
   /** Bumped by every `load`, so only the latest one shows its Document. */
   let loads = 0
   let selected: string[] = []
+  const history = createHistory()
   let unmount = () => {}
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
     change: new Set(),
@@ -146,7 +187,64 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     }
     if (regroup) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
     c.requestRenderAll()
-    if (touched.length > 0) emit('change', { document: documentNow(), cause, layerIds: touched.map((e) => e.base.id) })
+    if (touched.length === 0) return
+    const document = documentNow()
+    history.record(document)
+    emit('change', { document, cause, layerIds: touched.map((e) => e.base.id) })
+  }
+
+  /**
+   * Lays `document` out in place of what is shown, once its fonts and Assets have
+   * loaded. Resolves false when a newer `show` (or `destroy`) won meanwhile.
+   */
+  const show = async (document: Document, nextEnv: MapperEnv): Promise<boolean> => {
+    const c = requireCanvas()
+    const token = ++loads
+    const next = structuredClone(document)
+    // Fonts first: text is laid out (AutoFit, wrapping) only with the real font.
+    await loadFonts(facesUsed(next))
+    if (token !== loads || canvas !== c) return false
+    // Fabric caches glyph widths per family; anything still shown is re-measured.
+    for (const object of c.getObjects()) if (object instanceof Textbox) object.initDimensions()
+    c.requestRenderAll()
+
+    const objects = await Promise.all(next.layers.map((layer) => layerToObject(layer, nextEnv)))
+    if (token !== loads || canvas !== c) return false // a newer show (or destroy) won
+    c.discardActiveObject()
+    c.remove(...c.getObjects())
+    current = next
+    env = nextEnv
+    entries = next.layers.map((layer, i) => ({ base: layer, object: objects[i]! }))
+    for (const { object } of entries) if (object instanceof Textbox) object.controls = textControls(resizeText)
+    c.backgroundColor = current.canvas.background ?? ''
+    c.add(...entries.map((e) => e.object))
+    applyZoom()
+    c.renderAll()
+    return true
+  }
+
+  /** Shows `document` as a step taken by `cause` (recording it unless it is a history move), and emits it. */
+  const showStep = async (document: Document, cause: ChangeCause): Promise<boolean> => {
+    const before = documentNow()
+    if (!(await show(document, env))) return false
+    const after = documentNow()
+    if (cause !== 'undo' && cause !== 'redo') history.record(after)
+    emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
+    return true
+  }
+
+  /** Ends a text edit in progress, so it becomes its own step before anything else. */
+  const finishTextEdit = () => {
+    const active = canvas?.getActiveObject()
+    if (active instanceof Textbox && active.isEditing) active.exitEditing()
+  }
+
+  const travel = async (direction: 'undo' | 'redo'): Promise<boolean> => {
+    if (!current) return false
+    finishTextEdit()
+    const snapshot = direction === 'undo' ? history.undo() : history.redo()
+    if (!snapshot) return false
+    return showStep(snapshot, direction)
   }
 
   const reportSelection = () => {
@@ -167,11 +265,28 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     return entry.base.width !== before.width || entry.base.height !== before.height
   }
 
+  /** Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z and Ctrl+Y redo. */
+  const undoKeys = (event: KeyboardEvent): boolean => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return false
+    const key = event.key.toLowerCase()
+    const direction = key === 'z' ? (event.shiftKey ? 'redo' : 'undo') : key === 'y' && !event.shiftKey ? 'redo' : undefined
+    if (!direction) return false
+    event.preventDefault()
+    void travel(direction)
+    return true
+  }
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!canvas || !current) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest?.(FIELD)) return
+    if (undoKeys(event)) return
+    nudge(event)
+  }
+
   const nudge = (event: KeyboardEvent) => {
     const direction = ARROWS[event.key]
     if (!direction || !canvas || event.altKey || event.ctrlKey || event.metaKey) return
-    const target = event.target as HTMLElement | null
-    if (target?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return
     const active = canvas.getActiveObject()
     if (!active || (active instanceof Textbox && active.isEditing)) return
     event.preventDefault()
@@ -213,37 +328,27 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       c.on('selection:updated', reportSelection)
       c.on('selection:cleared', reportSelection)
       const keyTarget = container.ownerDocument
-      keyTarget.addEventListener('keydown', nudge)
-      unmount = () => keyTarget.removeEventListener('keydown', nudge)
+      keyTarget.addEventListener('keydown', onKeyDown)
+      unmount = () => keyTarget.removeEventListener('keydown', onKeyDown)
     },
 
     async load(document, { assetUrl = (src: string) => src } = {}) {
-      const c = requireCanvas()
-      const token = ++loads
-      const next = structuredClone(document)
-      // Fonts first: text is laid out (AutoFit, wrapping) only with the real font.
-      await loadFonts(facesUsed(next))
-      if (token !== loads || canvas !== c) return
-      // Fabric caches glyph widths per family; anything still shown is re-measured.
-      for (const object of c.getObjects()) if (object instanceof Textbox) object.initDimensions()
-      c.requestRenderAll()
-
-      const nextEnv: MapperEnv = { assetUrl, measure: measureText }
-      const objects = await Promise.all(next.layers.map((layer) => layerToObject(layer, nextEnv)))
-      if (token !== loads || canvas !== c) return // a newer load (or destroy) won
-      c.discardActiveObject()
-      c.remove(...c.getObjects())
-      current = next
-      env = nextEnv
-      entries = next.layers.map((layer, i) => ({ base: layer, object: objects[i]! }))
-      for (const { object } of entries) if (object instanceof Textbox) object.controls = textControls(resizeText)
-      c.backgroundColor = current.canvas.background ?? ''
-      c.add(...entries.map((e) => e.object))
-      applyZoom()
-      c.renderAll()
+      if (await show(document, { assetUrl, measure: measureText })) history.reset(document)
     },
 
     getDocument: documentNow,
+
+    async apply(document, { cause }) {
+      if (!current) throw new Error('No Document loaded')
+      finishTextEdit()
+      if (JSON.stringify(document) === JSON.stringify(documentNow())) return
+      await showStep(document, cause)
+    },
+
+    undo: () => travel('undo'),
+    redo: () => travel('redo'),
+    canUndo: () => current !== undefined && history.canUndo(),
+    canRedo: () => current !== undefined && history.canRedo(),
 
     getSelection: () => [...selected],
 
