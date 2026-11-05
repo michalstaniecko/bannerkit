@@ -4,11 +4,15 @@
 
 **Blocked by:** 13
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A recursive watcher on the projects root emits SSE `document-changed { project, doc, hash }`
-- [ ] The editor ignores its own autosave echo by comparing content hashes
-- [ ] When the editor is clean, it reloads silently; the reload counts as one undo step
-- [ ] When the editor has unsaved edits, it shows the reload / keep-mine banner; both choices behave as labelled
-- [ ] An S2 test asserts that an external change while dirty raises a conflict
-- [ ] An S3 test asserts that editing a Document file on disk reloads the editor
+- [x] A recursive watcher on the projects root emits SSE `document-changed { project, doc, hash }`
+- [x] The editor ignores its own autosave echo by comparing content hashes
+- [x] When the editor is clean, it reloads silently; the reload counts as one undo step
+- [x] When the editor has unsaved edits, it shows the reload / keep-mine banner; both choices behave as labelled
+- [x] An S2 test asserts that an external change while dirty raises a conflict
+- [x] An S3 test asserts that editing a Document file on disk reloads the editor
+
+## Comments
+
+- Merged branch `worktree-agent-a4e7318b5686acb98` into `bannerkit-v1` (fast-forward); unit, typecheck and e2e all green.
