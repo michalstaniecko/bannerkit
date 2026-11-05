@@ -46,3 +46,12 @@ body,
 .canvas-host[hidden] {
   display: none;
 }
+
+.reload-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #fff4cc;
+  border-bottom: 1px solid #e0c96a;
+}

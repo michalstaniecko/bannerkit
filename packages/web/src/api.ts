@@ -4,8 +4,11 @@ import type { Document } from '@bannerkit/core'
 export type ProjectRef = { name: string }
 export type DocumentRef = { project: string; name: string }
 export type Issue = { path: string; message: string; suggestion?: string }
-/** A Document as read or saved. `warnings` include missing Assets, which the editor shows as placeholders. */
-export type DocumentResult = DocumentRef & { document: Document; warnings: Issue[] }
+/**
+ * A Document as read or saved. `warnings` include missing Assets, which the editor shows as placeholders.
+ * `hash` is the content hash of the file on disk, the one live-reload `document-changed` events carry.
+ */
+export type DocumentResult = DocumentRef & { document: Document; warnings: Issue[]; hash: string }
 export type ApiError = { code: string; message: string; issues: Issue[] }
 
 export class ApiRequestError extends Error {

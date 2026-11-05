@@ -1,0 +1,157 @@
+// S2: live reload in the editor (jsdom + node-canvas). A `document-changed` hash
+// that is the editor's own save is ignored; any other change reloads a clean
+// editor as one undo step, and raises a conflict when edits are unsaved.
+import type { Document, Layer } from '@bannerkit/core'
+import { afterEach, describe, expect, it } from 'vitest'
+import { createAutosave } from '../src/autosave.ts'
+import { createEditor, type Editor } from '../src/editor/index.ts'
+import { createLiveReload, type Conflict } from '../src/live-reload.ts'
+
+const rect = (x: number): Layer => ({ id: 'rect-1', type: 'rect', x, y: 100, width: 100, height: 50, fill: '#ff0000' })
+const doc = (x: number): Document => ({ version: 1, name: 'hero', canvas: { width: 400, height: 300, background: '#ffffff' }, layers: [rect(x)] })
+
+let editor: Editor | undefined
+afterEach(async () => {
+  await editor?.destroy()
+  editor = undefined
+  document.body.innerHTML = ''
+})
+
+/**
+ * Opens `doc(100)` in an editor wired like the app: changes are autosaved to a fake
+ * disk (a save answers the new hash), and live reload reads that disk.
+ */
+async function open() {
+  const container = document.createElement('div')
+  document.body.append(container)
+  editor = createEditor({ loadFonts: async () => {} })
+  editor.mount(container)
+  let version = 0
+  const disk = { document: doc(100), hash: 'h0' }
+  /** Writes `document` to disk as someone else (or as the editor), answering its hash. */
+  const write = (document: Document) => {
+    disk.document = structuredClone(document)
+    disk.hash = `h${++version}`
+    return disk.hash
+  }
+  let releaseSave: (() => void) | undefined
+  let slowSaves = false
+  const autosave = createAutosave(
+    async (document) => {
+      if (slowSaves) await new Promise<void>((resolve) => (releaseSave = resolve))
+      live.known(write(document))
+    },
+    { delay: 20 },
+  )
+  const conflicts: (Conflict | null)[] = []
+  const live = createLiveReload({
+    editor,
+    autosave,
+    read: async () => structuredClone(disk),
+    onConflict: (conflict) => conflicts.push(conflict),
+  })
+  await editor.load(disk.document)
+  live.known(disk.hash)
+  editor.on('change', (event) => {
+    if (event.cause !== 'reload') autosave.schedule(event.document)
+  })
+  return {
+    editor,
+    autosave,
+    live,
+    disk,
+    write,
+    conflicts,
+    /** Saves made from now on wait for `release()`. */
+    slowSaves: () => {
+      slowSaves = true
+      return () => releaseSave?.()
+    },
+  }
+}
+
+/** An edit by the human (one undo step), autosaved like any other. */
+const edit = (e: Editor, x: number) => e.apply(doc(x), { cause: 'json' })
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+describe('live reload', () => {
+  it('reloads a clean editor silently, as one undo step', async () => {
+    const { editor, live, write, conflicts } = await open()
+
+    await live.changed(write(doc(250)))
+
+    expect(editor.getDocument()).toEqual(doc(250))
+    expect(conflicts).toEqual([])
+    expect(await editor.undo()).toBe(true)
+    expect(editor.getDocument()).toEqual(doc(100))
+    expect(editor.canUndo()).toBe(false)
+  })
+
+  it('ignores its own autosave echo', async () => {
+    const { editor, autosave, live, disk, conflicts } = await open()
+    await edit(editor, 120)
+    await autosave.flush()
+
+    await live.changed(disk.hash)
+
+    expect(editor.getDocument()).toEqual(doc(120))
+    expect(conflicts).toEqual([])
+    expect(await editor.undo()).toBe(true)
+    expect(editor.canUndo()).toBe(false)
+  })
+
+  it('ignores the echo of a save still in flight', async () => {
+    const { editor, live, conflicts, slowSaves } = await open()
+    const release = slowSaves()
+    await edit(editor, 120)
+    await wait(40)
+
+    // The file is written before the save answers, so the echo can arrive first.
+    const echo = live.changed('h1')
+    release()
+    await echo
+
+    expect(conflicts).toEqual([])
+    expect(editor.getDocument()).toEqual(doc(120))
+  })
+
+  it('raises a conflict when the editor has unsaved edits, and holds autosave', async () => {
+    const { editor, live, disk, write, conflicts } = await open()
+    await edit(editor, 120)
+
+    await live.changed(write(doc(250)))
+    await wait(60)
+
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0]).not.toBeNull()
+    expect(editor.getDocument()).toEqual(doc(120))
+    expect(disk.document).toEqual(doc(250))
+  })
+
+  it('"reload" shows the file on disk, as one undo step, and drops the unsaved edits', async () => {
+    const { editor, live, disk, write, conflicts } = await open()
+    await edit(editor, 120)
+    await live.changed(write(doc(250)))
+
+    await conflicts[0]!.reload()
+    await wait(60)
+
+    expect(conflicts.at(-1)).toBeNull()
+    expect(editor.getDocument()).toEqual(doc(250))
+    expect(disk.document).toEqual(doc(250))
+    await editor.undo()
+    expect(editor.getDocument()).toEqual(doc(120))
+  })
+
+  it('"keep mine" saves the editor\'s Document over the file on disk', async () => {
+    const { editor, live, disk, write, conflicts } = await open()
+    await edit(editor, 120)
+    await live.changed(write(doc(250)))
+
+    await conflicts[0]!.keepMine()
+
+    expect(conflicts.at(-1)).toBeNull()
+    expect(editor.getDocument()).toEqual(doc(120))
+    expect(disk.document).toEqual(doc(120))
+  })
+})

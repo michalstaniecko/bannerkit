@@ -7,6 +7,8 @@ import { api, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 import { ExportControl } from './ExportControl.tsx'
+import { openLiveReload, type Conflict } from './live-reload.ts'
+import { ReloadBanner } from './ReloadBanner.tsx'
 import { createSelectionSync } from './selection-sync.ts'
 
 const VIEWPORT_PADDING = 32
@@ -41,6 +43,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [save, setSave] = useState<SaveState>('saved')
   const [history, setHistory] = useState({ undo: false, redo: false })
+  const [conflict, setConflict] = useState<Conflict | null>(null)
 
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -77,7 +80,7 @@ export function App() {
     const autosave = createAutosave(
       async (document) => {
         const saving = changes
-        await api.writeDocument(project, doc, document)
+        live.known((await api.writeDocument(project, doc, document)).hash)
         if (!cancelled && saving === changes) setSave('saved')
       },
       { onError: (e) => !cancelled && (setSave('failed'), setError(`Not saved: ${(e as Error).message}`)) },
@@ -86,11 +89,19 @@ export function App() {
     const selectionSync = createSelectionSync((ids) => api.writeSelection(project, doc, ids), {
       onError: (e) => console.warn('Selection not recorded:', e),
     })
+    // A change on disk reloads a clean editor, or asks "reload / keep mine" (live-reload.ts).
+    const live = openLiveReload({ project, doc }, {
+      editor: editorRef.current!,
+      autosave,
+      read: () => api.readDocument(project, doc),
+      onConflict: (c) => !cancelled && setConflict(c),
+      onError: (e) => !cancelled && setError(`Reload failed: ${(e as Error).message}`),
+    })
     let unsubscribe = () => {}
     let unsubscribeSelection = () => {}
-    api
-      .readDocument(project, doc)
-      .then(async ({ document }) => {
+    live.connected
+      .then(() => api.readDocument(project, doc))
+      .then(async ({ document, hash }) => {
         const editor = editorRef.current
         if (cancelled || !editor) return
         await editor.load(document, { assetUrl: (src) => api.assetUrl(project, src) })
@@ -100,6 +111,8 @@ export function App() {
         // Undo and redo are changes too, so they are autosaved like any edit.
         unsubscribe = editor.on('change', (event) => {
           syncHistory()
+          // A reload shows what is on disk already: nothing to save.
+          if (event.cause === 'reload') return setSave('saved')
           changes++
           setSave('unsaved')
           autosave.schedule(event.document)
@@ -109,10 +122,13 @@ export function App() {
         setError(null)
         setSave('saved')
         setLoaded(true)
+        live.ready(hash)
       })
       .catch((e: Error) => !cancelled && setError(e.message))
     return () => {
       cancelled = true
+      live.stop()
+      setConflict(null)
       unsubscribe()
       unsubscribeSelection()
       selectionSync.cancel()
@@ -207,6 +223,7 @@ export function App() {
           100%
         </button>
       </header>
+      <ReloadBanner conflict={conflict} />
       {error && <div className="error">{error}</div>}
       <main className="viewport" ref={viewportRef}>
         <div className="canvas-host" ref={hostRef} hidden={!loaded} />

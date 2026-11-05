@@ -85,4 +85,74 @@ describe('autosave', () => {
     expect(errors).toEqual([new Error('disk full')])
     expect(saved).toEqual(['b'])
   })
+
+  it('is dirty while a change is waiting or being saved', async () => {
+    let release = () => {}
+    const autosave = createAutosave(() => new Promise<void>((resolve) => (release = resolve)))
+    expect(autosave.dirty()).toBe(false)
+
+    autosave.schedule(doc('a'))
+    expect(autosave.dirty()).toBe(true)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(autosave.dirty()).toBe(true)
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(autosave.dirty()).toBe(false)
+  })
+
+  it('idle waits for the save in flight without saving a waiting change', async () => {
+    const log: string[] = []
+    let release = () => {}
+    const autosave = createAutosave(async (d) => {
+      if (d.name === 'a') await new Promise<void>((resolve) => (release = resolve))
+      log.push(`saved ${d.name}`)
+    })
+    autosave.schedule(doc('a'))
+    await vi.advanceTimersByTimeAsync(500)
+    autosave.schedule(doc('b'))
+
+    const idle = autosave.idle().then(() => log.push('idle'))
+    release()
+    await idle
+
+    expect(log).toEqual(['saved a', 'idle'])
+    expect(autosave.dirty()).toBe(true)
+  })
+
+  it('hold keeps changes unsaved until release', async () => {
+    const saved: string[] = []
+    const autosave = createAutosave(async (d) => void saved.push(d.name))
+
+    autosave.schedule(doc('a'))
+    autosave.hold()
+    autosave.schedule(doc('b'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(saved).toEqual([])
+    expect(autosave.dirty()).toBe(true)
+    autosave.release()
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(saved).toEqual(['b'])
+  })
+
+  it('a failed save stays dirty until a later save succeeds; flush retries it', async () => {
+    const saved: string[] = []
+    let fail = true
+    const autosave = createAutosave(async (d) => {
+      if (fail) throw new Error('offline')
+      saved.push(d.name)
+    })
+    autosave.schedule(doc('a'))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(autosave.dirty()).toBe(true)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(saved).toEqual([])
+
+    fail = false
+    await autosave.flush()
+
+    expect(saved).toEqual(['a'])
+    expect(autosave.dirty()).toBe(false)
+  })
 })
