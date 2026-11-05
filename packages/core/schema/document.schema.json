@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canvas": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "background": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "CSS colour, e.g. \"#ff0000\" or \"rgba(0,0,0,0.5)\""
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "background"
+      ],
+      "additionalProperties": false
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/RectLayer"
+          },
+          {
+            "$ref": "#/$defs/ImageLayer"
+          },
+          {
+            "$ref": "#/$defs/TextLayer"
+          }
+        ]
+      },
+      "description": "Bottom to top"
+    }
+  },
+  "required": [
+    "version",
+    "name",
+    "canvas",
+    "layers"
+  ],
+  "additionalProperties": false,
+  "title": "Bannerkit Document v1",
+  "$defs": {
+    "RectLayer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the Document; readable `<type>-<n>` when generated"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rotation": {
+          "description": "Degrees around the Box centre, default 0",
+          "type": "number"
+        },
+        "opacity": {
+          "description": "0-1, default 1",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "visible": {
+          "description": "Default true",
+          "type": "boolean"
+        },
+        "locked": {
+          "description": "Default false",
+          "type": "boolean"
+        },
+        "shadow": {
+          "type": "object",
+          "properties": {
+            "color": {
+              "type": "string",
+              "minLength": 1,
+              "description": "CSS colour, e.g. \"#ff0000\" or \"rgba(0,0,0,0.5)\""
+            },
+            "blur": {
+              "type": "number",
+              "minimum": 0
+            },
+            "offsetX": {
+              "type": "number"
+            },
+            "offsetY": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "color",
+            "blur",
+            "offsetX",
+            "offsetY"
+          ],
+          "additionalProperties": false
+        },
+        "type": {
+          "type": "string",
+          "const": "rect"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "CSS colour, e.g. \"#ff0000\" or \"rgba(0,0,0,0.5)\""
+            },
+            {
+              "$ref": "#/$defs/LinearGradient"
+            }
+          ]
+        },
+        "cornerRadius": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "x",
+        "y",
+        "width",
+        "type",
+        "height",
+        "fill"
+      ],
+      "additionalProperties": false
+    },
+    "LinearGradient": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "linear"
+        },
+        "angle": {
+          "type": "number",
+          "description": "Degrees, CSS convention: 0 = to top, 90 = to right"
+        },
+        "stops": {
+          "minItems": 2,
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "CSS colour, e.g. \"#ff0000\" or \"rgba(0,0,0,0.5)\""
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "description": "[colour, offset 0-1] pairs"
+        }
+      },
+      "required": [
+        "type",
+        "angle",
+        "stops"
+      ],
+      "additionalProperties": false
+    },
+    "ImageLayer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the Document; readable `<type>-<n>` when generated"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rotation": {
+          "description": "Degrees around the Box centre, default 0",
+          "type": "number"
+        },
+        "opacity": {
+          "description": "0-1, default 1",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "visible": {
+          "description": "Default true",
+          "type": "boolean"
+        },
+        "locked": {
+          "description": "Default false",
+          "type": "boolean"
+        },
+        "shadow": {
+          "type": "object",
+          "properties": {
+            "color": {
+              "type": "string",
+              "minLength": 1,
+              "description": "CSS colour, e.g. \"#ff0000\" or \"rgba(0,0,0,0.5)\""
+            },
+            "blur": {
+              "type": "number",
+              "minimum": 0
+            },
+            "offsetX": {
+              "type": "number"
+            },
+            "offsetY": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "color",
+            "blur",
+            "offsetX",
+            "offsetY"
+          ],
+          "additionalProperties": false
+        },
+        "type": {
+          "type": "string",
+          "const": "image"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        },
+        "src": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Project-relative Asset path, e.g. \"assets/shoe.png\""
+        },
+        "fit": {
+          "type": "string",
+          "enum": [
+            "contain",
+            "cover",
+            "stretch"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "x",
+        "y",
+        "width",
+        "type",
+        "height",
+        "src",
+        "fit"
+      ],
+      "additionalProperties": false
+    },
+    "TextLayer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the Document; readable `<type>-<n>` when generated"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rotation": {
+          "description": "Degrees around the Box centre, default 0",
+          "type": "number"
+        },
+        "opacity": {
+          "description": "0-1, default 1",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "visible": {
+          "description": "Default true",
+          "type": "boolean"
+        },
+        "locked": {
+          "description": "Default false",
+          "type": "boolean"
+        },
+        "shadow": {
+          "type": "object",
+          "properties": {
+            "color": {
+              "type": "string",
+              "minLength": 1,
+              "description": "CSS colour, e.g. \"#ff0000\" or \"rgba(0,0,0,0.5)\""
+            },
+            "blur": {
+              "type": "number",
+              "minimum": 0
+            },
+            "offsetX": {
+              "type": "number"
+            },
+            "offsetY": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "color",
+            "blur",
+            "offsetX",
+            "offsetY"
+          ],
+          "additionalProperties": false
+        },
+        "type": {
+          "type": "string",
+          "const": "text"
+        },
+        "text": {
+          "type": "string"
+        },
+        "height": {
+          "description": "Required when autoFit is set",
+          "type": "number",
+          "minimum": 0
+        },
+        "fontFamily": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fontWeight": {
+          "type": "number",
+          "enum": [
+            100,
+            200,
+            300,
+            400,
+            500,
+            600,
+            700,
+            800,
+            900
+          ]
+        },
+        "fontSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "lineHeight": {
+          "description": "Multiple of fontSize",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "letterSpacing": {
+          "description": "Pixels",
+          "type": "number"
+        },
+        "fill": {
+          "type": "string",
+          "minLength": 1,
+          "description": "CSS colour, e.g. \"#ff0000\" or \"rgba(0,0,0,0.5)\""
+        },
+        "align": {
+          "type": "string",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "verticalAlign": {
+          "type": "string",
+          "enum": [
+            "top",
+            "middle",
+            "bottom"
+          ]
+        },
+        "autoFit": {
+          "description": "Shrink fontSize down to minFontSize until the text fits its Box; requires height",
+          "type": "object",
+          "properties": {
+            "minFontSize": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "required": [
+            "minFontSize"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "x",
+        "y",
+        "width",
+        "type",
+        "text",
+        "fontFamily",
+        "fontWeight",
+        "fontSize",
+        "fill"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

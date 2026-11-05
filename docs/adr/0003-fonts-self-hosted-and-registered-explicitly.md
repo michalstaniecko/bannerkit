@@ -1,0 +1,3 @@
+# Fonts are self-hosted and registered explicitly
+
+Every font is a TTF file in `./fonts/`, listed in `fonts/fonts.json` (family, weight, style, file). The server registers each file explicitly with `FontLibrary.use()`. The browser generates `@font-face` rules from the same manifest and awaits `document.fonts.load()` before measuring text. Both renderers use the *same* TTF files: `@fontsource` ships only woff2, and different font builds have slightly different metrics, which would break the browser-vs-server pixel match. Weights are never synthesised, and a Document using a family/weight pair missing from the manifest fails validation. Inter is bundled under OFL-1.1.
