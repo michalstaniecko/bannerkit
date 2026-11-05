@@ -25,3 +25,10 @@ export {
 } from './validation.ts'
 export { preview, type PreviewResult } from './preview.ts'
 export { DEFAULT_PROJECTS_DIR, resolveProjectsRoot } from './root.ts'
+export {
+  addAssets,
+  type AddAssetsInput,
+  type AddAssetsResult,
+  type AssetFormat,
+  type AssetResult,
+} from './assets.ts'
