@@ -183,7 +183,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     for (const object of objects) {
       const entry = entryOf(object)
       if (!entry) continue
-      entry.base = objectToLayer(object, entry.base)
+      const layer = objectToLayer(object, entry.base)
+      entry.base = cause === 'transform' ? wholePixels(layer) : layer
       applyLayer(object, entry.base, env)
       touched.push(entry)
     }
@@ -416,3 +417,15 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 
 export type { Size } from './zoom.ts'
 export { EXPORT_FORMATS, exportFileName, type ExportFormat, type ExportOptions, type ExportResult, type ExportScale } from './export.ts'
+
+/**
+ * A drag, resize or rotate lands on whole pixels (`x`, `y`, `width`, `height`) and
+ * a rotation of 0.1°, so the human's edits stay readable in the JSON. Nudges move
+ * by whole pixels already and keep whatever the Layer had.
+ */
+function wholePixels(layer: Layer): Layer {
+  const rounded: Layer = { ...layer, x: Math.round(layer.x), y: Math.round(layer.y), width: Math.round(layer.width) }
+  if ('height' in layer && layer.height !== undefined) (rounded as { height: number }).height = Math.round(layer.height)
+  if (layer.rotation !== undefined) rounded.rotation = Math.round(layer.rotation * 10) / 10 || 0
+  return rounded
+}

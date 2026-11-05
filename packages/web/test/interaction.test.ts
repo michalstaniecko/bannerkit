@@ -132,6 +132,35 @@ describe('resizing and rotating', () => {
   })
 })
 
+describe('whole-pixel transforms', () => {
+  it('a drag, resize or multi-select move writes whole-pixel x/y/width/height', async () => {
+    const { editor, upper } = await open(two())
+    drag(upper, [150, 125], [180.4, 145.6])
+    expect(editor.getDocument().layers[0]).toMatchObject({ x: 130, y: 121, width: 100, height: 50 })
+
+    drag(upper, [230, 146], [262.7, 146]) // the right handle (Box now at x 130..230)
+    expect(editor.getDocument().layers[0]).toMatchObject({ x: 130, y: 121, width: 133, height: 50 })
+
+    drag(upper, [5, 5], [395, 295]) // rubber-band both
+    drag(upper, [190, 146], [193.3, 148.8])
+    const [a, b] = editor.getDocument().layers
+    expect(a).toMatchObject({ x: 133, y: 124, width: 133, height: 50 })
+    expect([b!.x, b!.y, b!.width, b!.height, b!.rotation]).toEqual([253, 203, 100, 50, 30])
+  })
+
+  it('a rotation writes the angle rounded to 0.1°', async () => {
+    const { editor, upper } = await open(doc([rect()]))
+    click(upper, [150, 125])
+    const handle = editor.objectFor('rect-1')!.oCoords.mtr!
+
+    drag(upper, [handle.x, handle.y], [150 + 200, 125 + 37]) // ≈ 100.48°
+
+    const layer = editor.getDocument().layers[0]!
+    expect(layer.rotation).toBe(100.5)
+    expect([layer.x, layer.y, layer.width, layer.height]).toEqual([100, 100, 100, 50])
+  })
+})
+
 const text = (over: Partial<TextLayer> = {}): TextLayer => ({
   id: 'text-1',
   type: 'text',
