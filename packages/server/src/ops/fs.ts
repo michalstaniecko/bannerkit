@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { link, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 /** Writes via a temp file in the same directory, then renames, so readers never see a partial file. */
@@ -13,6 +13,26 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array): 
   } catch (error) {
     await rm(tmp, { force: true })
     throw error
+  }
+}
+
+/**
+ * Like writeFileAtomic, but never replaces an existing file: the temp file is
+ * hard-linked into place, which fails if the name is taken. Returns false then.
+ */
+export async function writeFileAtomicNew(path: string, data: string | Uint8Array): Promise<boolean> {
+  const dir = dirname(path)
+  await mkdir(dir, { recursive: true })
+  const tmp = join(dir, `.${basename(path)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`)
+  try {
+    await writeFile(tmp, data)
+    await link(tmp, path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+    throw error
+  } finally {
+    await rm(tmp, { force: true })
   }
 }
 

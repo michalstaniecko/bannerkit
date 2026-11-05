@@ -7,6 +7,7 @@ export type OpErrorCode =
   | 'NOT_FOUND'
   | 'ALREADY_EXISTS'
   | 'RENDER_FAILED'
+  | 'UNSUPPORTED_ASSET'
 
 /** A path-located problem: `{ path, message, suggestion? }`, the same shape core validation reports. */
 export type OpIssue = Issue

@@ -6,6 +6,7 @@ import { parseArgs, type ParseArgsConfig } from 'node:util'
 import { parseSize, type Issue, type PresetId, type Size } from '@bannerkit/core'
 import {
   OpError,
+  addAssets,
   createDocument,
   createProject,
   duplicateDocument,
@@ -14,6 +15,7 @@ import {
   resolveProjectsRoot,
   type RenderResult,
   validate,
+  type AddAssetsResult,
   type ValidateResult,
 } from '../ops/index.ts'
 
@@ -143,6 +145,15 @@ const COMMANDS: Record<string, Command> = {
     run: ({ root, args: [project, from, name], values }) =>
       duplicateDocument({ root, project: project!, from: from!, ...(name ? { name } : {}), ...sizeChoice(values) }),
     human: (r) => `Created Document ${r.name} (${r.document.canvas.width}x${r.document.canvas.height}) at ${r.path}`,
+  },
+  'asset add': {
+    usage: 'bannerkit asset add <project> <files...>',
+    summary: 'Ingest PNG, JPEG, WebP or SVG files into assets/ and print each src and size',
+    positionals: [2, Infinity],
+    options: {},
+    run: ({ root, cwd, args: [project, ...paths] }) =>
+      addAssets({ root, project: project!, files: paths.map((p) => ({ path: resolve(cwd, p) })) }),
+    human: (r: AddAssetsResult) => r.assets.map((a) => `${a.src} ${a.width}x${a.height}`).join('\n'),
   },
   validate: {
     usage: 'bannerkit validate <project | path/to/doc.json>',
