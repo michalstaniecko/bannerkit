@@ -1,12 +1,17 @@
-// Chrome around the editor module: a top bar (Project and Document pickers, zoom)
-// and the Canvas viewport. React holds names and the zoom only; the Document and
-// every Fabric object live inside the editor module.
+// Chrome around the editor module: a top bar (Project and Document pickers, save
+// state, zoom) and the Canvas viewport. React holds names, the zoom and the save
+// state only; the Document and every Fabric object live inside the editor module.
+// Edits reach disk through autosave, fed by the editor's `change` events.
 import { useEffect, useRef, useState } from 'react'
 import { api, type DocumentRef, type ProjectRef } from './api.ts'
+import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 
 const VIEWPORT_PADDING = 32
 const ZOOM_STEP = 1.25
+
+type SaveState = 'saved' | 'unsaved' | 'failed'
+const SAVE_LABEL: Record<SaveState, string> = { saved: 'Saved', unsaved: 'Unsaved changes', failed: 'Not saved' }
 
 /** Keeps the picked Project/Document in the URL so a reload reopens them. */
 function readSelectionFromUrl() {
@@ -32,6 +37,7 @@ export function App() {
   const [zoom, setZoom] = useState(1)
   const [fit, setFit] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [save, setSave] = useState<SaveState>('saved')
 
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -62,17 +68,40 @@ export function App() {
     setLoaded(false)
     if (!project || !doc) return
     let cancelled = false
+    // Every change the human makes is autosaved; `changes` tells a finished save
+    // whether a newer change is still waiting.
+    let changes = 0
+    const autosave = createAutosave(
+      async (document) => {
+        const saving = changes
+        await api.writeDocument(project, doc, document)
+        if (!cancelled && saving === changes) setSave('saved')
+      },
+      { onError: (e) => !cancelled && (setSave('failed'), setError(`Not saved: ${(e as Error).message}`)) },
+    )
+    let unsubscribe = () => {}
     api
       .readDocument(project, doc)
       .then(async ({ document }) => {
-        if (cancelled || !editorRef.current) return
-        await editorRef.current.load(document, { assetUrl: (src) => api.assetUrl(project, src) })
+        const editor = editorRef.current
+        if (cancelled || !editor) return
+        await editor.load(document, { assetUrl: (src) => api.assetUrl(project, src) })
+        if (cancelled) return
+        unsubscribe = editor.on('change', (event) => {
+          changes++
+          setSave('unsaved')
+          autosave.schedule(event.document)
+        })
         setError(null)
+        setSave('saved')
         setLoaded(true)
       })
       .catch((e: Error) => !cancelled && setError(e.message))
     return () => {
       cancelled = true
+      unsubscribe()
+      // Switching Documents saves the last edits of this one right away.
+      void autosave.flush()
     }
   }, [project, doc])
 
@@ -136,6 +165,11 @@ export function App() {
           </select>
         </label>
         <span className="spacer" />
+        {loaded && (
+          <span className="save" data-state={save}>
+            {SAVE_LABEL[save]}
+          </span>
+        )}
         <button type="button" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={!loaded}>
           −
         </button>

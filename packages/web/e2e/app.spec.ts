@@ -2,8 +2,8 @@
 import type { Document } from '@bannerkit/core'
 import { expect, test } from './fixtures.ts'
 
-// The server validates that `src` exists, so a Document it serves can only reach the
-// editor with an Asset that exists but fails to load: a broken file, or one deleted since.
+// For the editor, the server reports a missing Asset file as a warning, so the
+// Document opens with a placeholder (an Asset that fails to load is an S2 test).
 const RED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#ff0000"/></svg>'
 
 const banner: Document = {
@@ -12,7 +12,7 @@ const banner: Document = {
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [
     { id: 'image-1', type: 'image', x: 0, y: 0, width: 200, height: 200, src: 'assets/red.svg', fit: 'cover' },
-    { id: 'image-2', type: 'image', x: 200, y: 0, width: 200, height: 200, src: 'assets/broken.png', fit: 'cover' },
+    { id: 'image-2', type: 'image', x: 200, y: 0, width: 200, height: 200, src: 'assets/gone.png', fit: 'cover' },
     {
       id: 'text-1',
       type: 'text',
@@ -28,8 +28,8 @@ const banner: Document = {
   ],
 }
 
-test('shows Assets with their Fit, a hatched placeholder for one that fails to load, and text', async ({ page, projects }) => {
-  await projects.write('s3-app', { documents: { banner }, assets: { 'red.svg': RED_SVG, 'broken.png': 'not a png' } })
+test('shows Assets with their Fit, a hatched placeholder for a missing one, and text', async ({ page, projects }) => {
+  await projects.write('s3-app', { documents: { banner }, assets: { 'red.svg': RED_SVG } })
 
   await page.goto(projects.appUrl('s3-app', 'banner'))
 

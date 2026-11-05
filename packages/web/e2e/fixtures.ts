@@ -2,9 +2,10 @@
 // - `harness`: a page on e2e/harness.html with `window.bannerkit` ready (the editor
 //   module + core in real Chromium); drive it with `harness.evaluate(...)`.
 // - `projects`: writes Projects (project.json, Documents, Assets) into the run's
-//   temporary projects root, which the server reads live.
+//   temporary projects root, which the server reads live, and reads Documents back
+//   from it (to check what autosave wrote).
 // Specs import `test` and `expect` from here instead of '@playwright/test'.
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Document } from '@bannerkit/core'
 import { test as base, expect, type Page } from '@playwright/test'
@@ -17,6 +18,8 @@ export type Projects = {
   write(project: string, contents: { documents?: Record<string, Document>; assets?: Record<string, string | Uint8Array> }): Promise<void>
   /** The editor app URL that opens `project`/`doc`. */
   appUrl(project: string, doc: string): string
+  /** The Document file as it is on disk now. */
+  read(project: string, doc: string): Promise<Document>
 }
 
 export const test = base.extend<{ harness: Page; projects: Projects }>({
@@ -40,6 +43,7 @@ export const test = base.extend<{ harness: Page; projects: Projects }>({
         for (const [name, data] of Object.entries(assets)) await writeFile(join(dir, 'assets', name), data)
       },
       appUrl: (project, doc) => `/?project=${encodeURIComponent(project)}&doc=${encodeURIComponent(doc)}`,
+      read: async (project, doc) => JSON.parse(await readFile(join(root, project, 'documents', `${doc}.json`), 'utf8')),
     })
   },
 })
