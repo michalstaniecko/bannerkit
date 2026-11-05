@@ -4,16 +4,20 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `pnpm i` works on Apple Silicon with Node 22 and no Homebrew; `packageManager` is pinned so the broken corepack pnpm shim is fixed; library versions are pinned and confirmed against npm
-- [ ] All packages are `"private": true` and MIT licensed
-- [ ] `bannerkit project new <name>` creates `project.json` (`{ version, name }`) plus `documents/`, `assets/` and `exports/` folders
-- [ ] `bannerkit doc new` creates a Document from a Preset (1200×628, 1080×1080, 1080×1920, 300×250, 728×90) or a custom size
-- [ ] `bannerkit doc duplicate` copies a Document onto another Preset or size with its Layers unchanged
-- [ ] Documents are discovered by listing the documents folder (no second list exists)
-- [ ] The projects root defaults to `./projects`, can be overridden with `--root` or `BANNERKIT_ROOT`, and `projects/` is git-ignored
-- [ ] Writes are atomic (temp file + rename)
-- [ ] `bannerkit preview` renders a Document with a solid background and solid-colour rect Layers, at 2× and downsampled with Lanczos via sharp to exact size (ADR 0006), to `exports/.preview/<doc>.png`, and prints the path
-- [ ] Every command accepts `--json` and returns structured output; the exit code is non-zero on errors
-- [ ] S1 tests run against a temporary projects root via `pnpm test`
+- [x] `pnpm i` works on Apple Silicon with Node 22 and no Homebrew; `packageManager` is pinned so the broken corepack pnpm shim is fixed; library versions are pinned and confirmed against npm
+- [x] All packages are `"private": true` and MIT licensed
+- [x] `bannerkit project new <name>` creates `project.json` (`{ version, name }`) plus `documents/`, `assets/` and `exports/` folders
+- [x] `bannerkit doc new` creates a Document from a Preset (1200×628, 1080×1080, 1080×1920, 300×250, 728×90) or a custom size
+- [x] `bannerkit doc duplicate` copies a Document onto another Preset or size with its Layers unchanged
+- [x] Documents are discovered by listing the documents folder (no second list exists)
+- [x] The projects root defaults to `./projects`, can be overridden with `--root` or `BANNERKIT_ROOT`, and `projects/` is git-ignored
+- [x] Writes are atomic (temp file + rename)
+- [x] `bannerkit preview` renders a Document with a solid background and solid-colour rect Layers, at 2× and downsampled with Lanczos via sharp to exact size (ADR 0006), to `exports/.preview/<doc>.png`, and prints the path
+- [x] Every command accepts `--json` and returns structured output; the exit code is non-zero on errors
+- [x] S1 tests run against a temporary projects root via `pnpm test`
+
+## Comments
+
+- Merged branch `worktree-agent-ae22c86a60cc8f3ca` into `bannerkit-v1` (fast-forward to 6b6a749); 61 tests and typecheck pass.
