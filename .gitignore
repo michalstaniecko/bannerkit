@@ -7,3 +7,5 @@ coverage/
 /projects/
 .state.json
 packages/server/test/__snapshots__/__diff__/
+# Renders of committed example Projects are regenerated, not committed.
+/examples/*/exports/

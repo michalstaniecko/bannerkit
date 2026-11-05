@@ -1,0 +1,123 @@
+{
+  "$schema": "../../../packages/core/schema/document.schema.json",
+  "version": 1,
+  "name": "hero",
+  "canvas": { "width": 1200, "height": 628, "background": "#ffffff" },
+  "layers": [
+    {
+      "id": "rect-1",
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 628,
+      "fill": { "type": "linear", "angle": 120, "stops": [["#0e3a32", 0], ["#1f6f5c", 0.6], ["#2f8f76", 1]] },
+      "locked": true
+    },
+    {
+      "id": "rect-2",
+      "type": "rect",
+      "x": 740,
+      "y": 64,
+      "width": 500,
+      "height": 500,
+      "fill": "#ffffff",
+      "cornerRadius": 250,
+      "opacity": 0.12
+    },
+    {
+      "id": "image-1",
+      "type": "image",
+      "x": 880,
+      "y": 48,
+      "width": 228,
+      "height": 540,
+      "src": "assets/bottle.png",
+      "fit": "contain",
+      "rotation": 8,
+      "shadow": { "color": "rgba(0,0,0,0.45)", "blur": 32, "offsetX": 14, "offsetY": 20 }
+    },
+    {
+      "id": "image-2",
+      "type": "image",
+      "x": 64,
+      "y": 56,
+      "width": 156,
+      "height": 32,
+      "src": "assets/alder-logo.svg",
+      "fit": "contain",
+      "locked": true
+    },
+    {
+      "id": "text-1",
+      "type": "text",
+      "x": 64,
+      "y": 140,
+      "width": 660,
+      "height": 230,
+      "text": "Ice cold for 24 hours. Hot for 12.",
+      "fontFamily": "Inter",
+      "fontWeight": 800,
+      "fontSize": 80,
+      "lineHeight": 1.05,
+      "letterSpacing": -1,
+      "fill": "#ffffff",
+      "verticalAlign": "middle",
+      "autoFit": { "minFontSize": 40 }
+    },
+    {
+      "id": "text-2",
+      "type": "text",
+      "x": 64,
+      "y": 384,
+      "width": 600,
+      "text": "Double-wall steel bottle, 750 ml",
+      "fontFamily": "Inter",
+      "fontWeight": 400,
+      "fontSize": 28,
+      "fill": "#d4efe6"
+    },
+    {
+      "id": "rect-3",
+      "type": "rect",
+      "x": 64,
+      "y": 468,
+      "width": 180,
+      "height": 80,
+      "fill": "#f6c453",
+      "cornerRadius": 40,
+      "shadow": { "color": "rgba(0,0,0,0.25)", "blur": 12, "offsetX": 0, "offsetY": 6 }
+    },
+    {
+      "id": "text-3",
+      "type": "text",
+      "x": 64,
+      "y": 468,
+      "width": 180,
+      "height": 80,
+      "text": "$29",
+      "fontFamily": "Inter",
+      "fontWeight": 800,
+      "fontSize": 44,
+      "fill": "#0e3a32",
+      "align": "center",
+      "verticalAlign": "middle",
+      "autoFit": { "minFontSize": 24 }
+    },
+    {
+      "id": "text-4",
+      "type": "text",
+      "x": 272,
+      "y": 468,
+      "width": 300,
+      "height": 80,
+      "text": "Free shipping this week",
+      "fontFamily": "Inter",
+      "fontWeight": 600,
+      "fontSize": 24,
+      "lineHeight": 1.2,
+      "fill": "#ffffff",
+      "verticalAlign": "middle"
+    }
+  ]
+}
