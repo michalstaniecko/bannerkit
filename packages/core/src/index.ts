@@ -1,4 +1,7 @@
-// @bannerkit/core: schema, Presets and geometry shared by every renderer.
+// @bannerkit/core: schema, validation, Presets and geometry shared by every renderer.
 // No DOM or Node APIs here.
 export * from './document.ts'
 export * from './presets.ts'
+export * from './validate.ts'
+export { closest } from './suggest.ts'
+export * from './schema.ts'

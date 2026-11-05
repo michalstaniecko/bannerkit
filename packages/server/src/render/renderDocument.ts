@@ -41,8 +41,14 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
 function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer): void {
   switch (layer.type) {
     case 'rect':
+      // Solid fills only for now; gradients, corner radius, rotation, opacity
+      // and shadow arrive with full rect rendering (ticket 03).
+      if (typeof layer.fill !== 'string') return
       ctx.fillStyle = layer.fill
       ctx.fillRect(layer.x, layer.y, layer.width, layer.height)
+      return
+    default:
+      // image and text Layers are drawn from tickets 05 and 06 on.
       return
   }
 }
