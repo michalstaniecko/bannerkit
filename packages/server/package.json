@@ -11,10 +11,14 @@
     "./ops": "./src/ops/index.ts"
   },
   "scripts": {
+    "serve": "tsx src/rest/main.ts",
+    "dev": "tsx watch src/rest/main.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@bannerkit/core": "workspace:*",
+    "@hono/node-server": "2.1.6",
+    "hono": "4.13.16",
     "sharp": "0.35.5",
     "skia-canvas": "4.0.0",
     "tsx": "4.23.15",

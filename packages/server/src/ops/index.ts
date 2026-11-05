@@ -2,7 +2,7 @@
 // results and throw OpError. No console output, no process.exit. The CLI and
 // REST are thin adapters over these.
 export { OpError, type OpErrorCode, type OpIssue } from './errors.ts'
-export { createProject, type CreateProjectInput, type ProjectRef } from './projects.ts'
+export { createProject, listProjects, type CreateProjectInput, type ProjectRef } from './projects.ts'
 export {
   createDocument,
   duplicateDocument,

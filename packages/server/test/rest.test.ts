@@ -1,0 +1,147 @@
+// The REST adapter (ADR 0005): a thin Hono app over the same operations as the CLI.
+// Exercised in-process through `app.request`, against a temporary projects root.
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { Document } from '@bannerkit/core'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createProject, writeDocument } from '../src/ops/index.ts'
+import { createApp } from '../src/rest/app.ts'
+import { tempRoot } from './harness.ts'
+
+const hero: Document = {
+  version: 1,
+  name: 'hero',
+  canvas: { width: 300, height: 250, background: '#ffffff' },
+  layers: [{ id: 'rect-1', type: 'rect', x: 10, y: 20, width: 100, height: 50, fill: '#ff0000' }],
+}
+
+let root: string
+beforeEach(async () => {
+  root = await tempRoot()
+  await createProject({ root, name: 'summer' })
+  await createProject({ root, name: 'autumn' })
+  await writeDocument({ root, project: 'summer', name: 'hero', document: hero })
+  await writeDocument({ root, project: 'summer', name: 'banner', document: { ...hero, name: 'banner' } })
+})
+
+const getJson = async (app: ReturnType<typeof createApp>, path: string) => {
+  const res = await app.request(path)
+  return { status: res.status, body: (await res.json()) as any }
+}
+
+describe('REST: Projects and Documents', () => {
+  it('lists Projects', async () => {
+    const { status, body } = await getJson(createApp({ root }), '/api/projects')
+
+    expect(status).toBe(200)
+    expect(body.map((p: { name: string }) => p.name)).toEqual(['autumn', 'summer'])
+  })
+
+  it('lists the Documents of a Project', async () => {
+    const { status, body } = await getJson(createApp({ root }), '/api/projects/summer/documents')
+
+    expect(status).toBe(200)
+    expect(body.map((d: { name: string }) => d.name)).toEqual(['banner', 'hero'])
+  })
+
+  it('reads a Document', async () => {
+    const { status, body } = await getJson(createApp({ root }), '/api/projects/summer/documents/hero')
+
+    expect(status).toBe(200)
+    expect(body).toMatchObject({ project: 'summer', name: 'hero', document: hero })
+  })
+
+  it('answers a missing Project or Document with 404 and the op error', async () => {
+    const app = createApp({ root })
+
+    const project = await getJson(app, '/api/projects/winter/documents')
+    const doc = await getJson(app, '/api/projects/summer/documents/nope')
+
+    expect(project).toEqual({
+      status: 404,
+      body: { error: { code: 'NOT_FOUND', message: expect.stringContaining('winter'), issues: [] } },
+    })
+    expect(doc.status).toBe(404)
+    expect(doc.body.error.code).toBe('NOT_FOUND')
+  })
+
+  it('answers an unsafe name with 400', async () => {
+    const { status, body } = await getJson(createApp({ root }), '/api/projects/.hidden/documents')
+
+    expect(status).toBe(400)
+    expect(body.error.code).toBe('INVALID_INPUT')
+  })
+
+  it('answers an invalid Document on disk with 422 and its issues', async () => {
+    await writeFile(join(root, 'summer', 'documents', 'broken.json'), JSON.stringify({ ...hero, version: 2 }))
+
+    const { status, body } = await getJson(createApp({ root }), '/api/projects/summer/documents/broken')
+
+    expect(status).toBe(422)
+    expect(body.error.code).toBe('INVALID_DOCUMENT')
+    expect(body.error.issues[0].path).toBe('version')
+  })
+
+  it('answers unknown API routes with a JSON 404', async () => {
+    const { status, body } = await getJson(createApp({ root }), '/api/nothing-here')
+
+    expect(status).toBe(404)
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
+})
+
+describe('REST: Assets', () => {
+  const png = Buffer.from('89504e470d0a1a0a', 'hex')
+
+  beforeEach(async () => {
+    await mkdir(join(root, 'summer', 'assets', 'logos'), { recursive: true })
+    await writeFile(join(root, 'summer', 'assets', 'logos', 'mark.png'), png)
+  })
+
+  it('serves a Project Asset at the project-relative src path', async () => {
+    const res = await createApp({ root }).request('/api/projects/summer/assets/logos/mark.png')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/png')
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(png)
+  })
+
+  it.each([
+    '/api/projects/summer/assets/missing.png',
+    '/api/projects/summer/assets/%2e%2e/project.json',
+    '/api/projects/summer/assets/..%2fproject.json',
+    '/api/projects/.hidden/assets/mark.png',
+  ])('answers %s with 404 and never leaves the assets folder', async (path) => {
+    const res = await createApp({ root }).request(path)
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('REST: the built editor from the same origin', () => {
+  let webDir: string
+  beforeEach(async () => {
+    webDir = await mkdtemp(join(root, 'web-'))
+    await writeFile(join(webDir, 'index.html'), '<!doctype html><title>Bannerkit</title>')
+    await mkdir(join(webDir, 'assets'))
+    await writeFile(join(webDir, 'assets', 'app.js'), 'console.log(1)')
+  })
+
+  it('serves index.html at / and the bundle next to it', async () => {
+    const app = createApp({ root, webDir })
+
+    const index = await app.request('/')
+    const bundle = await app.request('/assets/app.js')
+
+    expect(index.status).toBe(200)
+    expect(await index.text()).toContain('<title>Bannerkit</title>')
+    expect(bundle.status).toBe(200)
+    expect(bundle.headers.get('content-type')).toMatch(/javascript/)
+  })
+
+  it('still answers the API alongside the editor', async () => {
+    const { status } = await getJson(createApp({ root, webDir }), '/api/projects')
+
+    expect(status).toBe(200)
+  })
+})
