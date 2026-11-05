@@ -5,9 +5,23 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@bannerkit/core": "workspace:*"
+    "@bannerkit/core": "workspace:*",
+    "fabric": "7.4.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "canvas": "3.2.3",
+    "jsdom": "26.1.0",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
   }
 }
