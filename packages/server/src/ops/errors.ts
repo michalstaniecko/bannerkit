@@ -1,3 +1,4 @@
+import { formatPath, type Issue } from '@bannerkit/core'
 import type { z } from 'zod'
 
 export type OpErrorCode =
@@ -7,7 +8,8 @@ export type OpErrorCode =
   | 'ALREADY_EXISTS'
   | 'RENDER_FAILED'
 
-export type OpIssue = { path: string; message: string }
+/** A path-located problem: `{ path, message, suggestion? }`, the same shape core validation reports. */
+export type OpIssue = Issue
 
 /**
  * The only error type operations throw on purpose. Adapters (CLI, REST, later MCP)
@@ -29,11 +31,7 @@ export class OpError extends Error {
   }
 }
 
-export function formatPath(path: readonly PropertyKey[]): string {
-  return path
-    .map((key, i) => (typeof key === 'number' ? `[${key}]` : i === 0 ? String(key) : `.${String(key)}`))
-    .join('')
-}
+export { formatPath }
 
 /** Validates op input with zod, turning failures into an INVALID_INPUT OpError. */
 export function parseInput<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {

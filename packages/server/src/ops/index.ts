@@ -14,5 +14,14 @@ export {
   type DocumentResult,
   type DuplicateDocumentInput,
 } from './documents.ts'
+export {
+  SERVER_DOCUMENT_RULES,
+  SERVER_RULES,
+  validate,
+  type DocumentContext,
+  type DocumentValidation,
+  type ServerRule,
+  type ValidateResult,
+} from './validation.ts'
 export { preview, type PreviewResult } from './preview.ts'
 export { DEFAULT_PROJECTS_DIR, resolveProjectsRoot } from './root.ts'

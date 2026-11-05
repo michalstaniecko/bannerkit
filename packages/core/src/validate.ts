@@ -90,7 +90,8 @@ function toIssues(issue: z.core.$ZodIssue, input: unknown): Issue[] {
     case 'invalid_value': {
       const actual = valueAt(input, issue.path)
       const options = issue.values.map(String)
-      const message = `expected ${issue.values.map((v) => JSON.stringify(v)).join(' | ')}, got ${describe(actual)}`
+      const expected = issue.values.map((v) => JSON.stringify(v)).join(' | ')
+      const message = actual === undefined ? `missing; expected ${expected}` : `expected ${expected}, got ${describe(actual)}`
       return [withSuggestion({ path, message }, typeof actual === 'string' ? closest(actual, options) : undefined)]
     }
     case 'invalid_union': {
@@ -101,7 +102,7 @@ function toIssues(issue: z.core.$ZodIssue, input: unknown): Issue[] {
         const options: string[] = (discriminated.options ?? []).map(String)
         const message =
           actual === undefined
-            ? `missing ${String(discriminated.discriminator)}; expected ${options.map((o) => `"${o}"`).join(' | ')}`
+            ? `missing; expected ${options.map((o) => `"${o}"`).join(' | ')}`
             : `expected ${options.map((o) => `"${o}"`).join(' | ')}, got ${describe(actual)}`
         return [withSuggestion({ path, message }, typeof actual === 'string' ? closest(actual, options) : undefined)]
       }

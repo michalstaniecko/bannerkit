@@ -26,6 +26,7 @@ describe('createDocument', () => {
 
     expect(result.path).toBe(join(root, 'p', 'documents', 'hero.json'))
     expect(await readDocFile('hero')).toEqual({
+      $schema: expect.stringMatching(/document\.schema\.json$/),
       version: 1,
       name: 'hero',
       canvas: { width: 1200, height: 628, background: '#ffffff' },

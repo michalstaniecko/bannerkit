@@ -1,8 +1,6 @@
-import { readFile, readdir } from 'node:fs/promises'
 import {
   DEFAULT_BACKGROUND,
   DOCUMENT_VERSION,
-  DocumentSchema,
   exactlyOneSize,
   resolveSize,
   sizeChoiceShape,
@@ -10,26 +8,14 @@ import {
   type SizeChoice,
 } from '@bannerkit/core'
 import { z } from 'zod'
-import { OpError, formatPath, parseInput } from './errors.ts'
+import { OpError, parseInput } from './errors.ts'
 import { pathExists, writeJsonAtomic } from './fs.ts'
-import { Name, Root, documentFile, documentsDir, projectFile } from './paths.ts'
+import { Name, Root, documentFile, documentsDir, projectDir } from './paths.ts'
+import { listDocumentFiles, requireProject } from './store.ts'
+import { readJsonFile, requireValidDocument, schemaRefFrom } from './validation.ts'
 
 export type DocumentRef = { project: string; name: string; path: string }
 export type DocumentResult = DocumentRef & { document: Document }
-
-async function requireProject(root: string, project: string): Promise<void> {
-  if (!(await pathExists(projectFile(root, project)))) {
-    throw new OpError('NOT_FOUND', `Project "${project}" not found in ${root}`)
-  }
-}
-
-/** Validates a parsed Document, throwing INVALID_DOCUMENT with path-located issues. */
-function checkDocument(value: unknown, where: string): Document {
-  const result = DocumentSchema.safeParse(value)
-  if (result.success) return result.data
-  const issues = result.error.issues.map((i) => ({ path: formatPath(i.path), message: i.message }))
-  throw new OpError('INVALID_DOCUMENT', `${where} is not a valid Document (${issues.length} issue(s))`, issues)
-}
 
 // listDocuments ---------------------------------------------------------------
 
@@ -39,12 +25,7 @@ const ListDocumentsInput = z.object({ root: Root, project: Name })
 export async function listDocuments(input: z.input<typeof ListDocumentsInput>): Promise<DocumentRef[]> {
   const { root, project } = parseInput(ListDocumentsInput, input)
   await requireProject(root, project)
-  const entries = await readdir(documentsDir(root, project), { withFileTypes: true })
-  return entries
-    .filter((e) => e.isFile() && e.name.endsWith('.json') && !e.name.startsWith('.'))
-    .map((e) => e.name.slice(0, -'.json'.length))
-    .sort()
-    .map((name) => ({ project, name, path: documentFile(root, project, name) }))
+  return (await listDocumentFiles(root, project)).map((name) => ({ project, name, path: documentFile(root, project, name) }))
 }
 
 // readDocument / writeDocument ------------------------------------------------
@@ -55,22 +36,9 @@ export async function readDocument(input: z.input<typeof ReadDocumentInput>): Pr
   const { root, project, name } = parseInput(ReadDocumentInput, input)
   await requireProject(root, project)
   const path = documentFile(root, project, name)
-  let text: string
-  try {
-    text = await readFile(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new OpError('NOT_FOUND', `Document "${name}" not found in Project "${project}"`)
-    }
-    throw error
-  }
-  let json: unknown
-  try {
-    json = JSON.parse(text)
-  } catch (error) {
-    throw new OpError('INVALID_DOCUMENT', `${path} is not valid JSON: ${(error as Error).message}`)
-  }
-  return { project, name, path, document: checkDocument(json, path) }
+  const json = await readJsonFile(path, `Document "${name}" not found in Project "${project}"`)
+  const document = await requireValidDocument(json, { projectDir: projectDir(root, project) }, path)
+  return { project, name, path, document }
 }
 
 const WriteDocumentInput = z.object({
@@ -82,12 +50,12 @@ const WriteDocumentInput = z.object({
   overwrite: z.boolean().default(true),
 })
 
-/** Validates, then writes atomically. Invalid Documents never reach disk. */
+/** Validates (schema, core and server rules), then writes atomically. Invalid Documents never reach disk. */
 export async function writeDocument(input: z.input<typeof WriteDocumentInput>): Promise<DocumentResult> {
   const { root, project, name, document, overwrite } = parseInput(WriteDocumentInput, input)
   await requireProject(root, project)
   const path = documentFile(root, project, name)
-  const valid = checkDocument(document, `Document "${name}"`)
+  const valid = await requireValidDocument(document, { projectDir: projectDir(root, project) }, `Document "${name}"`)
   if (!overwrite && (await pathExists(path))) {
     throw new OpError('ALREADY_EXISTS', `Document "${name}" already exists in Project "${project}"`)
   }
@@ -106,6 +74,7 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
   const { root, project, name, ...choice } = parseInput(CreateDocumentInput, input)
   const { width, height } = resolveSize(choice)
   const document: Document = {
+    $schema: schemaRefFrom(documentsDir(root, project)),
     version: DOCUMENT_VERSION,
     name,
     canvas: { width, height, background: DEFAULT_BACKGROUND },
