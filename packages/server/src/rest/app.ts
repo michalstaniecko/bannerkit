@@ -9,6 +9,9 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { readFile } from 'node:fs/promises'
 import {
   OpError,
+  addAssets,
+  createDocument,
+  duplicateDocument,
   listDocuments,
   listProjects,
   readDocument,
@@ -16,6 +19,8 @@ import {
   render,
   writeDocument,
   writeSelection,
+  type CreateDocumentInput,
+  type DuplicateDocumentInput,
   type ExportFile,
   type OpErrorCode,
   type RenderInput,
@@ -100,6 +105,38 @@ export function createApp({ root, webDir }: AppOptions) {
     return c.json(await writeSelection({ root, project: c.req.param('project'), doc, selectedLayerIds }))
   })
 
+  // Structure (the editor's toolbar and top bar) ------------------------------------
+  // POST /projects/:p/assets, multipart with one or more `file` parts: the `addAssets` op,
+  // so uploads follow the CLI's ingest rules. Answers 201 with `{ project, assets }`.
+  // POST /projects/:p/documents with `{ name, preset | size }`: `createDocument`.
+  // POST /projects/:p/documents/:doc/duplicate with `{ name?, preset | size }`: `duplicateDocument`.
+  api.post('/projects/:project/assets', async (c) => {
+    const form = await c.req.parseBody({ all: true }).catch(() => {
+      throw new OpError('INVALID_INPUT', 'The request body is not multipart form data')
+    })
+    const parts = ([] as unknown[]).concat(form.file ?? [])
+    const files = await Promise.all(
+      parts
+        .filter((part): part is File => part instanceof File)
+        .map(async (file) => ({ filename: file.name, data: new Uint8Array(await file.arrayBuffer()) })),
+    )
+    if (files.length === 0) {
+      throw new OpError('INVALID_INPUT', 'No files uploaded', [{ path: 'file', message: 'expected at least one file part' }])
+    }
+    return c.json(await addAssets({ root, project: c.req.param('project'), files }), 201)
+  })
+
+  api.post('/projects/:project/documents', async (c) => {
+    const body = await jsonObject(c)
+    return c.json(await createDocument({ ...body, root, project: c.req.param('project') } as CreateDocumentInput), 201)
+  })
+
+  api.post('/projects/:project/documents/:doc/duplicate', async (c) => {
+    const body = await jsonObject(c)
+    const input = { ...body, root, project: c.req.param('project'), from: c.req.param('doc') } as DuplicateDocumentInput
+    return c.json(await duplicateDocument(input), 201)
+  })
+
   // Assets live at the Document's project-relative `src`: /api/projects/<p>/assets/<file>.
   // serveStatic rejects `..`, `%`-encoded paths and doubled separators.
   api.get(
@@ -142,6 +179,17 @@ async function renderOptions(c: Context): Promise<Omit<RenderInput, 'root' | 'pr
     throw new OpError('INVALID_INPUT', 'Request body must be a JSON object', [{ path: '', message: 'expected a JSON object' }])
   }
   return body as Omit<RenderInput, 'root' | 'project'>
+}
+
+/** A JSON object request body; the op validates its fields. */
+async function jsonObject(c: Context): Promise<Record<string, unknown>> {
+  const body = await c.req.json().catch(() => {
+    throw new OpError('INVALID_INPUT', 'The request body is not valid JSON')
+  })
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new OpError('INVALID_INPUT', 'Request body must be a JSON object', [{ path: '', message: 'expected a JSON object' }])
+  }
+  return body as Record<string, unknown>
 }
 
 function notFound(c: Context) {
