@@ -10,13 +10,14 @@ import {
 } from '@bannerkit/core'
 import { z } from 'zod'
 import { OpError, parseInput } from './errors.ts'
-import { pathExists, writeJsonAtomic } from './fs.ts'
+import { contentHash, pathExists, serializeJson, writeFileAtomic } from './fs.ts'
 import { Name, Root, documentFile, documentsDir, projectDir } from './paths.ts'
 import { listDocumentFiles, requireProject } from './store.ts'
-import { readJsonFile, requireValidDocument, schemaRefFrom } from './validation.ts'
+import { readJsonFileBytes, requireValidDocument, schemaRefFrom } from './validation.ts'
 
 export type DocumentRef = { project: string; name: string; path: string }
-export type DocumentResult = DocumentRef & { document: Document; warnings: Issue[] }
+/** `hash` is the content hash of the Document file's bytes (see contentHash). */
+export type DocumentResult = DocumentRef & { document: Document; warnings: Issue[]; hash: string }
 
 // listDocuments ---------------------------------------------------------------
 
@@ -40,9 +41,9 @@ export async function readDocument(input: z.input<typeof ReadDocumentInput>): Pr
   const { root, project, name, missingAssets } = parseInput(ReadDocumentInput, input)
   await requireProject(root, project)
   const path = documentFile(root, project, name)
-  const json = await readJsonFile(path, `Document "${name}" not found in Project "${project}"`)
+  const { json, bytes } = await readJsonFileBytes(path, `Document "${name}" not found in Project "${project}"`)
   const { document, warnings } = await requireValidDocument(json, { projectDir: projectDir(root, project), missingAssets }, path)
-  return { project, name, path, document, warnings }
+  return { project, name, path, document, warnings, hash: contentHash(bytes) }
 }
 
 const WriteDocumentInput = z.object({
@@ -64,8 +65,9 @@ export async function writeDocument(input: z.input<typeof WriteDocumentInput>): 
   if (!overwrite && (await pathExists(path))) {
     throw new OpError('ALREADY_EXISTS', `Document "${name}" already exists in Project "${project}"`)
   }
-  await writeJsonAtomic(path, valid.document)
-  return { project, name, path, ...valid }
+  const bytes = serializeJson(valid.document)
+  await writeFileAtomic(path, bytes)
+  return { project, name, path, ...valid, hash: contentHash(bytes) }
 }
 
 // createDocument / duplicateDocument ------------------------------------------

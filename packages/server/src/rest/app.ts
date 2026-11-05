@@ -21,6 +21,7 @@ import {
   type RenderInput,
 } from '../ops/index.ts'
 import { Name } from '../ops/paths.ts'
+import { addLiveRoutes } from './live.ts'
 
 export type AppOptions = {
   /** The projects root. */
@@ -111,6 +112,9 @@ export function createApp({ root, webDir }: AppOptions) {
     serveStatic({ root, rewriteRequestPath: (path) => path.replace(/^\/api\/projects/, '') }),
     notFound,
   )
+
+  // Live reload: GET /events streams `document-changed { project, doc, hash }` (live.ts).
+  addLiveRoutes(api, root)
 
   api.all('*', notFound)
 

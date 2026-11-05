@@ -116,15 +116,20 @@ export async function requireValidDocument(
 
 /** Reads and parses a Document file without validating it. Bad JSON is an INVALID_DOCUMENT error. */
 export async function readJsonFile(path: string, notFound: string): Promise<unknown> {
-  let text: string
+  return (await readJsonFileBytes(path, notFound)).json
+}
+
+/** Like readJsonFile, also answering the file's raw bytes (e.g. to hash them). */
+export async function readJsonFileBytes(path: string, notFound: string): Promise<{ json: unknown; bytes: Buffer }> {
+  let bytes: Buffer
   try {
-    text = await readFile(path, 'utf8')
+    bytes = await readFile(path)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new OpError('NOT_FOUND', notFound)
     throw error
   }
   try {
-    return JSON.parse(text)
+    return { json: JSON.parse(bytes.toString('utf8')), bytes }
   } catch (error) {
     throw new OpError('INVALID_DOCUMENT', `${path} is not valid JSON: ${(error as Error).message}`)
   }

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { link, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
@@ -36,8 +36,21 @@ export async function writeFileAtomicNew(path: string, data: string | Uint8Array
   }
 }
 
+/** The bytes every JSON file is written as. */
+export function serializeJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`
+}
+
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
-  await writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`)
+  await writeFileAtomic(path, serializeJson(value))
+}
+
+/**
+ * The content hash of a file's bytes (sha256, hex). The REST read and save and the
+ * live-reload stream all hash the bytes on disk, so equal hashes mean equal files.
+ */
+export function contentHash(bytes: string | Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
 }
 
 export async function pathExists(path: string): Promise<boolean> {
