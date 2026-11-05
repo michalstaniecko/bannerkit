@@ -17,6 +17,9 @@ export class ApiRequestError extends Error {
   }
 }
 
+/** A save refused because the Document file changed since the version it expected. */
+export const isConflict = (error: unknown): boolean => error instanceof ApiRequestError && error.error.code === 'CONFLICT'
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
   const body = await res.json()
@@ -40,11 +43,15 @@ export const api = {
   listProjects: () => requestJson<ProjectRef[]>('/api/projects'),
   listDocuments: (project: string) => requestJson<DocumentRef[]>(`/api/projects/${seg(project)}/documents`),
   readDocument: (project: string, name: string) => requestJson<DocumentResult>(documentPath(project, name)),
-  /** Saves the whole Document; the server validates it and writes it atomically. */
-  writeDocument: (project: string, name: string, document: Document) =>
+  /**
+   * Saves the whole Document; the server validates it and writes it atomically. With
+   * `expectedHash` (the version last loaded or saved) it is written only over that
+   * version: a file changed since answers 409 CONFLICT (see isConflict).
+   */
+  writeDocument: (project: string, name: string, document: Document, { expectedHash }: { expectedHash?: string } = {}) =>
     requestJson<DocumentResult>(documentPath(project, name), {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(expectedHash ? { 'if-match': `"${expectedHash}"` } : {}) },
       body: JSON.stringify(document),
     }),
   /** Records the editor's Selection in the Project's `.state.json`, where `bannerkit inspect` reads it. */

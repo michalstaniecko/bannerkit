@@ -18,8 +18,9 @@ afterEach(async () => {
 })
 
 /**
- * Opens `doc(100)` in an editor wired like the app: changes are autosaved to a fake
- * disk (a save answers the new hash), and live reload reads that disk.
+ * Opens `doc(100)` in an editor wired like the app: changes are autosaved through
+ * live reload to a fake disk (a save answers the new hash, or a conflict when the
+ * file is not the version the editor last had), and live reload reads that disk.
  */
 async function open() {
   const container = document.createElement('div')
@@ -36,18 +37,18 @@ async function open() {
   }
   let releaseSave: (() => void) | undefined
   let slowSaves = false
-  const autosave = createAutosave(
-    async (document) => {
-      if (slowSaves) await new Promise<void>((resolve) => (releaseSave = resolve))
-      live.known(write(document))
-    },
-    { delay: 20 },
-  )
+  const autosave = createAutosave((document) => live.save(document), { delay: 20 })
   const conflicts: (Conflict | null)[] = []
   const live = createLiveReload({
     editor,
     autosave,
     read: async () => structuredClone(disk),
+    // The editor's save, with the REST precondition: written only over `expectedHash`.
+    write: async (document, expectedHash) => {
+      if (slowSaves) await new Promise<void>((resolve) => (releaseSave = resolve))
+      if (expectedHash !== undefined && expectedHash !== disk.hash) return { conflict: true }
+      return { hash: write(document) }
+    },
     onConflict: (conflict) => conflicts.push(conflict),
   })
   await editor.load(disk.document)
@@ -153,5 +154,34 @@ describe('live reload', () => {
     expect(conflicts.at(-1)).toBeNull()
     expect(editor.getDocument()).toEqual(doc(120))
     expect(disk.document).toEqual(doc(120))
+  })
+
+  it('a save over a file changed on disk raises a conflict instead of overwriting it', async () => {
+    const { editor, autosave, disk, write, conflicts } = await open()
+    write(doc(250)) // changed on disk; its event has not arrived yet
+    await edit(editor, 120)
+
+    await wait(60)
+
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0]).not.toBeNull()
+    expect(disk.document).toEqual(doc(250))
+    expect(autosave.dirty()).toBe(true)
+    await wait(60)
+    expect(disk.document).toEqual(doc(250)) // held: not retried on its own
+  })
+
+  it('"keep mine" after a refused save writes the editor\'s Document over the file', async () => {
+    const { editor, live, disk, write, conflicts } = await open()
+    const theirs = write(doc(250))
+    await edit(editor, 120)
+    await wait(60)
+
+    await conflicts[0]!.keepMine()
+    await live.changed(theirs) // the late event of their change
+
+    expect(conflicts.at(-1)).toBeNull()
+    expect(disk.document).toEqual(doc(120))
+    expect(editor.getDocument()).toEqual(doc(120))
   })
 })

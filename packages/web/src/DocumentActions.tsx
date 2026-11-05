@@ -12,12 +12,14 @@ type Props = {
   /** The open Document, or '' when none is. */
   doc: string
   loaded: boolean
+  /** True while opening another Document must wait (a reload / keep mine choice is pending). */
+  disabled: boolean
   /** Opens the Document `name` of the Project (after refreshing the Document list). */
   onOpen: (name: string) => void
   onError: (message: string) => void
 }
 
-export function DocumentActions({ editor, project, doc, loaded, onOpen, onError }: Props) {
+export function DocumentActions({ editor, project, doc, loaded, disabled, onOpen, onError }: Props) {
   const [preset, setPreset] = useState<PresetId>(PRESET_IDS[0]!)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -62,10 +64,10 @@ export function DocumentActions({ editor, project, doc, loaded, onOpen, onError 
         onChange={(e) => setName(e.target.value)}
         disabled={!project}
       />
-      <button type="button" onClick={() => void create()} disabled={!project || !name.trim() || busy}>
+      <button type="button" onClick={() => void create()} disabled={!project || !name.trim() || busy || disabled}>
         New
       </button>
-      <button type="button" onClick={() => void duplicate()} disabled={!loaded || busy} title="Duplicate this Document to the chosen size">
+      <button type="button" onClick={() => void duplicate()} disabled={!loaded || busy || disabled} title="Duplicate this Document to the chosen size">
         Duplicate to size
       </button>
     </span>

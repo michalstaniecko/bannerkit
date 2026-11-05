@@ -3,7 +3,7 @@
 // state only; the Document and every Fabric object live inside the editor module.
 // Edits reach disk through autosave, fed by the editor's `change` events.
 import { useEffect, useRef, useState } from 'react'
-import { api, type DocumentRef, type ProjectRef } from './api.ts'
+import { api, isConflict, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 import { DocumentActions } from './DocumentActions.tsx'
@@ -11,7 +11,7 @@ import { ExportControl } from './ExportControl.tsx'
 import { JsonPanel } from './JsonPanel.tsx'
 import { LayerList } from './LayerList.tsx'
 import { LayerToolbar } from './LayerToolbar.tsx'
-import { openLiveReload, type Conflict } from './live-reload.ts'
+import { SaveConflict, openLiveReload, type Conflict } from './live-reload.ts'
 import { ReloadBanner } from './ReloadBanner.tsx'
 import { createSelectionSync } from './selection-sync.ts'
 
@@ -21,13 +21,13 @@ const ZOOM_STEP = 1.25
 type SaveState = 'saved' | 'unsaved' | 'failed'
 const SAVE_LABEL: Record<SaveState, string> = { saved: 'Saved', unsaved: 'Unsaved changes', failed: 'Not saved' }
 
-/** Keeps the picked Project/Document in the URL so a reload reopens them. */
-function readSelectionFromUrl() {
+/** The opened Document's location (Project and Document) is kept in the URL, so a page reload reopens it. */
+function readOpenedFromUrl() {
   const params = new URLSearchParams(location.search)
   return { project: params.get('project') ?? '', doc: params.get('doc') ?? '' }
 }
 
-function writeSelectionToUrl(project: string, doc: string) {
+function writeOpenedToUrl(project: string, doc: string) {
   const params = new URLSearchParams()
   if (project) params.set('project', project)
   if (doc) params.set('doc', doc)
@@ -36,7 +36,7 @@ function writeSelectionToUrl(project: string, doc: string) {
 }
 
 export function App() {
-  const initial = readSelectionFromUrl()
+  const initial = readOpenedFromUrl()
   const [projects, setProjects] = useState<ProjectRef[]>([])
   const [documents, setDocuments] = useState<DocumentRef[]>([])
   const [project, setProject] = useState(initial.project)
@@ -74,7 +74,7 @@ export function App() {
   }, [project])
 
   useEffect(() => {
-    writeSelectionToUrl(project, doc)
+    writeOpenedToUrl(project, doc)
     setLoaded(false)
     if (!project || !doc) return
     let cancelled = false
@@ -84,10 +84,18 @@ export function App() {
     const autosave = createAutosave(
       async (document) => {
         const saving = changes
-        live.known((await api.writeDocument(project, doc, document)).hash)
+        await live.save(document)
         if (!cancelled && saving === changes) setSave('saved')
       },
-      { onError: (e) => !cancelled && (setSave('failed'), setError(`Not saved: ${(e as Error).message}`)) },
+      {
+        onError: (e) => {
+          if (cancelled) return
+          // A save refused because the file changed on disk shows the reload / keep mine banner instead.
+          if (e instanceof SaveConflict) return setSave('unsaved')
+          setSave('failed')
+          setError(`Not saved: ${(e as Error).message}`)
+        },
+      },
     )
     // The Selection goes to the server (debounced) so an agent's `inspect` sees it.
     const selectionSync = createSelectionSync((ids) => api.writeSelection(project, doc, ids), {
@@ -98,6 +106,12 @@ export function App() {
       editor: editorRef.current!,
       autosave,
       read: () => api.readDocument(project, doc),
+      // Written only over the version last loaded or saved; a change on disk raises the banner.
+      write: (document, expectedHash) =>
+        api.writeDocument(project, doc, document, { expectedHash }).catch((e: unknown) => {
+          if (isConflict(e)) return { conflict: true as const }
+          throw e
+        }),
       onConflict: (c) => !cancelled && setConflict(c),
       onError: (e) => !cancelled && setError(`Reload failed: ${(e as Error).message}`),
     })
@@ -136,7 +150,8 @@ export function App() {
       unsubscribe()
       unsubscribeSelection()
       selectionSync.cancel()
-      // Switching Documents saves the last edits of this one right away.
+      // Switching Documents saves the last edits of this one right away. (Not while a
+      // reload / keep mine choice is pending: the pickers are disabled until it is made.)
       void autosave.flush()
     }
   }, [project, doc])
@@ -182,6 +197,8 @@ export function App() {
           Project{' '}
           <select
             value={project}
+            disabled={conflict !== null}
+            title={conflict ? 'Reload or keep your edits first' : undefined}
             onChange={(e) => {
               setProject(e.target.value)
               setDoc('')
@@ -197,7 +214,12 @@ export function App() {
         </label>
         <label>
           Document{' '}
-          <select value={doc} onChange={(e) => setDoc(e.target.value)} disabled={!project}>
+          <select
+            value={doc}
+            onChange={(e) => setDoc(e.target.value)}
+            disabled={!project || conflict !== null}
+            title={conflict ? 'Reload or keep your edits first' : undefined}
+          >
             <option value="">—</option>
             {documents.map((d) => (
               <option key={d.name} value={d.name}>
@@ -206,7 +228,7 @@ export function App() {
             ))}
           </select>
         </label>
-        <DocumentActions editor={editorRef} project={project} doc={doc} loaded={loaded} onOpen={openDocument} onError={setError} />
+        <DocumentActions editor={editorRef} project={project} doc={doc} loaded={loaded} disabled={conflict !== null} onOpen={openDocument} onError={setError} />
         <LayerToolbar editor={editorRef} project={project} loaded={loaded} onError={setError} />
         <span className="spacer" />
         {loaded && (
@@ -237,7 +259,7 @@ export function App() {
       </header>
       <ReloadBanner conflict={conflict} />
       {error && <div className="error">{error}</div>}
-      <div className="workspace">
+      <div className="editor-body">
         <LayerList editor={editorRef} loaded={loaded} onError={setError} />
         <main className="viewport" ref={viewportRef}>
           <div className="canvas-host" ref={hostRef} hidden={!loaded} />

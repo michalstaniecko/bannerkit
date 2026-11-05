@@ -82,3 +82,20 @@ test('"Keep mine" keeps the edits and saves them over the file on disk', async (
   await expect(page.locator('.save')).toHaveText('Saved')
   expect(await pixel(0.25, 0.5)).toEqual(RED)
 })
+
+test('while the banner is up, switching Project or Document waits for the choice', async ({ page, projects }) => {
+  await conflict(page, projects, 's3-live-switch')
+  const projectPicker = page.getByRole('combobox', { name: /^Project/ })
+  const documentPicker = page.getByRole('combobox', { name: /^Document/ })
+
+  await expect(projectPicker).toBeDisabled()
+  await expect(documentPicker).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Duplicate to size' })).toBeDisabled()
+  // Nothing was written over the change on disk meanwhile.
+  expect(await projects.read('s3-live-switch', 'banner')).toEqual(banner('#0000ff'))
+
+  await page.getByRole('button', { name: 'Reload' }).click()
+
+  await expect(projectPicker).toBeEnabled()
+  await expect(documentPicker).toBeEnabled()
+})

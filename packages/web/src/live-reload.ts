@@ -8,6 +8,11 @@
 // - when edits are unsaved (waiting or being saved), raises a Conflict and holds
 //   autosave, so neither the human's edits nor the change on disk is overwritten
 //   until the human picks "reload" or "keep mine".
+// Saves go through here too (`save`): each is sent with the hash of the version the
+// editor last loaded or saved, and the server refuses it (409) if the file has
+// changed since. A refused save raises the same Conflict, so a change on disk is
+// never overwritten even when its event has not arrived yet. "Keep mine" saves
+// without that precondition.
 import type { Document } from '@bannerkit/core'
 import type { Autosave } from './autosave.ts'
 import type { Editor } from './editor/index.ts'
@@ -27,6 +32,11 @@ export type LiveReloadOptions = {
   autosave: Autosave
   /** Reads the open Document from disk, with its content hash. */
   read: () => Promise<{ document: Document; hash: string }>
+  /**
+   * Writes the open Document. With `expectedHash`, only over that version of the file:
+   * a file that has changed since answers `{ conflict: true }` and is left alone.
+   */
+  write: (document: Document, expectedHash: string | undefined) => Promise<{ hash: string } | { conflict: true }>
   /** A Conflict to show, or null once it is resolved. */
   onConflict: (conflict: Conflict | null) => void
   onError?: (error: unknown) => void
@@ -35,18 +45,34 @@ export type LiveReloadOptions = {
 export type LiveReload = {
   /** Records the hash of a Document the editor loaded or saved: its echo is ignored. */
   known(hash: string): void
+  /**
+   * Autosave's save: writes `document` over the version the editor last had. If the
+   * file changed since, raises a Conflict and rejects with SaveConflict, so the
+   * Document stays unsaved (and held) until the human decides.
+   */
+  save(document: Document): Promise<void>
   /** Handles a `document-changed` for the open Document; resolves once handled. */
   changed(hash: string): Promise<void>
+}
+
+/** A save refused because the file changed on disk; the Conflict it raised is showing. */
+export class SaveConflict extends Error {
+  constructor() {
+    super('The file changed on disk')
+    this.name = 'SaveConflict'
+  }
 }
 
 /** Own hashes remembered, so a late echo of an older save is still recognised. */
 const KNOWN_LIMIT = 50
 
-export function createLiveReload({ editor, autosave, read, onConflict, onError = () => {} }: LiveReloadOptions): LiveReload {
+export function createLiveReload({ editor, autosave, read, write, onConflict, onError = () => {} }: LiveReloadOptions): LiveReload {
   const known: string[] = []
   /** The hash of the Document the editor last showed from (or wrote to) disk. */
   let current: string | undefined
   let conflict: Conflict | null = null
+  /** Set by "keep mine": the next save overwrites whatever is on disk. */
+  let force = false
   /** Changes are handled one at a time, in order. */
   let queue: Promise<void> = Promise.resolve()
 
@@ -70,6 +96,7 @@ export function createLiveReload({ editor, autosave, read, onConflict, onError =
   }
 
   const raise = () => {
+    if (conflict) return
     autosave.hold()
     conflict = {
       reload: async () => {
@@ -80,6 +107,7 @@ export function createLiveReload({ editor, autosave, read, onConflict, onError =
       },
       keepMine: async () => {
         if (!conflict) return
+        force = true
         resolve()
         await autosave.flush()
       },
@@ -98,6 +126,15 @@ export function createLiveReload({ editor, autosave, read, onConflict, onError =
 
   return {
     known: remember,
+    async save(document) {
+      const result = await write(document, force ? undefined : current)
+      if ('conflict' in result) {
+        raise()
+        throw new SaveConflict()
+      }
+      force = false
+      remember(result.hash)
+    },
     changed(hash) {
       queue = queue.then(() => handle(hash)).catch(onError)
       return queue
