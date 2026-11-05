@@ -4,9 +4,13 @@
 
 **Blocked by:** 05, 06
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `examples/demo/` is a committed Project with three Documents at different Presets, using rect, image and text Layers (including AutoFit)
-- [ ] `bannerkit validate` and `bannerkit render` succeed on it
-- [ ] S1 tests copy it into a temporary projects root
-- [ ] Committed Render snapshots of the demo are compared with pixelmatch under a tolerance
+- [x] `examples/demo/` is a committed Project with three Documents at different Presets, using rect, image and text Layers (including AutoFit)
+- [x] `bannerkit validate` and `bannerkit render` succeed on it
+- [x] S1 tests copy it into a temporary projects root
+- [x] Committed Render snapshots of the demo are compared with pixelmatch under a tolerance
+
+## Comments
+
+Merged branch `worktree-agent-a6157bdcfd9990304` into `bannerkit-v1` (fast-forward); test and typecheck pass.
