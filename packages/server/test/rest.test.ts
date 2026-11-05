@@ -1,8 +1,9 @@
 // The REST adapter (ADR 0005): a thin Hono app over the same operations as the CLI.
 // Exercised in-process through `app.request`, against a temporary projects root.
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Document } from '@bannerkit/core'
+import sharp from 'sharp'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createProject, writeDocument } from '../src/ops/index.ts'
 import { createApp } from '../src/rest/app.ts'
@@ -143,5 +144,57 @@ describe('REST: the built editor from the same origin', () => {
     const { status } = await getJson(createApp({ root, webDir }), '/api/projects')
 
     expect(status).toBe(200)
+  })
+})
+
+describe('REST: Render', () => {
+  const post = (app: ReturnType<typeof createApp>, path: string, body?: unknown) =>
+    app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+
+  it('renders one Document via the render op and answers with the image', async () => {
+    const res = await post(createApp({ root }), '/api/projects/summer/documents/hero/render', { format: 'jpg', scale: 2 })
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/jpeg')
+    const meta = await sharp(Buffer.from(await res.arrayBuffer())).metadata()
+    expect([meta.format, meta.width, meta.height]).toEqual(['jpeg', 600, 500])
+    expect(await readdir(join(root, 'summer', 'exports'))).toEqual(['hero.300x250@2x.jpg'])
+  })
+
+  it('renders one Document as PNG at 1x by default', async () => {
+    const res = await post(createApp({ root }), '/api/projects/summer/documents/hero/render')
+
+    expect(res.headers.get('content-type')).toBe('image/png')
+    const meta = await sharp(Buffer.from(await res.arrayBuffer())).metadata()
+    expect([meta.format, meta.width, meta.height]).toEqual(['png', 300, 250])
+  })
+
+  it('batch-renders a Project, filtered like the CLI, and lists the files', async () => {
+    const res = await post(createApp({ root }), '/api/projects/summer/render', { docs: ['banner'], format: 'webp' })
+    const body = (await res.json()) as any
+
+    expect(res.status).toBe(200)
+    expect(body.project).toBe('summer')
+    expect(body.files.map((f: { name: string; width: number; format: string }) => [f.name, f.width, f.format])).toEqual([
+      ['banner', 300, 'webp'],
+    ])
+    expect(await readdir(join(root, 'summer', 'exports'))).toEqual(['banner.300x250.webp'])
+  })
+
+  it('answers bad render options with 400 and a missing Document with 404', async () => {
+    const app = createApp({ root })
+
+    const bad = await post(app, '/api/projects/summer/documents/hero/render', { scale: 3 })
+    const notJson = await app.request('/api/projects/summer/render', { method: 'POST', body: '{' })
+    const missing = await post(app, '/api/projects/summer/documents/nope/render', {})
+
+    expect(bad.status).toBe(400)
+    expect(((await bad.json()) as any).error.issues[0].path).toBe('scale')
+    expect(notJson.status).toBe(400)
+    expect(missing.status).toBe(404)
   })
 })

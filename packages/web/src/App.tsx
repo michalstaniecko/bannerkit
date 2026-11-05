@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type DocumentRef, type ProjectRef } from './api.ts'
 import { createEditor, type Editor } from './editor/index.ts'
+import { ExportControl } from './ExportControl.tsx'
 
 const VIEWPORT_PADDING = 32
 const ZOOM_STEP = 1.25
@@ -136,6 +137,7 @@ export function App() {
           </select>
         </label>
         <span className="spacer" />
+        <ExportControl editor={editorRef} name={doc} disabled={!loaded} onError={setError} />
         <button type="button" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={!loaded}>
           −
         </button>

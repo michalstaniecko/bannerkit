@@ -11,6 +11,7 @@
 import type { Document, Layer } from '@bannerkit/core'
 import { Canvas, Textbox, type FabricObject } from 'fabric'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
+import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
 import { layerToObject, objectToLayer } from './mapper.ts'
 import { fitZoom, type Size } from './zoom.ts'
 
@@ -46,6 +47,11 @@ export type Editor = {
   getZoom(): number
   /** Sets the zoom so the whole Canvas fits `viewport`, and returns it. */
   zoomToFit(viewport: Size): number
+  /**
+   * Exports the shown Document at exactly Canvas size × scale (whatever the zoom or
+   * `devicePixelRatio`), supersampled 2× like the server, once its fonts and images are loaded.
+   */
+  export(options?: ExportOptions): Promise<ExportResult>
   destroy(): Promise<void>
 }
 
@@ -129,6 +135,14 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       return zoom
     },
 
+    async export(options) {
+      const c = requireCanvas()
+      if (!current) throw new Error('No Document loaded')
+      const document = this.getDocument()
+      await loadFonts(facesUsed(document))
+      return exportCanvas(c, document.canvas, options)
+    },
+
     async destroy() {
       const c = canvas
       canvas = undefined
@@ -140,3 +154,4 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 }
 
 export type { Size } from './zoom.ts'
+export { EXPORT_FORMATS, exportFileName, type ExportFormat, type ExportOptions, type ExportResult, type ExportScale } from './export.ts'

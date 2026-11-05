@@ -125,7 +125,7 @@ async function imageObject(layer: ImageLayer, env: MapperEnv): Promise<Mapped> {
  */
 function textObject(layer: TextLayer, env: MapperEnv): Mapped {
   const layout = layoutText(layer, env.measure)
-  const textbox = new Textbox(layer.text, {
+  const textbox = new DocumentTextbox(layer.text, {
     width: layer.width,
     fontFamily: layer.fontFamily,
     fontWeight: layer.fontWeight,
@@ -147,6 +147,19 @@ function textObject(layer: TextLayer, env: MapperEnv): Mapped {
   }
   if (layout.overflow) textbox.set({ clipPath: boxRect(box) })
   return { object: textbox, box }
+}
+
+/**
+ * A Textbox that measures and draws glyphs unhinted, at their exact outline positions
+ * (`textRendering: 'geometricPrecision'`), like the server's skia-canvas. Chrome's
+ * default hints and snaps glyphs, which drifts letter-spaced lines and thickens every
+ * glyph edge, enough to fail browser-vs-server parity on text-heavy banners.
+ */
+class DocumentTextbox extends Textbox {
+  override _setTextStyles(ctx: CanvasRenderingContext2D, charStyle?: any, forMeasuring?: boolean) {
+    super._setTextStyles(ctx, charStyle, forMeasuring)
+    ctx.textRendering = 'geometricPrecision'
+  }
 }
 
 /** A clip rect covering `box`, in the clipped object's local coordinates. */
@@ -225,6 +238,9 @@ function commonProps(layer: Layer) {
           blur: layer.shadow.blur,
           offsetX: layer.shadow.offsetX,
           offsetY: layer.shadow.offsetY,
+          // Shadow values are Document px, like the server draws them. By default Fabric
+          // multiplies them by the object's scale, which an image keeps for its Fit.
+          nonScaling: true,
         })
       : null,
   }
