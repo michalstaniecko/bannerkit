@@ -1,4 +1,4 @@
-import type { Document, Layer } from '@bannerkit/core'
+import { boxTransform, type Document, type Layer, linearGradientLine, type RectLayer } from '@bannerkit/core'
 import sharp from 'sharp'
 import { Canvas, type CanvasRenderingContext2D } from 'skia-canvas'
 
@@ -21,7 +21,8 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
   const scale = options.scale ?? 1
   const { width, height, background } = doc.canvas
   const drawScale = scale * SUPERSAMPLE
-  const canvas = new Canvas(width * drawScale, height * drawScale)
+  // CPU raster: the default GPU backend is not deterministic enough for snapshots.
+  const canvas = new Canvas(width * drawScale, height * drawScale, { gpu: false })
   const ctx = canvas.getContext('2d')
   ctx.scale(drawScale, drawScale)
 
@@ -29,7 +30,7 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
     ctx.fillStyle = background
     ctx.fillRect(0, 0, width, height)
   }
-  for (const layer of doc.layers) drawLayer(ctx, layer)
+  for (const layer of doc.layers) drawLayer(ctx, layer, drawScale)
 
   const raw = await canvas.toBuffer('raw', { colorType: 'rgba', premultiplied: false })
   return sharp(raw, { raw: { width: canvas.width, height: canvas.height, channels: 4 } })
@@ -38,17 +39,51 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
     .toBuffer()
 }
 
-function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer): void {
+/**
+ * Draws one Layer with the effects every Layer type shares: visibility, opacity and shadow.
+ * `drawScale` is the device pixels per Canvas pixel; shadows ignore the transform, so their
+ * blur and offsets are scaled by hand.
+ */
+function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, drawScale: number): void {
+  if (layer.visible === false) return
+  ctx.save()
+  ctx.globalAlpha = layer.opacity ?? 1
+  if (layer.shadow) {
+    ctx.shadowColor = layer.shadow.color
+    ctx.shadowBlur = layer.shadow.blur * drawScale
+    ctx.shadowOffsetX = layer.shadow.offsetX * drawScale
+    ctx.shadowOffsetY = layer.shadow.offsetY * drawScale
+  }
   switch (layer.type) {
     case 'rect':
-      // Solid fills only for now; gradients, corner radius, rotation, opacity
-      // and shadow arrive with full rect rendering (ticket 03).
-      if (typeof layer.fill !== 'string') return
-      ctx.fillStyle = layer.fill
-      ctx.fillRect(layer.x, layer.y, layer.width, layer.height)
-      return
+      drawRect(ctx, layer)
+      break
     default:
       // image and text Layers are drawn from tickets 05 and 06 on.
-      return
+      break
   }
+  ctx.restore()
+}
+
+function drawRect(ctx: CanvasRenderingContext2D, layer: RectLayer): void {
+  const { width, height, fill } = layer
+  ctx.save()
+  ctx.transform(...boxTransform(layer))
+  if (typeof fill === 'string') {
+    ctx.fillStyle = fill
+  } else {
+    const { x0, y0, x1, y1 } = linearGradientLine(fill.angle, width, height)
+    const gradient = ctx.createLinearGradient(x0, y0, x1, y1)
+    for (const [color, offset] of fill.stops) gradient.addColorStop(offset, color)
+    ctx.fillStyle = gradient
+  }
+  const radius = Math.min(layer.cornerRadius ?? 0, width / 2, height / 2)
+  if (radius > 0) {
+    ctx.beginPath()
+    ctx.roundRect(0, 0, width, height, radius)
+    ctx.fill()
+  } else {
+    ctx.fillRect(0, 0, width, height)
+  }
+  ctx.restore()
 }

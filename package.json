@@ -11,6 +11,7 @@
     "bannerkit": "bannerkit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:update": "UPDATE_SNAPSHOTS=1 vitest run",
     "typecheck": "pnpm -r typecheck",
     "schema": "pnpm -F @bannerkit/core schema"
   },
