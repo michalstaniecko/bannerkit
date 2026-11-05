@@ -1,8 +1,9 @@
 // The `bannerkit` CLI: a thin adapter over the operations layer (ADR 0005).
 // It parses argv, calls one op, and formats the result. It never touches the
 // filesystem itself, and it returns an exit code instead of calling process.exit.
+import { isAbsolute, resolve } from 'node:path'
 import { parseArgs, type ParseArgsConfig } from 'node:util'
-import { parseSize, type PresetId, type Size } from '@bannerkit/core'
+import { parseSize, type Issue, type PresetId, type Size } from '@bannerkit/core'
 import {
   OpError,
   createDocument,
@@ -10,6 +11,8 @@ import {
   duplicateDocument,
   preview,
   resolveProjectsRoot,
+  validate,
+  type ValidateResult,
 } from '../ops/index.ts'
 
 export type CliIO = {
@@ -25,7 +28,7 @@ export const EXIT_USAGE = 2
 
 type Options = NonNullable<ParseArgsConfig['options']>
 type Values = Record<string, string | boolean | undefined>
-type Context = { root: string; args: string[]; values: Values }
+type Context = { root: string; cwd: string; args: string[]; values: Values }
 
 type Command = {
   usage: string
@@ -35,6 +38,12 @@ type Command = {
   options: Options
   run: (ctx: Context) => Promise<unknown>
   human: (result: any) => string
+  /**
+   * For commands whose result is a report (e.g. validate): true when the report
+   * describes a failure. The result is still printed, the envelope says
+   * `ok: false` and the exit code is EXIT_ERROR.
+   */
+  failed?: (result: any) => boolean
 }
 
 class UsageError extends Error {}
@@ -58,6 +67,30 @@ function sizeChoice(values: Values): { preset?: PresetId; size?: Size } {
   const size = parseSize(sizeText!)
   if (!size) throw new UsageError(`--size must look like WxH (e.g. 970x250), got "${sizeText}"`)
   return { size }
+}
+
+/** One issue as a human-readable line: `path: message (did you mean "x"?)`. */
+const issueLine = (issue: Issue) =>
+  `${issue.path || '(root)'}: ${issue.message}${issue.suggestion === undefined ? '' : ` (did you mean "${issue.suggestion}"?)`}`
+
+/** A `validate` target is a file when it looks like a path, otherwise a Project name. */
+const looksLikeFile = (target: string) => target.endsWith('.json') || target.includes('/') || target.includes('\\')
+
+function validateReport(report: ValidateResult): string {
+  const lines: string[] = []
+  for (const doc of report.documents) {
+    if (doc.ok && doc.warnings.length === 0) continue
+    lines.push(`${doc.path}: ${doc.errors.length} error(s), ${doc.warnings.length} warning(s)`)
+    for (const issue of doc.errors) lines.push(`  error ${issueLine(issue)}`)
+    for (const issue of doc.warnings) lines.push(`  warning ${issueLine(issue)}`)
+  }
+  const invalid = report.documents.filter((d) => !d.ok).length
+  lines.push(
+    invalid === 0
+      ? `ok: ${report.documents.length} Document(s) valid`
+      : `${invalid} of ${report.documents.length} Document(s) invalid`,
+  )
+  return lines.join('\n')
 }
 
 const COMMANDS: Record<string, Command> = {
@@ -87,6 +120,18 @@ const COMMANDS: Record<string, Command> = {
       duplicateDocument({ root, project: project!, from: from!, ...(name ? { name } : {}), ...sizeChoice(values) }),
     human: (r) => `Created Document ${r.name} (${r.document.canvas.width}x${r.document.canvas.height}) at ${r.path}`,
   },
+  validate: {
+    usage: 'bannerkit validate <project | path/to/doc.json>',
+    summary: 'Check Documents against the schema and rules; prints path-located errors and exits 1 if any',
+    positionals: [1, 1],
+    options: {},
+    run: ({ root, cwd, args: [target] }) =>
+      looksLikeFile(target!)
+        ? validate({ file: isAbsolute(target!) ? target! : resolve(cwd, target!) })
+        : validate({ root, project: target! }),
+    human: validateReport,
+    failed: (r: ValidateResult) => !r.ok,
+  },
   preview: {
     usage: 'bannerkit preview <project> <doc>',
     summary: 'Render a Preview PNG to exports/.preview/<doc>.png and print its path',
@@ -108,7 +153,8 @@ function helpText(): string {
     '',
     'Global options:',
     '  --root <dir>   Projects root (default: $BANNERKIT_ROOT, then ./projects)',
-    '  --json         Print { ok, result } or { ok, error } as JSON on stdout',
+    '  --json         Print { ok, result } or { ok: false, error } as JSON on stdout',
+    '                 (validate prints { ok: false, result } when Documents are invalid)',
     '  -h, --help     Show this help',
     '',
     'Exit codes: 0 success, 1 operation error, 2 usage error.',
@@ -131,8 +177,8 @@ export async function main(argv: string[], io: CliIO): Promise<number> {
     if (wantsJson) io.stdout(`${JSON.stringify({ ok: false, error: { code, message, issues } })}\n`)
     else {
       io.stderr(`error: ${message}\n`)
-      for (const issue of issues as { path: string; message: string }[]) {
-        io.stderr(`  ${issue.path || '(root)'}: ${issue.message}\n`)
+      for (const issue of issues as Issue[]) {
+        io.stderr(`  ${issueLine(issue)}\n`)
       }
     }
     return exit
@@ -165,10 +211,11 @@ export async function main(argv: string[], io: CliIO): Promise<number> {
     if (args.length < min || args.length > max) throw new UsageError(`usage: ${command.usage}`)
 
     const root = resolveProjectsRoot({ root: values.root as string | undefined, env: io.env, cwd: io.cwd })
-    const result = await command.run({ root, args, values })
+    const result = await command.run({ root, cwd: io.cwd, args, values })
+    const ok = !command.failed?.(result)
 
-    io.stdout(wantsJson ? `${JSON.stringify({ ok: true, result })}\n` : `${command.human(result)}\n`)
-    return EXIT_OK
+    io.stdout(wantsJson ? `${JSON.stringify({ ok, result })}\n` : `${command.human(result)}\n`)
+    return ok ? EXIT_OK : EXIT_ERROR
   } catch (error) {
     if (error instanceof UsageError) return fail('USAGE', error.message, [], EXIT_USAGE)
     if (error instanceof OpError) return fail(error.code, error.message, error.issues, EXIT_ERROR)

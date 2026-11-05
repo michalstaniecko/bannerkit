@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
@@ -172,4 +172,78 @@ describe('bannerkit bin', () => {
     expect(failed.exitCode).toBe(1)
     expect(failed.json().error.code).toBe('ALREADY_EXISTS')
   }, 30_000)
+})
+
+describe('bannerkit validate', () => {
+  const setup = async () => {
+    const root = await tempRoot()
+    await cli(['project', 'new', 'p', '--root', root])
+    await cli(['doc', 'new', 'p', 'good', '--preset', '300x250', '--root', root])
+    const bad = join(root, 'p', 'documents', 'bad.json')
+    await writeFile(
+      bad,
+      JSON.stringify({
+        version: 1,
+        name: 'bad',
+        canvas: { width: 300, height: 250, background: null },
+        layers: [{ id: 'rect-1', type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000', opactiy: 0.5 }],
+      }),
+    )
+    return { root, bad }
+  }
+
+  it('exits 0 and says so when a Project is valid', async () => {
+    const root = await tempRoot()
+    await cli(['project', 'new', 'p', '--root', root])
+    await cli(['doc', 'new', 'p', 'good', '--preset', '300x250', '--root', root])
+
+    const run = await cli(['validate', 'p', '--root', root])
+
+    expect(run.exitCode).toBe(0)
+    expect(run.stdout).toContain('1 Document(s) valid')
+  })
+
+  it('prints path-located errors with hints and exits non-zero', async () => {
+    const { root, bad } = await setup()
+
+    const run = await cli(['validate', 'p', '--root', root])
+
+    expect(run.exitCode).toBe(1)
+    expect(run.stdout).toContain(bad)
+    expect(run.stdout).toContain('layers[0].opactiy: unknown key "opactiy" (did you mean "opacity"?)')
+  })
+
+  it('reports structured results with --json', async () => {
+    const { root, bad } = await setup()
+
+    const run = await cli(['validate', 'p', '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(1)
+    expect(run.json()).toEqual({
+      ok: false,
+      result: {
+        ok: false,
+        documents: [
+          {
+            project: 'p',
+            name: 'bad',
+            path: bad,
+            ok: false,
+            errors: [{ path: 'layers[0].opactiy', message: 'unknown key "opactiy"', suggestion: 'opacity' }],
+            warnings: [],
+          },
+          expect.objectContaining({ name: 'good', ok: true }),
+        ],
+      },
+    })
+  })
+
+  it('validates a single file given as a path relative to the cwd', async () => {
+    const { root } = await setup()
+
+    const run = await cli(['validate', 'p/documents/good.json', '--json'], { cwd: root })
+
+    expect(run.exitCode).toBe(0)
+    expect(run.json().result.documents).toEqual([expect.objectContaining({ name: 'good', ok: true })])
+  })
 })

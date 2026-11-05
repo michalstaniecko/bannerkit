@@ -1,9 +1,11 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { documentJsonSchema } from '@bannerkit/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createDocument, createProject, validate, writeDocument } from '../src/ops/index.ts'
-import { tempRoot } from './harness.ts'
+import { schemaRefFrom } from '../src/ops/validation.ts'
+import { repoRoot, tempRoot } from './harness.ts'
 
 let root: string
 beforeEach(async () => {
@@ -146,9 +148,16 @@ describe('$schema', () => {
   it('Documents created by the CLI ops point at the generated JSON Schema', async () => {
     const { document } = await createDocument({ root, project: 'p', name: 'hero', preset: '300x250' })
 
-    const schemaPath = resolve(dirname(docPath('hero')), document.$schema!)
+    const ref = document.$schema!
+    const schemaPath = ref.startsWith('file:') ? fileURLToPath(ref) : resolve(dirname(docPath('hero')), ref)
 
     expect(JSON.parse(await readFile(schemaPath, 'utf8'))).toEqual(documentJsonSchema())
     expect((await readDocFile('hero')).$schema).toBe(document.$schema)
+  })
+
+  it('is a short relative path for the default ./projects root in the repo', async () => {
+    expect(schemaRefFrom(join(repoRoot, 'projects', 'p', 'documents'))).toBe(
+      '../../../packages/core/schema/document.schema.json',
+    )
   })
 })

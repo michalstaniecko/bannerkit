@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { basename, dirname, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   splitRuleIssues,
   validateDocument,
@@ -70,8 +71,17 @@ const require = createRequire(import.meta.url)
 /** Absolute path of the generated JSON Schema committed in @bannerkit/core. */
 export const documentSchemaPath = (): string => require.resolve('@bannerkit/core/document.schema.json')
 
-/** The `$schema` value for a Document stored in `dir`: a relative path editors resolve from the file. */
-export const schemaRefFrom = (dir: string): string => relative(dir, documentSchemaPath()).split(sep).join('/')
+/**
+ * The `$schema` value for a Document stored in `dir`: a relative path editors
+ * resolve from the file when the projects root sits near the repo (the usual
+ * `./projects`), otherwise a `file://` URL to the schema.
+ */
+export function schemaRefFrom(dir: string): string {
+  const schema = documentSchemaPath()
+  const topLevel = (path: string) => resolve(path).split(sep)[1]
+  if (topLevel(dir) !== topLevel(schema)) return pathToFileURL(schema).href
+  return relative(dir, schema).split(sep).join('/')
+}
 
 // validate ---------------------------------------------------------------------
 
