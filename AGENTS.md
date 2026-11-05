@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Banners
+
+Read `docs/agents/bannerkit.md` before creating, editing, validating, previewing or rendering a banner: Document schema conventions, every CLI command with `--json`, the Selection, and the edit → validate → preview → look loop.
+
 ## Agent skills
 
 ### Issue tracker
