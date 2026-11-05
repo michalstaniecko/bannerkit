@@ -87,5 +87,7 @@ export const measureText: MeasureText = (font, text, letterSpacing) => {
   scratch ??= globalThis.document.createElement('canvas').getContext('2d')!
   scratch.font = cssFont(font.family, font.weight, font.size)
   scratch.letterSpacing = `${letterSpacing}px`
+  // Unhinted advances, as the editor's Textbox measures and draws them (see mapper.ts).
+  scratch.textRendering = 'geometricPrecision'
   return scratch.measureText(text).width
 }

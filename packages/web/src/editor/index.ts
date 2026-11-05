@@ -15,11 +15,13 @@
 // and anything else that follows edits hang on `change`.
 //
 // Later tickets extend this file: snapshots (13), Layer list actions (14),
-// `apply` (15), Selection sent to the server (17) and `export` (18).
+// `apply` (15) and Selection sent to the server (17); `export` (18) renders the
+// shown Canvas offscreen (export.ts).
 import type { Document, Layer, TextLayer } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
+import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
 import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
 import { fitZoom, type Size } from './zoom.ts'
 
@@ -74,6 +76,11 @@ export type Editor = {
   getZoom(): number
   /** Sets the zoom so the whole Canvas fits `viewport`, and returns it. */
   zoomToFit(viewport: Size): number
+  /**
+   * Exports the shown Document at exactly Canvas size × scale (whatever the zoom or
+   * `devicePixelRatio`), supersampled 2× like the server, once its fonts and images are loaded.
+   */
+  export(options?: ExportOptions): Promise<ExportResult>
   destroy(): Promise<void>
 }
 
@@ -264,6 +271,14 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       return zoom
     },
 
+    async export(options) {
+      const c = requireCanvas()
+      if (!current) throw new Error('No Document loaded')
+      const document = this.getDocument()
+      await loadFonts(facesUsed(document))
+      return exportCanvas(c, document.canvas, options)
+    },
+
     async destroy() {
       const c = canvas
       unmount()
@@ -280,3 +295,4 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 }
 
 export type { Size } from './zoom.ts'
+export { EXPORT_FORMATS, exportFileName, type ExportFormat, type ExportOptions, type ExportResult, type ExportScale } from './export.ts'

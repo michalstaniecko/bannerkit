@@ -6,7 +6,18 @@
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import { OpError, listDocuments, listProjects, readDocument, writeDocument, type OpErrorCode } from '../ops/index.ts'
+import { readFile } from 'node:fs/promises'
+import {
+  OpError,
+  listDocuments,
+  listProjects,
+  readDocument,
+  render,
+  writeDocument,
+  type ExportFile,
+  type OpErrorCode,
+  type RenderInput,
+} from '../ops/index.ts'
 import { Name } from '../ops/paths.ts'
 
 export type AppOptions = {
@@ -53,6 +64,22 @@ export function createApp({ root, webDir }: AppOptions) {
     return c.json(await writeDocument({ root, project, name, document, missingAssets: 'warning' }))
   })
 
+  // Render (ADR 0005: the same `render` op as `bannerkit render`) --------------------
+  // POST /projects/:p/render with `{ docs?, sizes?, format?, scale?, quality? }` batch-renders
+  // into the Project's exports folder and answers with the written files.
+  // POST /projects/:p/documents/:doc/render with `{ format?, scale?, quality? }` renders one
+  // Document the same way and answers with the image itself.
+  api.post('/projects/:project/render', async (c) =>
+    c.json(await render({ ...(await renderOptions(c)), root, project: c.req.param('project') })),
+  )
+
+  api.post('/projects/:project/documents/:doc/render', async (c) => {
+    const { format, scale, quality } = await renderOptions(c)
+    const result = await render({ format, scale, quality, root, project: c.req.param('project'), docs: [c.req.param('doc')] })
+    const file = result.files[0]!
+    return c.body(new Uint8Array(await readFile(file.path)), 200, { 'content-type': RENDER_MIME[file.format] })
+  })
+
   // Assets live at the Document's project-relative `src`: /api/projects/<p>/assets/<file>.
   // serveStatic rejects `..`, `%`-encoded paths and doubled separators.
   api.get(
@@ -77,6 +104,24 @@ export function createApp({ root, webDir }: AppOptions) {
   app.route('/api', api)
   if (webDir) app.use('*', serveStatic({ root: webDir }))
   return app
+}
+
+const RENDER_MIME: Record<ExportFile['format'], string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }
+
+/** A render request's JSON body (empty → defaults). The op validates the fields. */
+async function renderOptions(c: Context): Promise<Omit<RenderInput, 'root' | 'project'>> {
+  const text = await c.req.text()
+  if (text.trim() === '') return {}
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    throw new OpError('INVALID_INPUT', 'Request body is not valid JSON', [{ path: '', message: 'expected a JSON object' }])
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new OpError('INVALID_INPUT', 'Request body must be a JSON object', [{ path: '', message: 'expected a JSON object' }])
+  }
+  return body as Omit<RenderInput, 'root' | 'project'>
 }
 
 function notFound(c: Context) {
