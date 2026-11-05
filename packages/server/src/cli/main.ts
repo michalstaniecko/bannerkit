@@ -10,12 +10,14 @@ import {
   createDocument,
   createProject,
   duplicateDocument,
+  inspect,
   preview,
   render,
   resolveProjectsRoot,
   type RenderResult,
   validate,
   type AddAssetsResult,
+  type InspectResult,
   type ValidateResult,
 } from '../ops/index.ts'
 
@@ -119,6 +121,28 @@ function validateReport(report: ValidateResult): string {
   return lines.join('\n')
 }
 
+const px = (n: number) => `${Math.round(n * 100) / 100}`
+
+function inspectReport(r: InspectResult): string {
+  const lines = [`${r.name} ${r.canvas.width}x${r.canvas.height} (${r.path})`]
+  lines.push(r.selection ? `Selection: ${r.selection.selectedLayerIds.join(', ') || '(none)'}` : 'Selection: not recorded')
+  for (const l of r.layers) {
+    const b = l.bounds
+    lines.push(
+      `${l.selected ? '*' : ' '} [${l.index}] ${l.type} ${l.id} at ${px(b.x)},${px(b.y)} ${px(b.width)}x${px(b.height)} ${l.canvas}`,
+    )
+    if (l.text) {
+      const t = l.text
+      const size = t.fontSize === t.requestedFontSize ? `${t.fontSize}px` : `${t.fontSize}px (AutoFit from ${t.requestedFontSize}px)`
+      const text = t.lines.map((line) => JSON.stringify(line.text)).join(' / ')
+      lines.push(`      ${size}, ${t.lines.length} line(s): ${text}${t.overflow ? ' OVERFLOW' : ''}`)
+    }
+    if (l.asset) lines.push(`      asset ${l.asset.src} ${l.asset.width}x${l.asset.height}`)
+  }
+  for (const issue of r.warnings) lines.push(`warning ${issueLine(issue)}`)
+  return lines.join('\n')
+}
+
 const COMMANDS: Record<string, Command> = {
   'project new': {
     usage: 'bannerkit project new <name>',
@@ -166,6 +190,15 @@ const COMMANDS: Record<string, Command> = {
         : validate({ root, project: target! }),
     human: validateReport,
     failed: (r: ValidateResult) => !r.ok,
+  },
+  inspect: {
+    usage: 'bannerkit inspect <project> [<doc>]',
+    summary:
+      'Show each Layer with resolved Text Layout, Asset sizes, Canvas bounds, warnings and the Selection (doc defaults to the selected one; * marks selected Layers)',
+    positionals: [1, 2],
+    options: {},
+    run: ({ root, args: [project, name] }) => inspect({ root, project: project!, ...(name ? { name } : {}) }),
+    human: inspectReport,
   },
   preview: {
     usage: 'bannerkit preview <project> <doc>',

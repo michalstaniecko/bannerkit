@@ -25,6 +25,13 @@ export {
 } from './validation.ts'
 export { preview, type PreviewResult } from './preview.ts'
 export { exportFileName, render, type ExportFile, type RenderInput, type RenderResult } from './render.ts'
+export {
+  inspect,
+  type InspectResult,
+  type LayerInspection,
+  type TextInspection,
+} from './inspect.ts'
+export { readSelection, writeSelection, type Selection } from './selection.ts'
 export { DEFAULT_PROJECTS_DIR, resolveProjectsRoot } from './root.ts'
 export {
   addAssets,
