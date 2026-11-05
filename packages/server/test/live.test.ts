@@ -7,9 +7,8 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Document } from '@bannerkit/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createProject, writeDocument } from '../src/ops/index.ts'
+import { createProject, watchDocuments, writeDocument, type DocumentChanged } from '../src/ops/index.ts'
 import { createApp } from '../src/rest/app.ts'
-import { watchDocuments, type DocumentChanged } from '../src/rest/live.ts'
 import { tempRoot } from './harness.ts'
 
 const hero: Document = {

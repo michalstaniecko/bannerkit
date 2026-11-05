@@ -33,6 +33,7 @@ export {
 } from './inspect.ts'
 export { readSelection, writeSelection, type Selection } from './selection.ts'
 export { DEFAULT_PROJECTS_DIR, resolveProjectsRoot } from './root.ts'
+export { watchDocuments, type DocumentChanged } from './watch.ts'
 export {
   addAssets,
   type AddAssetsInput,
