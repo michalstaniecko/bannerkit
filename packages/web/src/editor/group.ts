@@ -24,7 +24,7 @@ class PlacedByMapper extends LayoutManager {
 
 export class DocumentGroup extends Group {
   constructor(objects: FabricObject[]) {
-    super(objects, { layoutManager: new PlacedByMapper(), objectCaching: false, subTargetCheck: true })
+    super(objects, { layoutManager: new PlacedByMapper(), objectCaching: false, subTargetCheck: true, interactive: true })
   }
 
   override render(ctx: CanvasRenderingContext2D) {

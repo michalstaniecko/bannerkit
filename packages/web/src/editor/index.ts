@@ -38,7 +38,7 @@
 //
 // `export` renders the shown Canvas offscreen (export.ts).
 import { faceKey, layerExtent, layoutText, walkLayers, type Document, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
-import { ActiveSelection, Canvas, Point, Textbox, type FabricObject } from 'fabric'
+import { ActiveSelection, Canvas, Point, Textbox, type FabricObject, type TPointerEvent } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
@@ -48,6 +48,7 @@ import { DocumentGroup } from './group.ts'
 import { applyLayer, isFrozen, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
 import { allEntries, buildEntries, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
 import { fitZoom, type Size } from './zoom.ts'
+import { clickTarget, doubleClickTarget } from './picking.ts'
 
 export type EditorOptions = {
   /**
@@ -219,7 +220,7 @@ function changedLayerIds(before: Document, after: Document): string[] {
 }
 
 export function createEditor({ loadFonts = loadBrowserFonts, measure = measureText }: EditorOptions = {}): Editor {
-  let canvas: Canvas | undefined
+  let canvas: DocumentCanvas | undefined
   let current: Document | undefined
   /** The top-level Layers' Entries, bottom → top (scene.ts). */
   let roots: Entry[] = []
@@ -256,12 +257,39 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     emit('canvas', { width, height })
   }
 
-  const requireCanvas = (): Canvas => {
+  const requireCanvas = (): DocumentCanvas => {
     if (!canvas) throw new Error('Editor is not mounted; call mount(container) first')
     return canvas
   }
 
   const entryOf = (object: FabricObject) => allEntries(roots).find((e) => e.object === object)
+
+  /** The selected Entries, in draw order. */
+  const selectedEntries = (): Entry[] => {
+    const active = canvas?.getActiveObjects() ?? []
+    return allEntries(roots).filter((e) => active.includes(e.object))
+  }
+
+  /** The Entries of a hit path of objects (see `DocumentCanvas.hitPath`). */
+  const entriesOf = (path: readonly FabricObject[]): Entry[] | undefined => {
+    const entries = path.map(entryOf)
+    return entries.every((e) => e !== undefined) && entries.length > 0 ? (entries as Entry[]) : undefined
+  }
+
+  /** The object a click on `path` targets (picking.ts). */
+  const pick = (path: FabricObject[], e: TPointerEvent): FabricObject => {
+    const entries = entriesOf(path)
+    if (!entries) return path[0]!
+    return clickTarget(entries, selectedEntries(), e.metaKey || e.ctrlKey).object
+  }
+
+  /** A double click on a selected Group selects its Layer under the pointer. */
+  const onDoubleClick = (e: TPointerEvent) => {
+    const c = requireCanvas()
+    const path = entriesOf(c.hitPath(e))
+    const target = path && doubleClickTarget(path, selectedEntries())
+    if (target) selectIds([target.base.id])
+  }
 
   const documentNow = (): Document => {
     if (!current) throw new Error('No Document loaded')
@@ -582,6 +610,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         entry.base = { ...entry.base, text: target.text } satisfies TextLayer
         commit([target], 'text')
       })
+      c.pick = pick
+      c.on('mouse:dblclick', ({ e }) => onDoubleClick(e))
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
       c.on('selection:cleared', reportSelection)
@@ -720,11 +750,44 @@ function sameFaces(before: Document, next: Document): boolean {
 /**
  * The editor's Fabric canvas. A Group is hit only where one of its Layers is (shown and
  * not locked), never on the empty parts of its Box; a locked or hidden Group not at all.
+ * Which Layer of a hit Group a pointer event targets is up to `pick` (picking.ts).
  */
 class DocumentCanvas extends Canvas {
+  /** The object a pointer event `e` on `path` (see `hitPath`) targets. */
+  pick: (path: FabricObject[], e: TPointerEvent) => FabricObject = (path) => path[0]!
+  /** The event `findTarget` runs for, so `searchPossibleTargets` can pick by its modifier keys. */
+  private finding: TPointerEvent | undefined
+
   override _checkTarget(object: FabricObject, pointer: Point): boolean {
     if (!(object instanceof DocumentGroup)) return super._checkTarget(object, pointer)
     return object.visible && object.evented && object.getObjects().some((child) => this._checkTarget(child, pointer))
+  }
+
+  override findTarget(e: TPointerEvent) {
+    const outer = this.finding
+    this.finding = e
+    try {
+      return super.findTarget(e)
+    } finally {
+      this.finding = outer
+    }
+  }
+
+  override searchPossibleTargets(objects: FabricObject[], pointer: Point) {
+    const info = super.searchPossibleTargets(objects, pointer)
+    if (objects !== this._objects || !info.container || !this.finding) return info
+    return { ...info, target: this.pick(this.pathOf(info.container, info.subTargets), this.finding) }
+  }
+
+  /** The objects under the pointer of `e`: the top-level one, then one per Group level down to the deepest hit. */
+  hitPath(e: TPointerEvent): FabricObject[] {
+    const { target, subTargets } = this._searchPossibleTargets(this._objects, this.getScenePoint(e), [])
+    return target ? this.pathOf(target, subTargets) : []
+  }
+
+  /** Fabric collects sub-targets innermost first. */
+  private pathOf(top: FabricObject, subTargets: readonly FabricObject[]): FabricObject[] {
+    return [top, ...[...subTargets].reverse()]
   }
 }
 
