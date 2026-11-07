@@ -173,7 +173,7 @@ textarea {
   cursor: grab;
 }
 
-/* Canvas area (centre): ruler gutters (M3) around the scrolling viewport. */
+/* Canvas area (centre): Ruler gutters around the scrolling viewport. */
 .canvas-area {
   flex: 1;
   min-width: 0;
@@ -199,6 +199,19 @@ textarea {
 .ruler-left {
   grid-area: left;
   overflow: hidden;
+}
+
+.ruler-corner,
+.ruler-top,
+.ruler-left {
+  background: var(--ruler-surface);
+}
+
+/* The Ruler <canvas> fills its gutter; its buffer is sized in device px (Ruler.tsx). */
+.ruler {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .viewport {
