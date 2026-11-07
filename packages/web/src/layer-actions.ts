@@ -1,7 +1,15 @@
 // Layer list and toolbar actions: pure functions from a Document to the next one.
 // The UI applies each result with `editor.apply(document, { cause: 'layers' })`, so
 // every action is exactly one undo step. Inputs are never mutated.
-import { findLayer, nextLayerId, removeLayers, replaceLayer, walkLayers, type Document, type Layer } from '@bannerkit/core'
+import {
+  duplicateLayers as duplicate,
+  findLayer,
+  nextLayerId,
+  removeLayers,
+  replaceLayer,
+  type Document,
+  type Layer,
+} from '@bannerkit/core'
 
 const copy = (document: Document): Document => structuredClone(document)
 
@@ -75,27 +83,9 @@ const DUPLICATE_OFFSET = 10
 
 /**
  * Copies each of the Layers `ids` directly above its original, offset, with the next
- * readable id. Answers the copies' ids, bottom → top.
+ * readable id (a Group's copy renumbers its whole subtree; core `duplicateLayers`).
+ * Answers the copies' ids, bottom → top.
  */
 export function duplicateLayers(document: Document, ids: readonly string[]): { document: Document; ids: string[] } {
-  const next = copy(document)
-  const originals = walkLayers(next).filter(({ layer }) => ids.includes(layer.id))
-  // Ids first, bottom → top, each one clear of the ids given before it. A Group's
-  // copy gives every Layer inside it a new id too, and offsets its leaves.
-  const given: Layer[] = []
-  const fresh = (layer: Layer): Layer => {
-    const id = nextLayerId({ layers: [...next.layers, ...given] }, layer.type)
-    given.push({ ...layer, id })
-    if (layer.type === 'group') return { ...layer, id, layers: layer.layers.map(fresh) }
-    return { ...layer, id, x: layer.x + DUPLICATE_OFFSET, y: layer.y + DUPLICATE_OFFSET }
-  }
-  const made = originals.map(({ layer }) => fresh(structuredClone(layer)))
-  // Then each copy right above its original, top → bottom so earlier positions hold.
-  // `next` is a fresh copy, so its parents' `layers` may be changed in place.
-  for (let i = originals.length - 1; i >= 0; i--) {
-    const { parent, index } = originals[i]!
-    const siblings = parent.layers as Layer[]
-    siblings.splice(index + 1, 0, made[i]!)
-  }
-  return { document: next, ids: made.map((l) => l.id) }
+  return duplicate(document, ids, { offset: DUPLICATE_OFFSET })
 }
