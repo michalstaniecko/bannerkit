@@ -10,17 +10,18 @@ import {
   validateDocument,
   type Document,
   type Layer,
-  type LayerType,
   type LinearGradient,
   type Rect,
   type TextLayer,
 } from '@bannerkit/core'
 import { roundPx } from '../editor/rounding.ts'
+import type { SelectOption } from '../ui/Select.tsx'
 import {
   LAYER_FIELDS,
   writeNumber,
   type ColorFieldSpec,
   type FieldGroup,
+  type FieldTable,
   type FieldSpec,
   type GradientFieldSpec,
   type NumberFieldSpec,
@@ -52,7 +53,14 @@ export type InspectedField =
   | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => Recipe }
   | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; write: (value: boolean) => Recipe }
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
-  | { control: 'select'; field: SelectFieldSpec; value: Shared<string>; write: (value: string) => Recipe }
+  | {
+      control: 'select'
+      field: SelectFieldSpec
+      /** The options every one of the Layers can take. */
+      options: readonly SelectOption[]
+      value: Shared<string>
+      write: (value: string) => Recipe
+    }
   | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => Recipe }
   | {
       control: 'gradient'
@@ -65,8 +73,6 @@ export type InspectedField =
     }
 
 type GradientStop = LinearGradient['stops'][number]
-
-type FieldTable = { [T in LayerType]: FieldGroup<Extract<Layer, { type: T }>>[] }
 
 /**
  * The field groups shown for `layers`: the groups and fields every Layer type in it
@@ -123,6 +129,14 @@ export function moveLayers(document: Document, ids: readonly string[], dx: numbe
   return editLayers(document, ids, (l) => ({ ...l, x: l.x + dx, y: l.y + dy }))
 }
 
+/** The options of `field` every one of `layers` can take, in the first Layer's order. */
+function sharedOptions(field: SelectFieldSpec, layers: readonly Layer[]): readonly SelectOption[] {
+  const { options } = field
+  if (typeof options !== 'function') return options
+  const [first, ...rest] = layers.map(options)
+  return (first ?? []).filter((o) => rest.every((more) => more.some((m) => m.value === o.value)))
+}
+
 /** What `field` shows for `layers` and how a value set on it changes the Document. */
 export function inspectField(field: FieldSpec, layers: readonly Layer[], options: InspectOptions): InspectedField {
   const ids = layers.map((l) => l.id)
@@ -135,7 +149,13 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
     case 'toggle':
       return { control: 'toggle', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
     case 'select':
-      return { control: 'select', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
+      return {
+        control: 'select',
+        field,
+        options: sharedOptions(field, layers),
+        value: sharedValue(layers, field.read),
+        write: (value) => each((l) => field.write(l, value)),
+      }
     case 'color': {
       // `undefined` is a value the field cannot show (a gradient fill). One Layer shows
       // the field's placeholder for it; with several it is Mixed.
