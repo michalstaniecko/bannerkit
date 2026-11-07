@@ -55,6 +55,18 @@ describe('applyJson', () => {
     expect(changes).toEqual([])
   })
 
+  it('accepts a v1 Document, applying it as v2, and v2 Guides', async () => {
+    const { editor } = await open(banner)
+
+    const v1 = await applyJson(editor, JSON.stringify({ ...banner, version: 1, name: 'old' }))
+    expect(v1.ok).toBe(true)
+    expect(editor.getDocument()).toMatchObject({ version: 2, name: 'old' })
+
+    const guided = await applyJson(editor, JSON.stringify({ ...banner, guides: { x: [10], y: [] } }))
+    expect(guided.ok).toBe(true)
+    expect(editor.getDocument().guides).toEqual({ x: [10], y: [] })
+  })
+
   it('applies a valid Document as one undo step', async () => {
     const { editor, changes } = await open(banner)
     const moved = { ...banner, layers: [{ ...banner.layers[0]!, x: 10, y: 20 }] } as Document
