@@ -50,7 +50,7 @@ textarea {
   gap: var(--gap-tight);
 }
 
-/* Reserved for the Snapping switch (M3); takes no room while empty. */
+/* The Snapping switch (M3); takes no room while empty. */
 .topbar-snapping:empty {
   display: none;
 }

@@ -18,6 +18,7 @@ import { LayerList } from './LayerList.tsx'
 import { LayerToolbar } from './LayerToolbar.tsx'
 import { SaveConflict, openLiveReload, type Conflict } from './live-reload.ts'
 import { ReloadBanner } from './ReloadBanner.tsx'
+import { SnappingToggle } from './SnappingToggle.tsx'
 import { createSelectionSync } from './selection-sync.ts'
 import { Button } from './ui/Button.tsx'
 import { IconButton } from './ui/IconButton.tsx'
@@ -261,8 +262,9 @@ export function App() {
           <IconButton icon={Undo2} label="Undo" shortcut="Ctrl/Cmd+Z" onClick={() => void editorRef.current?.undo()} disabled={!loaded || !history.undo} />
           <IconButton icon={Redo2} label="Redo" shortcut="Ctrl/Cmd+Shift+Z" onClick={() => void editorRef.current?.redo()} disabled={!loaded || !history.redo} />
         </div>
-        {/* Room for the Snapping switch (M3). */}
-        <div className="toolbar-group topbar-snapping" role="group" aria-label="Snapping" />
+        <div className="toolbar-group topbar-snapping" role="group" aria-label="Snapping">
+          <SnappingToggle editor={editorRef} disabled={!loaded} />
+        </div>
         <div className="toolbar-group" role="group" aria-label="Zoom">
           <IconButton icon={ZoomOut} label="Zoom out" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={!loaded} />
           <span className="zoom">
