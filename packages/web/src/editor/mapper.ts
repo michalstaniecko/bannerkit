@@ -87,7 +87,7 @@ export function applyLayer(object: FabricObject, layer: Layer, env: MapperEnv): 
   else if (layer.type === 'image' && object instanceof Rect) box = applyPlaceholder(object, layer)
   else if (layer.type === 'rect' && object instanceof Rect) box = applyRect(object, layer)
   else throw new Error(`Layer "${layer.id}" (${layer.type}) cannot be applied to a ${object.type}`)
-  object.set(commonProps(layer))
+  object.set(commonProps(layer, frozenByGroup(object)))
   localBoxes.set(object, box)
   // Put the local Box centre on the Box centre: centre = boxCentre − R(angle)·(cx·scaleX, cy·scaleY).
   // R is core's rotation (boxTransform of a zero-size Box at the origin), the one the server draws with.
@@ -103,7 +103,9 @@ function applyGroup(object: DocumentGroup, layer: GroupLayer, env: MapperEnv): v
   const children = object.getObjects()
   if (children.length !== layer.layers.length) throw new Error(`Group "${layer.id}" is not laid out on this object`)
   const extent = layerExtent(layer, env.measure)
-  const frozen = isFrozen(layer)
+  const frozen = isFrozen(layer) || frozenByGroup(object)
+  if (frozen) frozenGroups.add(object)
+  else frozenGroups.delete(object)
   object.set({
     originX: 'center',
     originY: 'center',
@@ -365,7 +367,20 @@ export function isFrozen(layer: Layer): boolean {
   return layer.locked === true || layer.visible === false
 }
 
-function commonProps(layer: LeafLayer) {
+/**
+ * The DocumentGroups frozen by their own flag or a Group holding them (spec Q14),
+ * as last applied. `applyGroup` sets a Group's entry before applying its children.
+ */
+const frozenGroups = new WeakSet<FabricObject>()
+
+/** Whether a Group holding `object` is locked or hidden, so it is as well. */
+function frozenByGroup(object: FabricObject): boolean {
+  return object.parent !== undefined && frozenGroups.has(object.parent)
+}
+
+/** `inherited`: a Group holding the Layer is locked or hidden. */
+function commonProps(layer: LeafLayer, inherited: boolean) {
+  const frozen = inherited || isFrozen(layer)
   return {
     originX: 'center' as const,
     originY: 'center' as const,
@@ -377,10 +392,10 @@ function commonProps(layer: LeafLayer) {
     visible: layer.visible ?? true,
     selectable: !layer.locked,
     evented: !layer.locked,
-    // Selected from the Layer list, a locked or hidden Layer shows no handles and does not move.
-    hasControls: !isFrozen(layer),
-    lockMovementX: isFrozen(layer),
-    lockMovementY: isFrozen(layer),
+    // Selected from the Layer list, a locked or hidden Layer (or one in such a Group) shows no handles and does not move.
+    hasControls: !frozen,
+    lockMovementX: frozen,
+    lockMovementY: frozen,
     // A Layer never flips or skews: the Document has no field for either.
     lockScalingFlip: true,
     lockSkewingX: true,

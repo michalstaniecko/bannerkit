@@ -8,12 +8,15 @@
 // the objects via the mapper, so whatever Fabric shows is what you get back.
 //
 // A Group is selected and moved as a whole: a click on any of its Layers takes the
-// top-level Group (the Canvas only ever targets top-level objects; `DocumentCanvas`
-// hits a Group only where one of its Layers is hit). Moving it moves every Layer in it
-// by the same delta; its corner handles scale and its rotation handle turns every
-// Layer in it (core `scaleGroup` / `rotateGroup`). Either way the Group is laid out
-// again around its Layers, as an axis-aligned Box. Ctrl/Cmd+G and Ctrl/Cmd+Shift+G
-// group and ungroup the Selection (layer-actions.ts), one step each.
+// top-level Group (`DocumentCanvas` hits a Group only where one of its Layers is hit).
+// Moving it moves every Layer in it by the same delta; its corner handles scale and its
+// rotation handle turns every Layer in it (core `scaleGroup` / `rotateGroup`). Either way
+// the Group is laid out again around its Layers, as an axis-aligned Box. Ctrl/Cmd+G and
+// Ctrl/Cmd+Shift+G group and ungroup the Selection (layer-actions.ts), one step each.
+// A double click, Cmd+click or a click in the context of a selected child selects a
+// Layer inside a Group instead (picking.ts); it then moves, resizes, rotates and edits
+// like any Layer, and its Group is laid out again around it on commit. A Layer in a
+// locked or hidden Group is never hit and, selected from the list, has no handles.
 //
 // Direct manipulation: Fabric runs the drag, scale, rotate and text editing. When
 // one *logical modification* ends (a transform's `object:modified`, a text edit's
@@ -41,7 +44,7 @@
 //
 // `export` renders the shown Canvas offscreen (export.ts).
 import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, walkLayers, type Document, type GroupLayer, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
-import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject } from 'fabric'
+import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject, type TPointerEvent } from 'fabric'
 import { groupControls, textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
@@ -49,9 +52,10 @@ import { createHistory } from './history.ts'
 import { groupSelection, ungroupSelection, type LayerActionResult } from '../layer-actions.ts'
 import { roundAngle, roundPx } from './rounding.ts'
 import { DocumentGroup } from './group.ts'
-import { applyLayer, isFrozen, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
-import { allEntries, buildEntries, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
+import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
+import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
 import { fitZoom, type Size } from './zoom.ts'
+import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
 export type EditorOptions = {
   /**
@@ -223,7 +227,7 @@ function changedLayerIds(before: Document, after: Document): string[] {
 }
 
 export function createEditor({ loadFonts = loadBrowserFonts, measure = measureText }: EditorOptions = {}): Editor {
-  let canvas: Canvas | undefined
+  let canvas: DocumentCanvas | undefined
   let current: Document | undefined
   /** The top-level Layers' Entries, bottom → top (scene.ts). */
   let roots: Entry[] = []
@@ -260,12 +264,57 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     emit('canvas', { width, height })
   }
 
-  const requireCanvas = (): Canvas => {
+  const requireCanvas = (): DocumentCanvas => {
     if (!canvas) throw new Error('Editor is not mounted; call mount(container) first')
     return canvas
   }
 
   const entryOf = (object: FabricObject) => allEntries(roots).find((e) => e.object === object)
+
+  /** The selected Entries, in draw order. */
+  const selectedEntries = (): Entry[] => {
+    const active = canvas?.getActiveObjects() ?? []
+    return allEntries(roots).filter((e) => active.includes(e.object))
+  }
+
+  /** The Entries of a hit path of objects (see `DocumentCanvas.hitPath`). */
+  const entriesOf = (path: readonly FabricObject[]): Entry[] | undefined => {
+    const entries = path.map(entryOf)
+    return entries.every((e) => e !== undefined) && entries.length > 0 ? (entries as Entry[]) : undefined
+  }
+
+  /** The object a click on `path` targets (picking.ts). */
+  const pick = (path: FabricObject[], e: TPointerEvent): FabricObject => {
+    const entries = entriesOf(path)
+    if (!entries) return path[0]!
+    return clickTarget(entries, selectedEntries(), e.metaKey || e.ctrlKey).object
+  }
+
+  /** A double click on a selected Group selects its Layer under the pointer. */
+  const onDoubleClick = (e: TPointerEvent) => {
+    const c = requireCanvas()
+    const path = entriesOf(c.hitPath(e))
+    const target = path && doubleClickTarget(path, selectedEntries())
+    if (target) selectIds([target.base.id])
+  }
+
+  /** Shift+click on `object`: adds it to the Selection or takes it out (picking.ts). */
+  const toggle = (object: FabricObject): boolean => {
+    const entry = entryOf(object)
+    if (!entry) return false
+    selectIds(toggleSelection(selectedEntries(), entry).map((e) => e.base.id))
+    return true
+  }
+
+  /** Escape with a Layer in a Group selected selects its Group instead. */
+  const escapeKey = (event: KeyboardEvent): boolean => {
+    if (event.key !== 'Escape' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false
+    const next = escapeSelection(selectedEntries())
+    if (!next) return false
+    event.preventDefault()
+    selectIds(next.map((e) => e.base.id))
+    return true
+  }
 
   const documentNow = (): Document => {
     if (!current) throw new Error('No Document loaded')
@@ -418,10 +467,13 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     }
   }
 
-  /** Selects the Layers `ids`, locked and hidden ones too, skipping unknown ones. */
+  /**
+   * Selects the Layers `ids`, locked and hidden ones too, skipping unknown ones. A Layer
+   * whose ancestor is among them is left out (the Selection never holds both).
+   */
   const selectIds = (ids: readonly string[]) => {
     const c = requireCanvas()
-    const objects = allEntries(roots).filter((e) => ids.includes(e.base.id)).map((e) => e.object)
+    const objects = withoutDescendants(allEntries(roots).filter((e) => ids.includes(e.base.id))).map((e) => e.object)
     const held = holdSelection
     holdSelection = true // one report for the whole swap, not a `[]` in between
     try {
@@ -512,7 +564,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   /** Whether the Selection holds a locked or hidden Layer, so it shows no handles and does not move. */
   const selectionFrozen = (): boolean => {
     const active = canvas?.getActiveObjects() ?? []
-    return allEntries(roots).some((e) => isFrozen(e.base) && active.includes(e.object))
+    return allEntries(roots).some((e) => isFrozenEntry(e) && active.includes(e.object))
   }
 
   /** A Selection holding a Group scales only proportionally, like the Group (controls.ts). */
@@ -588,6 +640,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     if (previewing) return
     if (undoKeys(event)) return
     if (groupKeys(event)) return
+    if (escapeKey(event)) return
     nudge(event)
   }
 
@@ -637,6 +690,9 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         entry.base = { ...entry.base, text: target.text } satisfies TextLayer
         commit([target], 'text')
       })
+      c.pick = pick
+      c.toggleSelected = toggle
+      c.on('mouse:dblclick', ({ e }) => onDoubleClick(e))
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
       c.on('selection:created', groupSelectionControls)
@@ -777,11 +833,60 @@ function sameFaces(before: Document, next: Document): boolean {
 /**
  * The editor's Fabric canvas. A Group is hit only where one of its Layers is (shown and
  * not locked), never on the empty parts of its Box; a locked or hidden Group not at all.
+ * Which Layer of a hit Group a pointer event targets is up to `pick` (picking.ts).
  */
 class DocumentCanvas extends Canvas {
+  /** The object a pointer event `e` on `path` (see `hitPath`) targets. */
+  pick: (path: FabricObject[], e: TPointerEvent) => FabricObject = (path) => path[0]!
+  /** Shift+click on `target`: adds it to the Selection or takes it out; false when not handled. */
+  toggleSelected: (target: FabricObject) => boolean = () => false
+  /** The event `findTarget` runs for, so `searchPossibleTargets` can pick by its modifier keys. */
+  private finding: TPointerEvent | undefined
+
   override _checkTarget(object: FabricObject, pointer: Point): boolean {
     if (!(object instanceof DocumentGroup)) return super._checkTarget(object, pointer)
     return object.visible && object.evented && object.getObjects().some((child) => this._checkTarget(child, pointer))
+  }
+
+  override findTarget(e: TPointerEvent) {
+    const outer = this.finding
+    this.finding = e
+    try {
+      return super.findTarget(e)
+    } finally {
+      this.finding = outer
+    }
+  }
+
+  override searchPossibleTargets(objects: FabricObject[], pointer: Point) {
+    const info = super.searchPossibleTargets(objects, pointer)
+    if (objects !== this._objects || !info.container || !this.finding) return info
+    return { ...info, target: this.pick(this.pathOf(info.container, info.subTargets), this.finding) }
+  }
+
+  /** Shift+click is the editor's `toggleSelected`, on the Layer `pick` targets (never a Layer with its ancestor). */
+  protected override handleMultiSelection(e: TPointerEvent, target?: FabricObject): boolean {
+    const active = this._activeObject
+    if (!active || !target || !this.selection || !this._isSelectionKeyPressed(e) || active.getActiveControl()) return false
+    if (target === active) {
+      // On a multiple Selection: the selected Layer under the pointer, else what a click picks.
+      if (!(active instanceof ActiveSelection)) return false
+      const path = this.hitPath(e)
+      target = this._searchPossibleTargets(active.getObjects(), this.getScenePoint(e), []).target ?? (path.length > 0 ? this.pick(path, e) : undefined)
+    }
+    if (!target?.selectable) return false
+    return this.toggleSelected(target)
+  }
+
+  /** The objects under the pointer of `e`: the top-level one, then one per Group level down to the deepest hit. */
+  hitPath(e: TPointerEvent): FabricObject[] {
+    const { target, subTargets } = this._searchPossibleTargets(this._objects, this.getScenePoint(e), [])
+    return target ? this.pathOf(target, subTargets) : []
+  }
+
+  /** Fabric collects sub-targets innermost first. */
+  private pathOf(top: FabricObject, subTargets: readonly FabricObject[]): FabricObject[] {
+    return [top, ...[...subTargets].reverse()]
   }
 }
 

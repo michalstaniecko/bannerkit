@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findLayer, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer, type LeafLayer } from '../src/index.ts'
+import { findLayer, inheritedFlags, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer, type LeafLayer } from '../src/index.ts'
 
 const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000' })
 
@@ -141,5 +141,28 @@ describe('layerPath', () => {
   it('joins one layers[i] per level', () => {
     expect(layerPath([2])).toBe('layers[2]')
     expect(layerPath([1, 0])).toBe('layers[1].layers[0]')
+  })
+})
+
+describe('inheritedFlags', () => {
+  const group = (id: string, over: object, ...layers: Layer[]): Layer => ({ id, type: 'group', layers, ...over }) as Layer
+  // outer (locked) > inner (hidden) > a; b (own locked) at the root
+  const document = doc(group('outer', { locked: true }, group('inner', { visible: false }, rect('a'))), { ...rect('b'), locked: true } as Layer)
+
+  it('a Layer is locked or hidden when it or any ancestor Group is, naming the nearest Group that causes it', () => {
+    const flags = inheritedFlags(document, 'a')!
+
+    expect([flags.locked, flags.hidden, flags.lockedBy?.id, flags.hiddenBy?.id]).toEqual([true, true, 'outer', 'inner'])
+    const inner = inheritedFlags(document, 'inner')!
+    expect([inner.locked, inner.hidden, inner.lockedBy?.id, 'hiddenBy' in inner]).toEqual([true, true, 'outer', false])
+  })
+
+  it('its own flag counts, with no Group to name', () => {
+    expect(inheritedFlags(document, 'b')).toEqual({ locked: true, hidden: false })
+    expect(inheritedFlags(document, 'outer')).toEqual({ locked: true, hidden: false })
+  })
+
+  it('is undefined for an unknown id', () => {
+    expect(inheritedFlags(document, 'nope')).toBeUndefined()
   })
 })

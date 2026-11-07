@@ -11,7 +11,7 @@
 import type { GroupLayer, Layer, LeafLayer } from '@bannerkit/core'
 import type { FabricObject } from 'fabric'
 import type { DocumentGroup } from './group.ts'
-import { objectToLayer } from './mapper.ts'
+import { isFrozen, objectToLayer } from './mapper.ts'
 
 export type LeafEntry = { base: LeafLayer; object: FabricObject; parent: GroupEntry | undefined }
 export type GroupEntry = { base: GroupLayer; object: DocumentGroup; parent: GroupEntry | undefined; children: Entry[] }
@@ -43,6 +43,14 @@ export function leavesOf(entry: Entry): LeafEntry[] {
 /** The top-level Entry `entry` is in (itself at the top level). */
 export function rootOf(entry: Entry): Entry {
   return entry.parent ? rootOf(entry.parent) : entry
+}
+
+/**
+ * Whether `entry`'s Layer is effectively locked or hidden: it or a Group holding it is
+ * (spec Q14; core `inheritedFlags` answers the same for a Document).
+ */
+export function isFrozenEntry(entry: Entry): boolean {
+  return isFrozen(entry.base) || (entry.parent !== undefined && isFrozenEntry(entry.parent))
 }
 
 /** The Layer `entry` shows now, read back from the objects. */

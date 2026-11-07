@@ -20,6 +20,9 @@
 // transform), never resampled, so the browser Export matches the server Render.
 // Fabric's own object cache is off: it would resample (and it is skipped anyway when
 // a child has a shadow).
+//
+// Selection: Fabric-`interactive`, so a Layer inside can be the active object (picked by the
+// editor's rules, picking.ts) and a Textbox inside enters editing on click.
 import { Group, LayoutManager, util, type FabricObject } from 'fabric'
 import { groupControls } from './controls.ts'
 
@@ -30,7 +33,7 @@ class PlacedByMapper extends LayoutManager {
 
 export class DocumentGroup extends Group {
   constructor(objects: FabricObject[]) {
-    super(objects, { layoutManager: new PlacedByMapper(), objectCaching: false, subTargetCheck: true })
+    super(objects, { layoutManager: new PlacedByMapper(), objectCaching: false, subTargetCheck: true, interactive: true })
     // Scaled only proportionally, and rotated: the editor bakes either into its Layers (#27).
     this.controls = groupControls()
   }
