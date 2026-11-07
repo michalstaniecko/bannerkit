@@ -13,7 +13,7 @@ import {
   type ExportFormat,
   type ExportScale,
 } from '@bannerkit/core'
-import { FabricImage, type StaticCanvas } from 'fabric'
+import { FabricImage, Group, type FabricObject, type StaticCanvas } from 'fabric'
 
 export type ExportOptions = {
   /** Default png. */
@@ -40,8 +40,7 @@ export async function exportCanvas(
   if (!(quality >= 1 && quality <= 100)) throw new Error(`Export quality must be 1-100, got ${quality}`)
 
   await Promise.all(
-    canvas
-      .getObjects()
+    sceneObjects(canvas)
       .filter((o): o is FabricImage => o instanceof FabricImage)
       .map((image) => {
         const element = image.getElement()
@@ -79,10 +78,12 @@ export async function exportCanvas(
  * Object caching is off for the draw too: a cached object is rasterised into its own
  * canvas and blitted at a fractional offset, a second resample that blurs edges and
  * shifts them by a fraction of a pixel (measured: up to ~1% of pixels off the server).
+ * That goes for the objects inside a Group too (a Group's opacity has its own
+ * pixel-aligned surface, group.ts).
  */
 function drawLogical(canvas: StaticCanvas, width: number, height: number, multiplier: number): HTMLCanvasElement {
   const viewport = canvas.viewportTransform
-  const objects = canvas.getObjects()
+  const objects = sceneObjects(canvas)
   const caching = objects.map((o) => o.objectCaching)
   canvas.viewportTransform = [1, 0, 0, 1, 0, 0]
   for (const o of objects) o.objectCaching = false
@@ -93,4 +94,11 @@ function drawLogical(canvas: StaticCanvas, width: number, height: number, multip
     canvas.viewportTransform = viewport
     canvas.calcViewportBoundaries()
   }
+}
+
+/** Every object drawn on `canvas`, the ones inside Groups included. */
+function sceneObjects(canvas: StaticCanvas): FabricObject[] {
+  const within = (objects: FabricObject[]): FabricObject[] =>
+    objects.flatMap((o) => (o instanceof Group ? [o, ...within(o.getObjects())] : [o]))
+  return within(canvas.getObjects())
 }
