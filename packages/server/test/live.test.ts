@@ -7,7 +7,15 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Document } from '@bannerkit/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createProject, resizeDocument, watchDocuments, writeDocument, type DocumentChanged } from '../src/ops/index.ts'
+import {
+  createProject,
+  groupLayers,
+  resizeDocument,
+  ungroupLayer,
+  watchDocuments,
+  writeDocument,
+  type DocumentChanged,
+} from '../src/ops/index.ts'
 import { createApp } from '../src/rest/app.ts'
 import { tempRoot } from './harness.ts'
 
@@ -100,6 +108,23 @@ describe('SSE: document-changed', () => {
     await expect.poll(() => stream.events.length, { timeout: 3000 }).toBeGreaterThan(0)
     await settle()
     expect(stream.events).toEqual([{ project: 'summer', doc: 'hero', hash: resized.hash }])
+    await stream.close()
+  })
+
+  it('streams `layer group` and `layer ungroup`, so an open editor reloads', async () => {
+    const app = createApp({ root })
+    const stream = await listen(app)
+
+    const grouped = await groupLayers({ root, project: 'summer', name: 'hero', ids: ['rect-1'] })
+    await expect.poll(() => stream.events.length, { timeout: 3000 }).toBe(1)
+    const ungrouped = await ungroupLayer({ root, project: 'summer', name: 'hero', id: grouped.id })
+
+    await expect.poll(() => stream.events.length, { timeout: 3000 }).toBe(2)
+    await settle()
+    expect(stream.events).toEqual([
+      { project: 'summer', doc: 'hero', hash: grouped.hash },
+      { project: 'summer', doc: 'hero', hash: ungrouped.hash },
+    ])
     await stream.close()
   })
 

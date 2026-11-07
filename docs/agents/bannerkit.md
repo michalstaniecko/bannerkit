@@ -62,7 +62,7 @@ Every leaf Layer (`rect`, `image`, `text`) has these fields: `id`, `type`, `x`, 
 
 - Children keep **Canvas coordinates**: a child's `x`/`y` mean the same as at the root. To move a Group, move every Layer inside it by the same delta. The Group's Box is derived: the axis-aligned rectangle around all its children, hidden ones included (`inspect` reports it as the Group's `extent`).
 - `opacity` applies to the children composited together, as in CSS: where children overlap, the lower one does not show through the upper one. `visible: false` hides everything inside.
-- An empty Group is an error; delete it instead. Ids are unique across the whole tree, and issue paths go through Groups: `layers[1].layers[0].fontWeight`. Name new Groups `group-<n>`.
+- An empty Group is an error; delete it instead. Prefer `layer group`/`layer ungroup` over hand-editing to create or dissolve a Group. To move a Layer into or out of a Group, move its object between `layers` arrays in the JSON. Ids are unique across the whole tree, and issue paths go through Groups: `layers[1].layers[0].fontWeight`. Name new Groups `group-<n>`.
 - Groups need `version: 2`. In a v1 file, `"type": "group"` fails with `"group" requires version: 2; run bannerkit migrate`.
 - The editor cannot show Groups yet; it refuses such a Document with a message. The CLI handles them fully.
 
@@ -97,6 +97,8 @@ Exit codes are 0 for success, 1 for an operation error or invalid Documents, and
 | `doc new <project> <name> (--preset WxH \| --size WxH)` | `{ project, name, path, document, warnings, hash }` |
 | `doc duplicate <project> <from> [<name>] (--preset WxH \| --size WxH)` | same as `doc new`. The Layers are copied unchanged, so rearrange them for the new size. The default name is `<from>-<W>x<H>` |
 | `doc resize <project> <doc> (--preset WxH \| --size WxH) [--anchor top-left\|top\|top-right\|left\|center\|right\|bottom-left\|bottom\|bottom-right]` | same as `doc new`. Resizes the Canvas in place, keeping the Anchor point put (default `top-left`). Layers are not scaled: they all (Group children too) move by the same delta and may stick out past the Canvas, so check `placement` with `inspect` afterwards |
+| `layer group <project> <doc> <ids…> [--name N]` | same as `doc new`, plus `id` of the new Group. Wraps Layers that share a parent (root or one Group) in a new Group placed where the topmost of them was; they keep their stacking order and coordinates. Layers with different parents are `INVALID_INPUT`, an unknown id is `NOT_FOUND`. Writes v2 |
+| `layer ungroup <project> <doc> <id>` | same as `doc new`, plus `ids` of the former children (bottom to top). Puts them where the Group was, coordinates unchanged; the Group's `name`/`opacity`/`visible`/`locked` are dropped. A Layer that is not a Group is `INVALID_INPUT` |
 | `asset add <project> <files…>` | `{ project, assets: [{ src, path, format, width, height }] }`. Use `src` verbatim. If the name is taken, ingest adds a suffix (`bottle-1.png`) |
 | `validate <project \| path/to/doc.json>` | `{ ok, documents: [{ project, name, path, ok, errors, warnings }] }` |
 | `migrate <project>` | `{ project, migrated: [{ name, path }], unchanged: [{ name, path }], invalid: [{ name, path, errors }] }`. Rewrites each valid v1 Document as v2; only `version` changes (`$schema` stays). `unchanged` are already v2. `invalid` Documents (the errors `validate` reports) are not written, and the command exits 1. Safe to run again |
