@@ -207,7 +207,7 @@ describe('Document versions', () => {
 
     expect(result.ok).toBe(false)
     expect(result.errors).toEqual([
-      { path: 'guides', message: '"guides" requires version: 2; run `bannerkit migrate`' },
+      { path: 'guides', message: '"guides" requires "version": 2; set "version": 2 in this file' },
     ])
   })
 
@@ -216,7 +216,7 @@ describe('Document versions', () => {
     const layers = doc.layers.map((layer) => (layer.id === 'text-2' ? { ...layer, fontStyle: 'italic' } : layer))
 
     expect(validateDocument({ ...doc, layers }).errors).toEqual([
-      { path: 'layers[3].fontStyle', message: '"fontStyle" requires version: 2; run `bannerkit migrate`' },
+      { path: 'layers[3].fontStyle', message: '"fontStyle" requires "version": 2; set "version": 2 in this file' },
     ])
   })
 
@@ -240,7 +240,7 @@ describe('Document versions', () => {
       { path: `layers[${index}].textTransform`, message: expect.stringContaining('"none"') },
     ])
     expect(validateDocument(withTransform(1, 'uppercase')).errors).toEqual([
-      { path: `layers[${index}].textTransform`, message: '"textTransform" requires version: 2; run `bannerkit migrate`' },
+      { path: `layers[${index}].textTransform`, message: '"textTransform" requires "version": 2; set "version": 2 in this file' },
     ])
   })
 

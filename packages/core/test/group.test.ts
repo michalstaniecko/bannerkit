@@ -79,7 +79,7 @@ describe('Group validation', () => {
   it('tells a v1 file with a Group to migrate', () => {
     const result = validateDocument({ ...v2(group('g', [rect('a')])), version: 1 })
 
-    expect(result.errors).toEqual([{ path: 'layers[0].type', message: '"group" requires version: 2; run `bannerkit migrate`' }])
+    expect(result.errors).toEqual([{ path: 'layers[0].type', message: '"group" requires "version": 2; set "version": 2 in this file' }])
   })
 })
 

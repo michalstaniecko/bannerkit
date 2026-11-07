@@ -146,9 +146,13 @@ function toIssues(issue: z.core.$ZodIssue, input: unknown, schema: z.core.$ZodTy
   }
 }
 
-/** The message for a field only the current Document version has, found in an older-version file. */
+/**
+ * The message for a field only the current Document version has, found in an
+ * older-version file. Points at bumping `version` in place, not `bannerkit migrate`:
+ * migrate never writes a file that is invalid in its own version, so it can't fix this.
+ */
 function requiresCurrentVersion(what: string): string {
-  return `${what} requires version: ${DOCUMENT_VERSION}; run \`bannerkit migrate\``
+  return `${what} requires "version": ${DOCUMENT_VERSION}; set "version": ${DOCUMENT_VERSION} in this file`
 }
 
 function newerLayerType(type: string): boolean {

@@ -79,7 +79,7 @@ describe('a v1 Document on disk', () => {
 
     expect(run.exitCode).toBe(1)
     expect(run.json().result.documents.find((d: any) => d.name === 'hero').errors).toEqual([
-      { path: 'guides', message: '"guides" requires version: 2; run `bannerkit migrate`' },
+      { path: 'guides', message: '"guides" requires "version": 2; set "version": 2 in this file' },
     ])
   })
 })

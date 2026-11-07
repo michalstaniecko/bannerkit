@@ -184,6 +184,17 @@ describe('addLayer', () => {
       expect(childIds(document)).toEqual(['rect-2', 'rect-3', 'rect-4'])
     })
 
+    it('puts it right above a selected Layer in the root', () => {
+      expect(ids(addLayer(tree(), { type: 'rect' }, ['rect-1']).document)).toEqual(['rect-1', 'rect-6', 'group-1', 'rect-5'])
+    })
+
+    it('uses the topmost selected Layer in draw order when the Selection spans parents', () => {
+      const { document } = addLayer(tree(), { type: 'rect' }, ['rect-2', 'rect-1'])
+
+      expect(ids(document)).toEqual(['rect-1', 'group-1', 'rect-5'])
+      expect(childIds(document)).toEqual(['rect-2', 'rect-6', 'rect-3', 'rect-4'])
+    })
+
     it('puts it on top of the root without a Selection', () => {
       expect(ids(addLayer(tree(), { type: 'rect' }, []).document)).toEqual(['rect-1', 'group-1', 'rect-5', 'rect-6'])
     })
