@@ -118,13 +118,14 @@ function applyGroup(object: DocumentGroup, layer: GroupLayer, env: MapperEnv): v
     visible: layer.visible ?? true,
     selectable: !layer.locked,
     evented: !layer.locked,
-    // Scaling and rotating a Group come later (#27): for now it only moves.
-    hasControls: false,
+    // Scaled (always proportionally) and rotated by its handles; the editor bakes either into its Layers.
+    hasControls: !frozen,
     lockMovementX: frozen,
     lockMovementY: frozen,
-    lockRotation: true,
-    lockScalingX: true,
-    lockScalingY: true,
+    lockRotation: frozen,
+    lockScalingX: frozen,
+    lockScalingY: frozen,
+    lockScalingFlip: true,
     lockSkewingX: true,
     lockSkewingY: true,
   })

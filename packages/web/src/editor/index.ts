@@ -9,11 +9,14 @@
 //
 // A Group is selected and moved as a whole: a click on any of its Layers takes the
 // top-level Group (`DocumentCanvas` hits a Group only where one of its Layers is hit).
-// Moving it moves every Layer in it by the same delta, and the Group is laid out again
-// around them. A double click, Cmd+click or a click in the context of a selected child
-// selects a Layer inside a Group instead (picking.ts); it then moves, resizes, rotates
-// and edits like any Layer, and its Group is laid out again around it on commit. A Layer
-// in a locked or hidden Group is never hit and, selected from the list, has no handles.
+// Moving it moves every Layer in it by the same delta; its corner handles scale and its
+// rotation handle turns every Layer in it (core `scaleGroup` / `rotateGroup`). Either way
+// the Group is laid out again around its Layers, as an axis-aligned Box. Ctrl/Cmd+G and
+// Ctrl/Cmd+Shift+G group and ungroup the Selection (layer-actions.ts), one step each.
+// A double click, Cmd+click or a click in the context of a selected child selects a
+// Layer inside a Group instead (picking.ts); it then moves, resizes, rotates and edits
+// like any Layer, and its Group is laid out again around it on commit. A Layer in a
+// locked or hidden Group is never hit and, selected from the list, has no handles.
 //
 // Direct manipulation: Fabric runs the drag, scale, rotate and text editing. When
 // one *logical modification* ends (a transform's `object:modified`, a text edit's
@@ -40,12 +43,13 @@
 // reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
 //
 // `export` renders the shown Canvas offscreen (export.ts).
-import { faceKey, layerExtent, layoutText, walkLayers, type Document, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
-import { ActiveSelection, Canvas, Point, Textbox, type FabricObject, type TPointerEvent } from 'fabric'
-import { textControls } from './controls.ts'
+import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, walkLayers, type Document, type GroupLayer, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject, type TPointerEvent } from 'fabric'
+import { groupControls, textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
 import { createHistory } from './history.ts'
+import { groupSelection, ungroupSelection, type LayerActionResult } from '../layer-actions.ts'
 import { roundAngle, roundPx } from './rounding.ts'
 import { DocumentGroup } from './group.ts'
 import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
@@ -318,15 +322,36 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   }
 
   /**
-   * Bakes a move of a Group's object into its Layers: every leaf in it moves by the
-   * delta of the Group's centre from its Box centre (whole px for a drag, like any
-   * transform), so they all move alike. The Group is laid out again by the caller.
+   * Bakes what a gesture did to a Group's object into its Layers. Before it the
+   * object had the identity transform around the Group's Box (centre `c`), so now it
+   * maps every point p to t + R·s·(p − c): a scale `s` (corner handles, always
+   * proportional), a rotation R (the rotation handle) and a move to `t`.
+   * - A move alone: every leaf moves by t − c (whole px for a drag, like any
+   *   transform), so they all move alike.
+   * - A scale alone: core `scaleGroup` around the point the gesture kept fixed (the
+   *   opposite corner, or the centre with Alt).
+   * - Otherwise (a rotation, or a whole Selection turned): core `scaleGroup` and
+   *   `rotateGroup` around `c`, then the move.
+   * The Group is laid out again by the caller.
    */
-  const bakeGroupMove = (entry: GroupEntry, cause: ChangeCause) => {
-    const box = layerExtent(syncBase(entry), env.measure)
-    const centre = new Point(0, 0).transform(entry.object.calcTransformMatrix())
-    let dx = centre.x - (box.x + box.width / 2)
-    let dy = centre.y - (box.y + box.height / 2)
+  const bakeGroup = (entry: GroupEntry, cause: ChangeCause) => {
+    const before = syncBase(entry) as GroupLayer
+    const box = layerExtent(before, env.measure)
+    const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    const { scaleX, scaleY, translateX, translateY } = util.qrDecompose(entry.object.calcTransformMatrix())
+    const scale = Math.sqrt(Math.abs(scaleX * scaleY))
+    // The angle as a leaf reads it (`objectToLayer`), so Layers turned together get the same rotation.
+    const angle = entry.object.getTotalAngle()
+    const turn = Math.abs(angle) < 1e-9 ? 0 : angle
+    const scaled = Math.abs(scale - 1) > 1e-9
+    if (scaled && turn === 0) {
+      const fixed = { x: c.x + (translateX - c.x) / (1 - scale), y: c.y + (translateY - c.y) / (1 - scale) }
+      return rebase(entry, scaleGroup(before, scale, fixed))
+    }
+    if (scaled) rebase(entry, scaleGroup(syncBase(entry) as GroupLayer, scale, c))
+    if (turn !== 0) rebase(entry, rotateGroup(syncBase(entry) as GroupLayer, turn, env.measure, c))
+    let dx = translateX - c.x
+    let dy = translateY - c.y
     if (cause === 'transform') [dx, dy] = [roundPx(dx), roundPx(dy)]
     if (dx === 0 && dy === 0) return
     for (const leaf of leavesOf(entry)) leaf.base = { ...leaf.base, x: leaf.base.x + dx, y: leaf.base.y + dy }
@@ -345,7 +370,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     for (const object of objects) {
       const entry = entryOf(object)
       if (!entry) continue
-      if (isGroupEntry(entry)) bakeGroupMove(entry, cause)
+      if (isGroupEntry(entry)) bakeGroup(entry, cause)
       else {
         const layer = objectToLayer(object, entry.base)
         entry.base = cause === 'transform' ? wholePixels(layer) : layer
@@ -542,6 +567,15 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     return allEntries(roots).some((e) => isFrozenEntry(e) && active.includes(e.object))
   }
 
+  /** A Selection holding a Group scales only proportionally, like the Group (controls.ts). */
+  const groupSelectionControls = () => {
+    const active = canvas?.getActiveObject()
+    if (active instanceof ActiveSelection && active.getObjects().some((o) => o instanceof DocumentGroup)) {
+      active.controls = groupControls()
+      active.setCoords()
+    }
+  }
+
   const reportSelection = () => {
     const active = canvas?.getActiveObject()
     if (active instanceof ActiveSelection) {
@@ -578,13 +612,35 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     return true
   }
 
+  /**
+   * Ctrl/Cmd+G groups the Selection, Ctrl/Cmd+Shift+G ungroups every selected Group
+   * (layer-actions.ts): one step, then the result is selected. The browser's own
+   * shortcut is blocked even when the action is unavailable.
+   */
+  const groupKeys = (event: KeyboardEvent): boolean => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'g') return false
+    event.preventDefault()
+    const result = (event.shiftKey ? ungroupSelection : groupSelection)(documentNow(), selected)
+    if (result) void applyLayers(result)
+    return true
+  }
+
+  /** Shows a Layer action's Document as one 'layers' step, then selects its result. */
+  const applyLayers = async ({ document, select }: LayerActionResult) => {
+    finishTextEdit()
+    await dropPreview()
+    if (await showStep(document, 'layers')) selectIds(select)
+  }
+
   const onKeyDown = (event: KeyboardEvent) => {
     if (!canvas || !current) return
     const target = event.target as HTMLElement | null
     if (target?.closest?.(FIELD)) return
     // A gesture is previewing; its owner handles keys (Escape cancels it).
     if (previewing) return
-    if (undoKeys(event) || escapeKey(event)) return
+    if (undoKeys(event)) return
+    if (groupKeys(event)) return
+    if (escapeKey(event)) return
     nudge(event)
   }
 
@@ -639,6 +695,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       c.on('mouse:dblclick', ({ e }) => onDoubleClick(e))
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
+      c.on('selection:created', groupSelectionControls)
+      c.on('selection:updated', groupSelectionControls)
       c.on('selection:cleared', reportSelection)
       const keyTarget = container.ownerDocument
       keyTarget.addEventListener('keydown', onKeyDown)

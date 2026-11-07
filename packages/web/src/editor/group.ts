@@ -8,6 +8,11 @@
 // DocumentGroup; the editor bakes the move into the children and applies the Group
 // again, so between gestures its transform is always the identity around its Box.
 //
+// Scale and rotation: a Group has proportional corner handles and the rotation
+// handle (controls.ts). Fabric runs the gesture on the DocumentGroup; on release the
+// editor bakes it into the children (core `scaleGroup` / `rotateGroup`) and applies
+// the Group again around them.
+//
 // Opacity: like CSS (and the server's `drawGroup`), a Group with opacity < 1 draws
 // its children onto one Canvas-sized surface at full opacity and lays that surface
 // over the Canvas with the Group's opacity, so overlapping children do not show
@@ -19,6 +24,7 @@
 // Selection: Fabric-`interactive`, so a Layer inside can be the active object (picked by the
 // editor's rules, picking.ts) and a Textbox inside enters editing on click.
 import { Group, LayoutManager, util, type FabricObject } from 'fabric'
+import { groupControls } from './controls.ts'
 
 /** Fabric's layout never moves or resizes a DocumentGroup: the mapper places it. */
 class PlacedByMapper extends LayoutManager {
@@ -28,6 +34,8 @@ class PlacedByMapper extends LayoutManager {
 export class DocumentGroup extends Group {
   constructor(objects: FabricObject[]) {
     super(objects, { layoutManager: new PlacedByMapper(), objectCaching: false, subTargetCheck: true, interactive: true })
+    // Scaled only proportionally, and rotated: the editor bakes either into its Layers (#27).
+    this.controls = groupControls()
   }
 
   override render(ctx: CanvasRenderingContext2D) {

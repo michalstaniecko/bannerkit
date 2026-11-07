@@ -203,6 +203,19 @@ describe('changing a selected Layer in a Group', () => {
     expect(editor.getDocument()).toEqual(withRect2({ rotation: 90 }))
   })
 
+  it('a nested Group selected inside its Group moves its own Layers only', async () => {
+    const { editor, upper, changes } = await openEditor(nested())
+    editor.select(['rect-2'])
+    click(upper, RECT_3) // group-2, in group-1's context
+
+    drag(upper, RECT_3, [RECT_3[0] + 10, RECT_3[1] + 5])
+
+    expect(changes.map((c) => c.layerIds.toSorted())).toEqual([['group-2', 'rect-3']])
+    const g1 = editor.getDocument().layers[1] as GroupLayer
+    expect(g1.layers[0]).toMatchObject({ x: 100, y: 100 })
+    expect((g1.layers[2] as GroupLayer).layers[0]).toMatchObject({ x: 260, y: 205 })
+  })
+
   it('an arrow key nudges only that Layer', async () => {
     const { editor, changes } = await openEditor(nested())
     editor.select(['rect-2'])
