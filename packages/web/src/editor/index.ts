@@ -86,7 +86,7 @@ export type ApplyOptions = { cause: ApplyCause }
 export type DocumentRecipe = (document: Document) => Document
 
 /**
- * A transient change of the shown Document while a gesture runs (dragging a field's
+ * A Gesture preview (not a Preview Render): a transient change of the shown Document while a gesture runs (dragging a field's
  * label, a Canvas resize handle): shown on the Canvas with the Selection kept, but no
  * undo step, no `change` and so no autosave. It ends with exactly one of `commit`,
  * `cancel`, or being dropped by any other step (an edit, undo/redo, a reload from

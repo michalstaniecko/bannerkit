@@ -86,6 +86,10 @@ _Avoid_: bounding box, group box
 What the Inspector shows for a property whose value differs between the selected Layers: an empty field or an indeterminate switch. Setting a value there gives it to all of them.
 _Avoid_: multiple values, varies
 
+**Gesture preview**:
+What the editor shows while a gesture changes a value continuously (dragging an Inspector field's label, a Canvas resize handle): drawn on the Canvas but not an undo step and not saved; releasing makes it one step, Escape drops it. The editor API calls it `preview()`.
+_Avoid_: Preview (the agent's throwaway Render), live preview, draft
+
 ### Output
 
 **Render**:
@@ -96,7 +100,7 @@ A final encoded Render (PNG, JPEG or WebP) at an exact pixel size and scale, wri
 _Avoid_: output, download
 
 **Preview**:
-A throwaway Render written so an agent can look at the current state of a Document.
+A throwaway Render written so an agent can look at the current state of a Document. Not the editor's transient display during a gesture: that is a Gesture preview.
 
 **Supersampling**:
 Rendering at twice the target size and downsampling to the target, applied to every Export.
