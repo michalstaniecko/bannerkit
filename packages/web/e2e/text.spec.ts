@@ -28,6 +28,9 @@ const CORPUS: Omit<TextLayer, 'id' | 'type' | 'x' | 'y' | 'fontFamily' | 'fill'>
   { text: 'Unbreakablesuperlongwordthatneedsshrinking ok', width: 200, height: 200, fontSize: 60, fontWeight: 700, autoFit: { minFontSize: 8 } },
   { text: 'Still overflowing at the minimum size because the box is tiny', width: 120, height: 30, fontSize: 40, fontWeight: 700, autoFit: { minFontSize: 20 } },
   { text: '1200 × 628 · 1080 × 1080 · 300 × 250 · 728 × 90', width: 190, fontSize: 22, fontWeight: 600 },
+  { text: 'Uppercase is wider, so it breaks sooner', width: 260, fontSize: 30, fontWeight: 700, textTransform: 'uppercase' },
+  { text: 'Straße größer: ß becomes SS when uppercased', width: 250, height: 80, fontSize: 48, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, autoFit: { minFontSize: 10 } },
+  { text: 'LOWERCASE HEADLINE, Lowercased By Core', width: 220, fontSize: 30, fontWeight: 500, textTransform: 'lowercase' },
 ]
 
 const layers: TextLayer[] = CORPUS.map((c, i) => ({ ...base, ...c, id: `text-${i + 1}` }))
