@@ -23,6 +23,7 @@ import {
   type TextLayout,
 } from '@bannerkit/core'
 import { fontManifest } from '../editor/fonts.ts'
+import { layerFlag, withLayerFlag } from '../layer-actions.ts'
 import { roundAngle, roundPx } from '../editor/rounding.ts'
 import type { SelectOption } from '../ui/Select.tsx'
 
@@ -115,12 +116,16 @@ export type FieldGroup<L extends Layer = Layer> = { key: string; title: string; 
 
 type LayerOf<T extends LayerType> = Extract<Layer, { type: T }>
 
+/** `layer` without its optional `key`. */
+export function omit<L extends Layer, K extends keyof L>(layer: L, key: K): L {
+  const next = { ...layer }
+  delete next[key]
+  return next
+}
+
 /** `layer` with optional `key` set to `value`, or left out when `value` is its default `fallback`. */
 export function setOptional<L extends Layer, K extends keyof L>(layer: L, key: K, value: L[K], fallback: L[K]): L {
-  const next = { ...layer }
-  if (value === fallback) delete next[key]
-  else next[key] = value
-  return next
+  return value === fallback ? omit(layer, key) : { ...layer, [key]: value }
 }
 
 /**
@@ -182,10 +187,7 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           write: (l, auto, { textLayout }) => {
             if (l.type !== 'text') return l
             if (!auto) return l.height === undefined ? { ...l, height: Math.ceil(textLayout(l).height) } : l
-            if (l.autoFit) return l
-            const next = { ...l }
-            delete next.height
-            return next
+            return l.autoFit ? l : omit(l, 'height')
           },
         },
         {
@@ -218,15 +220,15 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           control: 'toggle',
           key: 'visible',
           label: 'Visible',
-          read: (l) => l.visible ?? true,
-          write: (l, visible) => setOptional<Layer, 'visible'>(l, 'visible', visible, true) as L,
+          read: (l) => layerFlag(l, 'visible'),
+          write: (l, visible) => withLayerFlag(l, 'visible', visible),
         },
         {
           control: 'toggle',
           key: 'locked',
           label: 'Locked',
-          read: (l) => l.locked ?? false,
-          write: (l, locked) => setOptional<Layer, 'locked'>(l, 'locked', locked, false) as L,
+          read: (l) => layerFlag(l, 'locked'),
+          write: (l, locked) => withLayerFlag(l, 'locked', locked),
         },
       ],
     },
@@ -269,12 +271,7 @@ function shadowGroup<L extends Layer>(): FieldGroup<L> {
         key: 'shadow',
         label: 'Shadow',
         read: (l) => l.shadow !== undefined,
-        write: (l, on) => {
-          const next = { ...l }
-          if (on) next.shadow = l.shadow ?? { ...DEFAULT_SHADOW }
-          else delete next.shadow
-          return next
-        },
+        write: (l, on) => (on ? { ...l, shadow: l.shadow ?? { ...DEFAULT_SHADOW } } : omit(l, 'shadow')),
       },
       {
         control: 'color',
@@ -374,6 +371,10 @@ function rectGroups(): FieldGroup<RectLayer>[] {
   ]
 }
 
+/** Select options for `values`, each labelled with its value capitalised. */
+const options = (values: readonly string[]): SelectOption[] =>
+  values.map((value) => ({ value, label: value[0]!.toUpperCase() + value.slice(1) }))
+
 /** The fields of an image Layer (its `src` is edited in the JSON tab). */
 function imageGroups(): FieldGroup<ImageLayer>[] {
   return [
@@ -385,7 +386,7 @@ function imageGroups(): FieldGroup<ImageLayer>[] {
           control: 'select',
           key: 'fit',
           label: 'Fit',
-          options: FITS.map((fit) => ({ value: fit, label: fit[0]!.toUpperCase() + fit.slice(1) })),
+          options: options(FITS),
           read: (l) => l.fit,
           write: (l, fit) => ({ ...l, fit: fit as Fit }),
         },
@@ -393,10 +394,6 @@ function imageGroups(): FieldGroup<ImageLayer>[] {
     },
   ]
 }
-
-/** Select options for `values`, each labelled with its value capitalised. */
-const options = (values: readonly string[]): SelectOption[] =>
-  values.map((value) => ({ value, label: value[0]!.toUpperCase() + value.slice(1) }))
 
 type FontWeight = TextLayer['fontWeight']
 type Align = NonNullable<TextLayer['align']>
@@ -538,11 +535,7 @@ function autoFitGroup(): FieldGroup<TextLayer> {
         label: 'AutoFit',
         read: (l) => l.autoFit !== undefined,
         write: (l, on, { textLayout }) => {
-          if (!on) {
-            const next = { ...l }
-            delete next.autoFit
-            return next
-          }
+          if (!on) return omit(l, 'autoFit')
           if (l.autoFit) return l
           return {
             ...l,

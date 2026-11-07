@@ -200,6 +200,9 @@ const ARROWS: Record<string, [number, number]> = {
 /** Keys typed into these go to the field, not the editor. */
 const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
 
+/** Whether two Documents are the same (as JSON: same keys, in the same order). */
+const sameDocument = (a: Document, b: Document): boolean => JSON.stringify(a) === JSON.stringify(b)
+
 /** Ids of the Layers that differ between two Documents, in `after` order then removed ones. */
 function changedLayerIds(before: Document, after: Document): string[] {
   const old = new Map(before.layers.map((l) => [l.id, JSON.stringify(l)]))
@@ -406,7 +409,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       if (ended) return
       end()
       // Synchronous when laid out in place, so a step right after starts from `base`.
-      if (current && JSON.stringify(documentNow()) !== JSON.stringify(base)) await relayout(base)
+      if (current && !sameDocument(documentNow(), base)) await relayout(base)
     }
     const state = { base, drop: restore, end }
     previewing = state
@@ -434,7 +437,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         await pending
         if (!current) return
         const after = documentNow()
-        if (JSON.stringify(after) === JSON.stringify(base)) return
+        if (sameDocument(after, base)) return
         history.record(after)
         emit('change', { document: after, cause, layerIds: changedLayerIds(base, after) })
         settleSize()
@@ -568,7 +571,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       if (!current) throw new Error('No Document loaded')
       finishTextEdit()
       await dropPreview()
-      if (JSON.stringify(document) === JSON.stringify(documentNow())) return
+      if (sameDocument(document, documentNow())) return
       await showStep(document, cause)
     },
 
@@ -579,15 +582,14 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       let before = documentNow()
       let next = recipe(structuredClone(before))
       // A font not shown yet loads first; the recipe then runs on whatever shows by then.
-      const shown = new Set(facesUsed(before).map((f) => `${f.family} ${f.weight}`))
-      if (facesUsed(next).some((f) => !shown.has(`${f.family} ${f.weight}`))) {
+      if (!sameFaces(before, next)) {
         const token = loads
         await loadFonts(facesUsed(next))
         if (token !== loads || !current) return
         before = documentNow()
         next = recipe(structuredClone(before))
       }
-      if (JSON.stringify(next) === JSON.stringify(before)) return
+      if (sameDocument(next, before)) return
       if (!(await relayout(next))) return
       const after = documentNow()
       history.record(after)

@@ -5,7 +5,7 @@ import { Eye, EyeOff, Lock, LockOpen, type LucideIcon } from 'lucide-react'
 import { useState, type ReactNode, type RefObject } from 'react'
 import type { Layer } from '@bannerkit/core'
 import type { Editor } from './editor/index.ts'
-import { moveLayer, setLayerFlag } from './layer-actions.ts'
+import { layerFlag, moveLayer, setLayerFlag } from './layer-actions.ts'
 import { ICON_SIZE } from './ui/Button.tsx'
 import { Panel } from './ui/Panel.tsx'
 import { useLayers } from './useLayers.ts'
@@ -101,7 +101,7 @@ export function LayerRow({ layer, depth, selected, onSelect, onFlag, drag, child
         <Toggle
           label={`Show ${layer.id}`}
           title="Visible"
-          checked={layer.visible !== false}
+          checked={layerFlag(layer, 'visible')}
           on={Eye}
           off={EyeOff}
           onChange={(value) => onFlag('visible', value)}
@@ -109,7 +109,7 @@ export function LayerRow({ layer, depth, selected, onSelect, onFlag, drag, child
         <Toggle
           label={`Lock ${layer.id}`}
           title="Locked"
-          checked={layer.locked === true}
+          checked={layerFlag(layer, 'locked')}
           on={Lock}
           off={LockOpen}
           onChange={(value) => onFlag('locked', value)}

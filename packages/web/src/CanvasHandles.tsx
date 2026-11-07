@@ -3,9 +3,10 @@
 // put, a corner the opposite corner (the Anchor), through core `resizeCanvas`. The drag
 // is an editor preview (no step, no event, so the zoom holds still) with a `W × H`
 // label; the release is one step with cause `resize`, Escape cancels it.
-import { MAX_CANVAS_SIDE, resizeCanvas, type Anchor, type Size } from '@bannerkit/core'
+import { resizeCanvas, type Anchor, type Size } from '@bannerkit/core'
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import type { Editor, Preview } from './editor/index.ts'
+import { canvasSide } from './editor/rounding.ts'
 
 /** A handle: which sides it moves (-1 left/top, 1 right/bottom, 0 neither) and the Anchor it keeps. */
 type Handle = { name: string; sx: -1 | 0 | 1; sy: -1 | 0 | 1; anchor: Anchor }
@@ -20,9 +21,6 @@ const HANDLES: Handle[] = [
   { name: 'bottom edge', sx: 0, sy: 1, anchor: 'top' },
   { name: 'bottom-right corner', sx: 1, sy: 1, anchor: 'top-left' },
 ]
-
-/** A Canvas side within the Canvas limits: a whole number from 1 to MAX_CANVAS_SIDE. */
-const clampSide = (value: number) => Math.min(MAX_CANVAS_SIDE, Math.max(1, Math.round(value)))
 
 type Props = { editor: RefObject<Editor | null>; loaded: boolean }
 
@@ -56,8 +54,8 @@ export function CanvasHandles({ editor, loaded }: Props) {
       const dx = (e.clientX - down.clientX) / zoom
       const dy = (e.clientY - down.clientY) / zoom
       size = {
-        width: clampSide(from.width + handle.sx * dx),
-        height: clampSide(from.height + handle.sy * dy),
+        width: canvasSide(from.width + handle.sx * dx),
+        height: canvasSide(from.height + handle.sy * dy),
       }
       setDragging(size)
       const shown = size

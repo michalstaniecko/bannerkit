@@ -5,6 +5,7 @@
 // The Anchor is UI state of the session (held by whoever renders this) and never
 // reaches the Document.
 import { MAX_CANVAS_SIDE, resizeCanvas, type Anchor, type Document, type Size } from '@bannerkit/core'
+import { canvasSide } from '../editor/rounding.ts'
 import { ColorField } from '../ui/ColorField.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
@@ -23,7 +24,7 @@ type Props = {
 
 export function DocumentFields({ document, anchor, onAnchorChange, edits, resetKey }: Props) {
   const resize = (axis: keyof Size, value: number) => (d: Document) =>
-    resizeCanvas(d, { width: d.canvas.width, height: d.canvas.height, [axis]: Math.round(value) }, anchor)
+    resizeCanvas(d, { width: d.canvas.width, height: d.canvas.height, [axis]: canvasSide(value) }, anchor)
   const sizeField = (axis: keyof Size, label: string) => (
     <NumberField
       label={label}
