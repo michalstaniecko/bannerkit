@@ -1,7 +1,8 @@
 // Selecting inside a Group on the Canvas, and locked/hidden inherited from Groups (ticket #26).
-import type { GroupLayer, Layer } from '@bannerkit/core'
+import type { GroupLayer, Layer, RectLayer } from '@bannerkit/core'
+import type { Textbox } from 'fabric'
 import { describe, expect, it } from 'vitest'
-import { doc, openEditor, rect } from './editor-harness.ts'
+import { doc, openEditor, rect, text } from './editor-harness.ts'
 
 const group = (id: string, layers: Layer[], over: Partial<GroupLayer> = {}): GroupLayer => ({ id, type: 'group', layers, ...over })
 
@@ -154,6 +155,77 @@ describe('Escape', () => {
 
     expect(key('Escape')).toBe(true)
     expect(editor.getSelection()).toEqual(['rect-1'])
+  })
+})
+
+describe('changing a selected Layer in a Group', () => {
+  /** `nested()` with rect-2 replaced by `over`. */
+  const withRect2 = (over: Partial<RectLayer>) => {
+    const d = nested()
+    const g = d.layers[1] as GroupLayer
+    g.layers[0] = { ...(g.layers[0] as RectLayer), ...over }
+    return d
+  }
+
+  it('a drag moves only that Layer, as one change, and the Group Box follows', async () => {
+    const { editor, upper, changes } = await openEditor(nested())
+    editor.select(['rect-2'])
+
+    drag(upper, RECT_2, [RECT_2[0] - 50.4, RECT_2[1] - 30.2])
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0]!.cause).toBe('transform')
+    expect(changes[0]!.layerIds).toEqual(['rect-2'])
+    expect(changes[0]!.document).toEqual(withRect2({ x: 50, y: 70 }))
+    expect(editor.getSelection()).toEqual(['rect-2'])
+    expect(editor.objectFor('group-1')!.getBoundingRect()).toMatchObject({ left: 50, top: 70, width: 240, height: 170 })
+  })
+
+  it('a handle resizes it, as one change', async () => {
+    const { editor, upper, changes } = await openEditor(nested())
+    editor.select(['rect-2'])
+
+    drag(upper, [200, 125], [250, 125]) // the right handle
+
+    expect(changes.map((c) => c.layerIds)).toEqual([['rect-2']])
+    expect(editor.getDocument()).toEqual(withRect2({ width: 150 }))
+    expect(editor.objectFor('rect-2')!.scaleX).toBe(1)
+  })
+
+  it('the rotation handle rotates it, as one change', async () => {
+    const { editor, upper, changes } = await openEditor(nested())
+    editor.select(['rect-2'])
+    const handle = editor.objectFor('rect-2')!.oCoords.mtr!
+
+    drag(upper, [handle.x, handle.y], [150 + 200, 125]) // pointer due right of the centre
+
+    expect(changes.map((c) => c.layerIds)).toEqual([['rect-2']])
+    expect(editor.getDocument()).toEqual(withRect2({ rotation: 90 }))
+  })
+
+  it('an arrow key nudges only that Layer', async () => {
+    const { editor, changes } = await openEditor(nested())
+    editor.select(['rect-2'])
+
+    key('ArrowDown')
+
+    expect(changes.map((c) => [c.cause, c.layerIds])).toEqual([['nudge', ['rect-2']]])
+    expect(editor.getDocument()).toEqual(withRect2({ y: 101 }))
+  })
+
+  it('a click on a selected text Layer in it starts editing; its new text is one change', async () => {
+    const withText = doc([group('group-1', [rect({ id: 'rect-2' }), text({ id: 'text-1', x: 50, y: 200, width: 200 })])])
+    const { editor, upper, changes } = await openEditor(withText)
+    editor.select(['text-1'])
+    const box = editor.objectFor('text-1') as Textbox
+
+    click(upper, [100, 210])
+    expect(box.isEditing).toBe(true)
+    box.set({ text: 'Winter sale' })
+    box.exitEditing()
+
+    expect(changes.map((c) => [c.cause, c.layerIds])).toEqual([['text', ['text-1']]])
+    expect((editor.getDocument().layers[0] as GroupLayer).layers[1]).toMatchObject({ text: 'Winter sale', x: 50, y: 200 })
   })
 })
 
