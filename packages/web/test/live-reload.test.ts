@@ -207,3 +207,30 @@ describe('live reload', () => {
     expect(disk.document).toEqual(doc(250))
   })
 })
+
+describe('Inspector edits (update)', () => {
+  const inspect = (e: Editor, x: number) => e.update((d) => ({ ...d, layers: [{ ...d.layers[0]!, x }] }), { cause: 'inspector' })
+
+  it('are autosaved over the version last had', async () => {
+    const { editor, autosave, disk, conflicts } = await open()
+
+    await inspect(editor, 120)
+    await autosave.flush()
+
+    expect(disk.document).toEqual(doc(120))
+    expect(disk.hash).toBe('h1')
+    expect(conflicts).toEqual([])
+  })
+
+  it('raise a conflict instead of overwriting a file changed on disk', async () => {
+    const { editor, disk, write, conflicts } = await open()
+    write(doc(250)) // changed on disk; its event has not arrived yet
+
+    await inspect(editor, 120)
+    await wait(60)
+
+    expect(conflicts).toHaveLength(1)
+    expect(disk.document).toEqual(doc(250))
+    expect(editor.getDocument()).toEqual(doc(120))
+  })
+})

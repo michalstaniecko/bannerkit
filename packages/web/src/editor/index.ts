@@ -50,8 +50,8 @@ export type LoadOptions = {
 /** What ended a direct manipulation. */
 export type ManipulationCause = 'transform' | 'text' | 'nudge'
 
-/** An action that replaces the whole Document through `apply`. */
-export type ApplyCause = 'layers' | 'json' | 'reload'
+/** An action that replaces the whole Document through `apply` or `update`. */
+export type ApplyCause = 'layers' | 'json' | 'reload' | 'inspector'
 
 /** What made one undo step (or moved through the history). */
 export type ChangeCause = ManipulationCause | ApplyCause | 'undo' | 'redo'
@@ -65,6 +65,9 @@ export type ChangeCause = ManipulationCause | ApplyCause | 'undo' | 'redo'
 export type ChangeEvent = { document: Document; cause: ChangeCause; layerIds: string[] }
 
 export type ApplyOptions = { cause: ApplyCause }
+
+/** A pure edit of the Document: gets a copy of the shown one, returns the next one (already valid). */
+export type DocumentRecipe = (document: Document) => Document
 
 /** The selected Layers changed. Ids are bottom → top; empty when nothing is selected. */
 export type SelectionEvent = { layerIds: string[] }
@@ -88,6 +91,13 @@ export type Editor = {
    * Resolves once it shows; does nothing when it equals the shown Document.
    */
   apply(document: Document, options: ApplyOptions): Promise<void>
+  /**
+   * Changes the shown Document by `recipe` (the Inspector's edits): one undo step and
+   * one `change`, like `apply`, but the Selection stays and every Layer that keeps its
+   * id, type and `src` is laid out again in place, so images are not loaded again.
+   * Resolves once it shows; does nothing when the recipe changes nothing.
+   */
+  update(recipe: DocumentRecipe, options: ApplyOptions): Promise<void>
   /** Steps back one undo step (ending a text edit first). Resolves false when there is none. */
   undo(): Promise<boolean>
   /** Steps forward one undone step. Resolves false when there is none. */
@@ -147,6 +157,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
   /** Bumped by every `load`, so only the latest one shows its Document. */
   let loads = 0
   let selected: string[] = []
+  /** While true, Fabric's selection events are not reported (the editor reselects what it dissolved). */
+  let holdSelection = false
   const history = createHistory()
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
@@ -237,6 +249,57 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     return true
   }
 
+  /**
+   * Shows `next` keeping the Selection. When every Layer keeps its id, type and `src`
+   * (in the same order) each is laid out again on its own object; otherwise the
+   * Document is shown afresh and the same Layers selected again. Resolves false when
+   * a newer `show` (or `destroy`) won meanwhile.
+   */
+  const relayout = async (next: Document): Promise<boolean> => {
+    const c = requireCanvas()
+    const ids = [...selected]
+    const inPlace =
+      entries.length === next.layers.length && next.layers.every((layer, i) => sameObject(entries[i]!.base, layer))
+    holdSelection = true
+    try {
+      if (!inPlace) {
+        if (!(await show(next, env))) return false
+        selectIds(ids)
+        return true
+      }
+      // Inside an ActiveSelection an object's props are relative to it: dissolve, lay out, regroup.
+      const active = c.getActiveObject()
+      const group = active instanceof ActiveSelection ? active.getObjects() : undefined
+      if (group) c.discardActiveObject()
+      current = structuredClone(next)
+      current.layers.forEach((layer, i) => {
+        const entry = entries[i]!
+        entry.base = layer
+        applyLayer(entry.object, layer, env)
+      })
+      c.backgroundColor = current.canvas.background ?? ''
+      if (group) c.setActiveObject(new ActiveSelection(group, { canvas: c }))
+      applyZoom()
+      return true
+    } finally {
+      holdSelection = false
+      reportSelection()
+    }
+  }
+
+  /** Selects the Layers `ids`, skipping locked, hidden and unknown ones. */
+  const selectIds = (ids: readonly string[]) => {
+    const c = requireCanvas()
+    const objects = entries
+      .filter((e) => ids.includes(e.base.id) && !e.base.locked && e.base.visible !== false)
+      .map((e) => e.object)
+    c.discardActiveObject()
+    if (objects.length === 1) c.setActiveObject(objects[0]!)
+    else if (objects.length > 1) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
+    c.requestRenderAll()
+    reportSelection()
+  }
+
   /** Ends a text edit in progress, so it becomes its own step before anything else. */
   const finishTextEdit = () => {
     const active = canvas?.getActiveObject()
@@ -252,6 +315,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
   }
 
   const reportSelection = () => {
+    if (holdSelection) return
     const c = requireCanvas()
     const ids = entries.filter((e) => c.getActiveObjects().includes(e.object)).map((e) => e.base.id)
     if (ids.length === selected.length && ids.every((id, i) => id === selected[i])) return
@@ -352,6 +416,27 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       await showStep(document, cause)
     },
 
+    async update(recipe, { cause }) {
+      if (!current) throw new Error('No Document loaded')
+      finishTextEdit()
+      let before = documentNow()
+      let next = recipe(structuredClone(before))
+      // A font not shown yet loads first; the recipe then runs on whatever shows by then.
+      const shown = new Set(facesUsed(before).map((f) => `${f.family} ${f.weight}`))
+      if (facesUsed(next).some((f) => !shown.has(`${f.family} ${f.weight}`))) {
+        const token = loads
+        await loadFonts(facesUsed(next))
+        if (token !== loads || !current) return
+        before = documentNow()
+        next = recipe(structuredClone(before))
+      }
+      if (JSON.stringify(next) === JSON.stringify(before)) return
+      if (!(await relayout(next))) return
+      const after = documentNow()
+      history.record(after)
+      emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
+    },
+
     undo: () => travel('undo'),
     redo: () => travel('redo'),
     canUndo: () => current !== undefined && history.canUndo(),
@@ -360,16 +445,9 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     getSelection: () => [...selected],
 
     select(ids) {
-      const c = requireCanvas()
+      requireCanvas()
       finishTextEdit()
-      const objects = entries
-        .filter((e) => ids.includes(e.base.id) && !e.base.locked && e.base.visible !== false)
-        .map((e) => e.object)
-      c.discardActiveObject()
-      if (objects.length === 1) c.setActiveObject(objects[0]!)
-      else if (objects.length > 1) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
-      c.requestRenderAll()
-      reportSelection()
+      selectIds(ids)
     },
 
     on(type, listener) {
@@ -423,6 +501,12 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 
 export type { Size } from './zoom.ts'
 export type { ExportOptions, ExportResult } from './export.ts'
+
+/** Whether `next` can be laid out on the object made for `base`: same id and type, and same image `src`. */
+function sameObject(base: Layer, next: Layer): boolean {
+  if (base.id !== next.id || base.type !== next.type) return false
+  return base.type !== 'image' || base.src === (next as typeof base).src
+}
 
 /**
  * A drag, resize or rotate lands on whole pixels (`x`, `y`, `width`, `height`) and
