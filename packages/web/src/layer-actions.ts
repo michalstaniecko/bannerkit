@@ -70,7 +70,7 @@ const NEW_SHARE = 0.5
 /**
  * Adds a Layer centred in the Canvas, with the next readable id. Where it goes depends
  * on the Selection: right above its topmost Layer (in draw order), in that Layer's
- * parent, when that Layer is in a Group or is a Group itself; on top of the root otherwise.
+ * parent; on top of the root without a Selection.
  */
 export function addLayer(document: Document, spec: NewLayer, selection: readonly string[] = []): { document: Document; id: string } {
   const next = copy(document)
@@ -89,7 +89,7 @@ export function addLayer(document: Document, spec: NewLayer, selection: readonly
     layer = { id, type: 'image', ...centred(spec.width * scale, spec.height * scale), src: spec.src, fit: 'contain' }
   }
   const topmost = walkLayers(next).findLast((v) => selection.includes(v.layer.id))
-  if (topmost && (topmost.parent !== next || topmost.layer.type === 'group')) {
+  if (topmost) {
     // `next` is a fresh copy, so its parents' `layers` may be changed in place.
     ;(topmost.parent.layers as Layer[]).splice(topmost.index + 1, 0, layer)
   } else next.layers.push(layer)
