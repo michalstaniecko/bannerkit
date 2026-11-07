@@ -247,3 +247,55 @@ describe('the Selection shape', () => {
     expect(editor.getSelection()).toEqual(['rect-1', 'group-1'])
   })
 })
+
+describe('locked and hidden inherited from a Group', () => {
+  /** rect-1 under the whole Canvas, then group-1 (`over`) holding group-2 holding rect-2 (100,100 100×50). */
+  const under = (over: Partial<GroupLayer>) =>
+    doc([
+      rect({ id: 'rect-1', x: 0, y: 0, width: 400, height: 300 }),
+      group('group-1', [group('group-2', [rect({ id: 'rect-2' })])], over),
+    ])
+
+  for (const [flag, over] of [
+    ['locked', { locked: true }],
+    ['hidden', { visible: false }],
+  ] as const) {
+    it(`a Layer deep in a ${flag} Group is not hit on the Canvas, even with Cmd+click`, async () => {
+      const { editor, upper } = await openEditor(under(over))
+
+      click(upper, RECT_2, { metaKey: true })
+      expect(editor.getSelection()).toEqual(['rect-1'])
+      dblclick(upper, RECT_2)
+      expect(editor.getSelection()).toEqual(['rect-1'])
+    })
+
+    it(`a Layer deep in a ${flag} Group selected from the Layer list has no handles and does not move`, async () => {
+      const shown = under(over)
+      const { editor, changes } = await openEditor(shown)
+
+      editor.select(['rect-2'])
+      key('ArrowRight')
+
+      const object = editor.objectFor('rect-2')!
+      expect([object.hasControls, object.lockMovementX, object.lockMovementY]).toEqual([false, true, true])
+      expect(changes).toEqual([])
+      expect(editor.getDocument()).toEqual(shown)
+    })
+  }
+
+  it('unlocking the Group gives its Layers their handles back', async () => {
+    const { editor } = await openEditor(under({ locked: true }))
+    editor.select(['rect-2'])
+
+    await editor.update(
+      (d) => {
+        delete (d.layers[1] as GroupLayer).locked
+        return d
+      },
+      { cause: 'inspector' },
+    )
+
+    const object = editor.objectFor('rect-2')!
+    expect([object.hasControls, object.lockMovementX]).toEqual([true, false])
+  })
+})

@@ -1,7 +1,7 @@
 // The Layer tree: walking, finding and replacing Layers. Every place that goes
 // over all Layers of a Document goes through here, so Groups (Document v2,
 // ADR 0007) only need teaching to these functions. Pure, no DOM or Node APIs.
-import type { Document, Layer } from './document.ts'
+import type { Document, GroupLayer, Layer } from './document.ts'
 
 /** Anything that holds Layers bottom to top: the Document or a Group. */
 export type LayerParent = { readonly layers: readonly Layer[] }
@@ -89,4 +89,32 @@ export function removeLayers(document: Document, ids: readonly string[]): Docume
 /** The Document with the Layer `id` replaced by `replace(layer)`, without touching the input. Unknown ids change nothing. */
 export function replaceLayer(document: Document, id: string, replace: (layer: Layer) => Layer): Document {
   return mapLayers(document, (layer) => (layer.id === id ? replace(layer) : layer))
+}
+
+/**
+ * Whether the Layer `id` is effectively locked or hidden (spec Q14): it or any Group
+ * holding it is. `lockedBy` / `hiddenBy` name the nearest Group that locks or hides
+ * it (absent when only its own flag does, or nothing). Undefined for an unknown id.
+ */
+export type InheritedFlags = { locked: boolean; hidden: boolean; lockedBy?: GroupLayer; hiddenBy?: GroupLayer }
+
+export function inheritedFlags(root: LayerParent, id: string): InheritedFlags | undefined {
+  const find = (layers: readonly Layer[], groups: readonly GroupLayer[]): InheritedFlags | undefined => {
+    for (const layer of layers) {
+      if (layer.id === id) {
+        const lockedBy = groups.findLast((g) => g.locked === true)
+        const hiddenBy = groups.findLast((g) => g.visible === false)
+        const flags: InheritedFlags = { locked: layer.locked === true || lockedBy !== undefined, hidden: layer.visible === false || hiddenBy !== undefined }
+        if (lockedBy) flags.lockedBy = lockedBy
+        if (hiddenBy) flags.hiddenBy = hiddenBy
+        return flags
+      }
+      if (layer.type === 'group') {
+        const found = find(layer.layers, [...groups, layer])
+        if (found) return found
+      }
+    }
+    return undefined
+  }
+  return find(root.layers, [])
 }

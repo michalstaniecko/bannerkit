@@ -45,8 +45,8 @@ import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts
 import { createHistory } from './history.ts'
 import { roundAngle, roundPx } from './rounding.ts'
 import { DocumentGroup } from './group.ts'
-import { applyLayer, isFrozen, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
-import { allEntries, buildEntries, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
+import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
+import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
 import { fitZoom, type Size } from './zoom.ts'
 import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
@@ -536,7 +536,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   /** Whether the Selection holds a locked or hidden Layer, so it shows no handles and does not move. */
   const selectionFrozen = (): boolean => {
     const active = canvas?.getActiveObjects() ?? []
-    return allEntries(roots).some((e) => isFrozen(e.base) && active.includes(e.object))
+    return allEntries(roots).some((e) => isFrozenEntry(e) && active.includes(e.object))
   }
 
   const reportSelection = () => {
