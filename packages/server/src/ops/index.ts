@@ -30,8 +30,10 @@ export { preview, type PreviewResult } from './preview.ts'
 export { exportDocument, render, type ExportDocumentInput, type ExportFile, type RenderInput, type RenderResult } from './render.ts'
 export {
   inspect,
+  type GroupInspection,
   type InspectResult,
   type LayerInspection,
+  type LeafInspection,
   type TextInspection,
 } from './inspect.ts'
 export { readSelection, writeSelection, type Selection } from './selection.ts'

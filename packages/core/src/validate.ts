@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import { DOCUMENT_VERSION, DocumentSchema, DocumentV1Schema, type Document } from './document.ts'
+import { DOCUMENT_VERSION, DocumentSchema, DocumentV1Schema, LAYER_TYPES, type Document } from './document.ts'
 import { liftDocument } from './migrate.ts'
 import { closest } from './suggest.ts'
 import { walkLayers } from './tree.ts'
@@ -124,6 +124,10 @@ function toIssues(issue: z.core.$ZodIssue, input: unknown, schema: z.core.$ZodTy
       if (discriminated.note === 'No matching discriminator') {
         const actual = valueAt(input, issue.path)
         const options: string[] = (discriminated.options ?? []).map(String)
+        // A Layer type only the current version has (`group`), found in an older-version file.
+        if (schema !== DocumentSchema && typeof actual === 'string' && newerLayerType(actual)) {
+          return [{ path, message: requiresCurrentVersion(JSON.stringify(actual)) }]
+        }
         const message =
           actual === undefined
             ? `missing; expected ${options.map((o) => `"${o}"`).join(' | ')}`
@@ -145,6 +149,10 @@ function toIssues(issue: z.core.$ZodIssue, input: unknown, schema: z.core.$ZodTy
 /** The message for a field only the current Document version has, found in an older-version file. */
 function requiresCurrentVersion(what: string): string {
   return `${what} requires version: ${DOCUMENT_VERSION}; run \`bannerkit migrate\``
+}
+
+function newerLayerType(type: string): boolean {
+  return (LAYER_TYPES as readonly string[]).includes(type)
 }
 
 function withSuggestion(issue: Issue, suggestion: string | undefined): Issue {

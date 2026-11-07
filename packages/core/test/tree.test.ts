@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findLayer, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer } from '../src/index.ts'
+import { findLayer, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer, type LeafLayer } from '../src/index.ts'
 
 const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000' })
 
@@ -50,7 +50,7 @@ describe('replaceLayer', () => {
 
     const next = replaceLayer(document, 'b', (l) => ({ ...l, x: 5 }))
 
-    expect(next.layers.map((l) => [l.id, l.x])).toEqual([['a', 0], ['b', 5]])
+    expect((next.layers as LeafLayer[]).map((l) => [l.id, l.x])).toEqual([['a', 0], ['b', 5]])
     expect(next.layers[0]).toBe(document.layers[0])
     expect(document).toEqual(before)
   })
@@ -73,7 +73,7 @@ describe('mapLayers', () => {
     })
 
     expect(seen).toEqual(['layers[0]', 'layers[1]'])
-    expect(next.layers.map((l) => l.x)).toEqual([100, 101])
+    expect((next.layers as LeafLayer[]).map((l) => l.x)).toEqual([100, 101])
     expect(document).toEqual(before)
   })
 })
@@ -87,6 +87,53 @@ describe('removeLayers', () => {
 
     expect(next.layers.map((l) => l.id)).toEqual(['b'])
     expect(document).toEqual(before)
+  })
+})
+
+describe('Groups in the tree', () => {
+  const group = (id: string, ...layers: Layer[]): Layer => ({ id, type: 'group', layers })
+
+  it('walks into Groups in draw order, a Group before its children', () => {
+    const inner = group('h', rect('c'))
+    const outer = group('g', rect('b'), inner)
+    const document = doc(rect('a'), outer, rect('d'))
+
+    const visits = walkLayers(document)
+
+    expect(visits.map((v) => [v.layer.id, v.index, v.path])).toEqual([
+      ['a', 0, 'layers[0]'],
+      ['g', 1, 'layers[1]'],
+      ['b', 0, 'layers[1].layers[0]'],
+      ['h', 1, 'layers[1].layers[1]'],
+      ['c', 0, 'layers[1].layers[1].layers[0]'],
+      ['d', 2, 'layers[2]'],
+    ])
+    expect(findLayer(document, 'c')?.parent).toBe(inner)
+  })
+
+  it('maps children before their Group, keeping untouched Groups by reference', () => {
+    const untouched = group('u', rect('x'))
+    const document = doc(group('g', rect('a'), group('h', rect('b'))), untouched)
+
+    const next = mapLayers(document, (l) => (l.id === 'b' ? { ...l, x: 7 } : l))
+
+    expect(findLayer(next, 'b')?.layer).toMatchObject({ x: 7 })
+    expect(next.layers[1]).toBe(untouched)
+    expect(findLayer(document, 'b')?.layer).toMatchObject({ x: 0 })
+  })
+
+  it('replaces a Layer inside a Group', () => {
+    const next = replaceLayer(doc(group('g', rect('a'))), 'a', (l) => ({ ...l, id: 'z' }))
+
+    expect(walkLayers(next).map((v) => v.layer.id)).toEqual(['g', 'z'])
+  })
+
+  it('removes Layers inside Groups, and a Group left empty with them', () => {
+    const document = doc(group('g', rect('a'), rect('b')), group('h', rect('c')), rect('d'))
+
+    const next = removeLayers(document, ['a', 'c'])
+
+    expect(walkLayers(next).map((v) => v.layer.id)).toEqual(['g', 'b', 'd'])
   })
 })
 

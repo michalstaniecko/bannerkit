@@ -2,7 +2,7 @@
 // validated with the core schema; only a valid Document reaches `editor.apply`, as
 // one undo step. Anything else comes back as Issues and leaves the Document unchanged.
 import { validateDocument, type Issue } from '@bannerkit/core'
-import type { Editor } from './editor/index.ts'
+import { GroupsNotShown, type Editor } from './editor/index.ts'
 
 export type ApplyJsonResult = { ok: true; errors: [] } | { ok: false; errors: Issue[] }
 
@@ -15,6 +15,12 @@ export async function applyJson(editor: Editor, text: string): Promise<ApplyJson
   }
   const result = validateDocument(value)
   if (!result.ok) return { ok: false, errors: result.errors }
-  await editor.apply(result.document, { cause: 'json' })
+  try {
+    await editor.apply(result.document, { cause: 'json' })
+  } catch (e) {
+    // A valid Document the editor cannot show yet (a Group, ticket #23).
+    if (e instanceof GroupsNotShown) return { ok: false, errors: [{ path: e.path, message: e.message }] }
+    throw e
+  }
   return { ok: true, errors: [] }
 }

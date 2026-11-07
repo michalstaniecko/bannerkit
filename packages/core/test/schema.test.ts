@@ -41,4 +41,12 @@ describe('nextLayerId', () => {
     expect(nextLayerId(root, 'image')).toBe('image-4')
     expect(nextLayerId(root, 'rect')).toBe('rect-1')
   })
+
+  it('counts ids anywhere in the tree and names Groups group-<n>', () => {
+    const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 1, height: 1, fill: '#000' })
+    const root = { layers: [rect('rect-1'), { id: 'group-2', type: 'group', layers: [rect('rect-4')] } satisfies Layer] }
+
+    expect(nextLayerId(root, 'rect')).toBe('rect-5')
+    expect(nextLayerId(root, 'group')).toBe('group-3')
+  })
 })

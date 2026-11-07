@@ -95,6 +95,35 @@ describe('bannerkit inspect', () => {
     expect(run.stdout).toContain('warning layers[0]: Layer "rect-1" is partly outside the Canvas')
   })
 
+  it('indents Group children by depth and marks a selected Group', async () => {
+    const rect = (id: string, x: number) => ({ id, type: 'rect', x, y: 0, width: 10, height: 10, fill: '#ff0000' })
+    await writeDocument({
+      root,
+      project: 'p',
+      name: 'hero',
+      document: {
+        version: 2,
+        name: 'hero',
+        canvas: { width: 300, height: 250, background: '#ffffff' },
+        layers: [
+          rect('rect-1', 0),
+          { id: 'group-1', type: 'group', name: 'Badge', layers: [rect('rect-2', 20), { id: 'group-2', type: 'group', layers: [rect('rect-3', 40)] }] },
+        ],
+      },
+    })
+    await writeSelection({ root, project: 'p', doc: 'hero', selectedLayerIds: ['group-1'] })
+
+    const run = await cli(['inspect', 'p', '--root', root])
+
+    expect(run.exitCode).toBe(0)
+    const lines = run.stdout.split('\n')
+    expect(lines).toContain('  [0] rect rect-1 at 0,0 10x10 inside')
+    expect(lines).toContain('* [1] group group-1 "Badge" at 20,0 30x10 inside')
+    expect(lines).toContain('    [0] rect rect-2 at 20,0 10x10 inside')
+    expect(lines).toContain('    [1] group group-2 at 40,0 10x10 inside')
+    expect(lines).toContain('      [0] rect rect-3 at 40,0 10x10 inside')
+  })
+
   it('fails with a usage hint when no Document is named or selected', async () => {
     const run = await cli(['inspect', 'p', '--root', root, '--json'])
     expect(run.exitCode).toBe(1)

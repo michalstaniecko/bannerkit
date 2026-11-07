@@ -3,7 +3,7 @@
 // to every selected Layer in one undo step; x/y are the Selection Box's.
 import { act } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { doc, image, rect } from './editor-harness.ts'
+import { doc, image, leaves, rect } from './editor-harness.ts'
 import { openInspector, settle } from './inspector-harness.tsx'
 
 const a = rect({ id: 'a', x: 10, y: 20, opacity: 0.5 })
@@ -25,7 +25,7 @@ describe('Properties of several Layers', () => {
     await user.type(field('Rotation'), '45{Enter}')
     await settle()
 
-    expect(editor.getDocument().layers.map((l) => l.rotation)).toEqual([45, 45, undefined])
+    expect(leaves(editor.getDocument()).map((l) => l.rotation)).toEqual([45, 45, undefined])
     expect(field('Rotation').value).toBe('45')
     expect(changes.map((c) => c.cause)).toEqual(['inspector'])
     expect(editor.getSelection()).toEqual(['a', 'b'])
@@ -56,7 +56,7 @@ describe('Properties of several Layers', () => {
 
     await user.type(field('Shadow color'), '#336699{Enter}')
     await settle()
-    expect(editor.getDocument().layers.map((l) => l.shadow?.color)).toEqual(['#336699', '#336699'])
+    expect(leaves(editor.getDocument()).map((l) => l.shadow?.color)).toEqual(['#336699', '#336699'])
   })
 
   it('a fill mixing a colour and a gradient is Mixed; a typed colour replaces both', async () => {
@@ -69,7 +69,7 @@ describe('Properties of several Layers', () => {
 
     await user.type(field('Fill'), '#123456{Enter}')
     await settle()
-    expect(editor.getDocument().layers.map((l) => (l.type === 'rect' ? l.fill : undefined))).toEqual(['#123456', '#123456'])
+    expect(leaves(editor.getDocument()).map((l) => (l.type === 'rect' ? l.fill : undefined))).toEqual(['#123456', '#123456'])
     expect(changes.map((c) => c.cause)).toEqual(['inspector'])
   })
 })
@@ -93,7 +93,7 @@ describe('the Selection Box', () => {
     await user.type(field('Y'), '-5{Enter}')
     await settle()
 
-    expect(editor.getDocument().layers.map((l) => [l.x, l.y])).toEqual([
+    expect(leaves(editor.getDocument()).map((l) => [l.x, l.y])).toEqual([
       [0, -5],
       [190, 95],
     ])
@@ -114,7 +114,7 @@ describe('the Selection Box', () => {
     await settle()
 
     // delta = round(100 − 194.02) = −94
-    expect(editor.getDocument().layers.map((l) => l.x)).toEqual([106, 206])
+    expect(leaves(editor.getDocument()).map((l) => l.x)).toEqual([106, 206])
     expect(field('X').value).toBe('100')
   })
 

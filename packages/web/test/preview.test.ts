@@ -4,7 +4,7 @@
 // before the gesture again, and any other step (a reload from disk) drops it.
 import type { Document } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
-import { doc, openEditor, rect } from './editor-harness.ts'
+import { doc, leaves, openEditor, rect } from './editor-harness.ts'
 
 const moveTo = (x: number) => (d: Document): Document => ({ ...d, layers: d.layers.map((l) => ({ ...l, x })) })
 
@@ -17,7 +17,7 @@ describe('preview', () => {
     await preview.show(moveTo(150))
     await preview.show(moveTo(130))
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 130, y: 100 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 130, y: 100 })
     expect(editor.getSelection()).toEqual(['rect-1'])
     expect(changes).toEqual([])
     expect(editor.canUndo()).toBe(false)
@@ -79,7 +79,7 @@ describe('preview', () => {
     await preview.commit({ cause: 'inspector' })
 
     expect(preview.ended()).toBe(true)
-    expect(editor.getDocument().layers.map((l) => [l.x, l.y])).toEqual([[100, 100], [250, 10]])
+    expect(leaves(editor.getDocument()).map((l) => [l.x, l.y])).toEqual([[100, 100], [250, 10]])
     expect(changes.map((c) => [c.cause, c.layerIds])).toEqual([['reload', ['rect-2']]])
   })
 
@@ -106,7 +106,7 @@ describe('preview', () => {
     await second.commit({ cause: 'inspector' })
 
     expect(first.ended()).toBe(true)
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 100, y: 20 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 100, y: 20 })
     expect(changes).toHaveLength(1)
   })
   it('a new preview starts from the Document before a dropped one that changed the Layers', async () => {

@@ -99,8 +99,6 @@ const TextLayerV1Schema = z.strictObject({
     .meta({ description: 'Shrink fontSize down to minFontSize until the text fits its Box; requires height' }),
 })
 
-export const LAYER_TYPES = ['rect', 'image', 'text'] as const
-
 const LayerV1Schema = z.discriminatedUnion('type', [RectLayerV1Schema, ImageLayerV1Schema, TextLayerV1Schema])
 
 /** Document v1, frozen. Only read (and lifted to v2), never written. */
@@ -129,7 +127,35 @@ export const TextLayerSchema = TextLayerV1Schema.extend({
   }),
 }).meta({ id: 'TextLayer' })
 
-export const LayerSchema = z.discriminatedUnion('type', [RectLayerSchema, ImageLayerSchema, TextLayerSchema])
+/** Every Layer type in Document v2: the leaf types plus `group`. */
+export const LAYER_TYPES = ['rect', 'image', 'text', 'group'] as const
+
+/**
+ * A Group (ADR 0007): an ordered list of child Layers, nested to any depth.
+ * No Box of its own: the children keep Canvas coordinates and the Group's Box
+ * is derived from them (`layerExtent`). Its opacity applies to the children
+ * drawn together, as in CSS, not to each child.
+ */
+export const GroupLayerSchema = z
+  .strictObject({
+    id: commonShape.id,
+    type: z.literal('group'),
+    name: z.string().optional().meta({ description: 'Shown in the Layer list instead of the id' }),
+    visible: commonShape.visible,
+    locked: commonShape.locked,
+    opacity: z.number().min(0).max(1).optional().meta({ description: '0-1, default 1; applies to the children composited together' }),
+    get layers(): z.ZodArray<typeof LayerSchema> {
+      return z.array(LayerSchema).min(1, 'a Group needs at least one Layer').meta({ description: 'Children, bottom to top' })
+    },
+  })
+  .meta({ id: 'GroupLayer' })
+
+export const LayerSchema: z.ZodDiscriminatedUnion<
+  [typeof RectLayerSchema, typeof ImageLayerSchema, typeof TextLayerSchema, typeof GroupLayerSchema],
+  'type'
+> = z
+  .discriminatedUnion('type', [RectLayerSchema, ImageLayerSchema, TextLayerSchema, GroupLayerSchema])
+  .meta({ id: 'Layer' })
 
 const GuideAxisSchema = z.array(z.number()).meta({ description: 'Document px, any order' })
 
@@ -159,9 +185,12 @@ export type Canvas = z.infer<typeof CanvasSchema>
 export type RectLayer = z.infer<typeof RectLayerSchema>
 export type ImageLayer = z.infer<typeof ImageLayerSchema>
 export type TextLayer = z.infer<typeof TextLayerSchema>
+export type GroupLayer = z.infer<typeof GroupLayerSchema>
 export type TextTransform = (typeof TEXT_TRANSFORMS)[number]
 export type Layer = z.infer<typeof LayerSchema>
 export type LayerType = Layer['type']
+/** A Layer that draws something itself, with a Box of its own: anything but a Group. */
+export type LeafLayer = Exclude<Layer, GroupLayer>
 export type Fit = ImageLayer['fit']
 export type Guides = z.infer<typeof GuidesSchema>
 export type Document = z.infer<typeof DocumentSchema>

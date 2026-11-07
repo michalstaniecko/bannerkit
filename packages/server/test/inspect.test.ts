@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addAssets, createDocument, createProject, inspect, writeDocument, writeSelection } from '../src/ops/index.ts'
+import { addAssets, createDocument, createProject, inspect, writeDocument, writeSelection, type InspectResult, type LeafInspection } from '../src/ops/index.ts'
 import { tempRoot } from './harness.ts'
 
 let root: string
@@ -33,6 +33,9 @@ async function doc(layers: unknown[], canvas = { width: 300, height: 250 }, vers
     document: { version, name: 'hero', canvas: { ...canvas, background: '#ffffff' }, layers },
   })
 }
+
+/** The entries of a Document without Groups. */
+const leaves = (result: InspectResult) => result.layers as LeafInspection[]
 
 const rect = (id: string, box: Record<string, number>) => ({ id, type: 'rect', fill: '#ff0000', ...box })
 
@@ -67,7 +70,7 @@ describe('inspect: extent and Canvas placement', () => {
 
   it('measures a text Layer without a height by its laid-out text block', async () => {
     await doc([text({ y: 240, text: 'Low' })])
-    const [layer] = (await inspect({ root, project: 'p', name: 'hero' })).layers
+    const [layer] = leaves(await inspect({ root, project: 'p', name: 'hero' }))
     expect(layer!.extent.height).toBe(layer!.text!.height)
     expect(layer!.placement).toBe('partial')
   })
@@ -130,7 +133,7 @@ describe('inspect: Assets', () => {
 
     const result = await inspect({ root, project: 'p', name: 'hero' })
 
-    expect(result.layers.map((l) => l.asset)).toEqual([
+    expect(leaves(result).map((l) => l.asset)).toEqual([
       { src: assets[0]!.src, width: 40, height: 20 },
       { src: assets[1]!.src, width: 120, height: 60 },
     ])
@@ -144,7 +147,7 @@ describe('inspect: Text Layout', () => {
 
     const result = await inspect({ root, project: 'p', name: 'hero' })
 
-    const [layer] = result.layers
+    const [layer] = leaves(result)
     expect(layer).toMatchObject({ id: 'text-1', type: 'text', index: 0 })
     expect(layer!.text).toMatchObject({ fontSize: 20, requestedFontSize: 20, overflow: false })
     expect(layer!.text!.lines.map((l) => l.text)).toEqual(['Summer', 'Summer', 'sale'])
@@ -154,7 +157,7 @@ describe('inspect: Text Layout', () => {
   it('reports the lines as drawn, after textTransform', async () => {
     await doc([text({ text: 'Summer sale', textTransform: 'uppercase' })], undefined, 2)
 
-    const { text: layout } = (await inspect({ root, project: 'p', name: 'hero' })).layers[0]!
+    const { text: layout } = leaves(await inspect({ root, project: 'p', name: 'hero' }))[0]!
 
     expect(layout!.lines.map((l) => l.text)).toEqual(['SUMMER SALE'])
   })
@@ -162,7 +165,7 @@ describe('inspect: Text Layout', () => {
   it('reports the smaller font size AutoFit resolved to', async () => {
     await doc([text({ text: 'Big headline', fontSize: 80, height: 60, autoFit: { minFontSize: 10 } })])
 
-    const { text: layout } = (await inspect({ root, project: 'p', name: 'hero' })).layers[0]!
+    const { text: layout } = leaves(await inspect({ root, project: 'p', name: 'hero' }))[0]!
 
     expect(layout!.requestedFontSize).toBe(80)
     expect(layout!.fontSize).toBeLessThan(80)
@@ -176,7 +179,81 @@ describe('inspect: Text Layout', () => {
 
     const result = await inspect({ root, project: 'p', name: 'hero' })
 
-    expect(result.layers[0]!.text).toMatchObject({ fontSize: 18, overflow: true })
+    expect(leaves(result)[0]!.text).toMatchObject({ fontSize: 18, overflow: true })
     expect(result.warnings).toEqual([expect.objectContaining({ path: 'layers[0].text' })])
+  })
+})
+
+describe('inspect: Groups', () => {
+  async function grouped(layers: unknown[]) {
+    await writeDocument({
+      root,
+      project: 'p',
+      name: 'hero',
+      document: { version: 2, name: 'hero', canvas: { width: 300, height: 250, background: '#ffffff' }, layers },
+    })
+  }
+
+  it('nests each Group entry with its Box, its index in its parent and its children', async () => {
+    await grouped([
+      rect('a', { x: 0, y: 0, width: 10, height: 10 }),
+      {
+        id: 'group-1',
+        type: 'group',
+        name: 'Badge',
+        layers: [
+          rect('b', { x: 20, y: 30, width: 40, height: 10 }),
+          { id: 'group-2', type: 'group', layers: [{ ...rect('c', { x: 50, y: 60, width: 20, height: 20 }), visible: false }] },
+        ],
+      },
+    ])
+
+    const result = await inspect({ root, project: 'p', name: 'hero' })
+
+    expect(result.layers).toEqual([
+      { index: 0, id: 'a', type: 'rect', extent: { x: 0, y: 0, width: 10, height: 10 }, placement: 'inside', selected: false },
+      {
+        index: 1,
+        id: 'group-1',
+        type: 'group',
+        name: 'Badge',
+        extent: { x: 20, y: 30, width: 50, height: 50 },
+        placement: 'inside',
+        selected: false,
+        layers: [
+          { index: 0, id: 'b', type: 'rect', extent: { x: 20, y: 30, width: 40, height: 10 }, placement: 'inside', selected: false },
+          {
+            index: 1,
+            id: 'group-2',
+            type: 'group',
+            extent: { x: 50, y: 60, width: 20, height: 20 },
+            placement: 'inside',
+            selected: false,
+            layers: [
+              // Hidden, but still part of the Group's Box.
+              { index: 0, id: 'c', type: 'rect', extent: { x: 50, y: 60, width: 20, height: 20 }, placement: 'inside', selected: false },
+            ],
+          },
+        ],
+      },
+    ])
+  })
+
+  it('warns about leaves outside the Canvas, not about the Group holding them', async () => {
+    await grouped([{ id: 'group-1', type: 'group', layers: [rect('in', { x: 0, y: 0, width: 10, height: 10 }), rect('gone', { x: 400, y: 0, width: 10, height: 10 })] }])
+
+    const result = await inspect({ root, project: 'p', name: 'hero' })
+
+    expect(result.layers[0]!.placement).toBe('partial')
+    expect(result.warnings).toEqual([{ path: 'layers[0].layers[1]', message: 'Layer "gone" is entirely outside the Canvas' }])
+  })
+
+  it('marks a selected Group', async () => {
+    await grouped([{ id: 'group-1', type: 'group', layers: [rect('a', { x: 0, y: 0, width: 10, height: 10 })] }])
+    await writeSelection({ root, project: 'p', doc: 'hero', selectedLayerIds: ['group-1'] })
+
+    const [entry] = (await inspect({ root, project: 'p', name: 'hero' })).layers
+
+    expect(entry).toMatchObject({ id: 'group-1', selected: true, layers: [{ id: 'a', selected: false }] })
   })
 })

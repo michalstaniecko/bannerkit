@@ -80,12 +80,16 @@ const DUPLICATE_OFFSET = 10
 export function duplicateLayers(document: Document, ids: readonly string[]): { document: Document; ids: string[] } {
   const next = copy(document)
   const originals = walkLayers(next).filter(({ layer }) => ids.includes(layer.id))
-  // Ids first, bottom → top, each one clear of the copies made before it.
-  const made: Layer[] = []
-  for (const { layer } of originals) {
-    const id = nextLayerId({ layers: [...next.layers, ...made] }, layer.type)
-    made.push({ ...structuredClone(layer), id, x: layer.x + DUPLICATE_OFFSET, y: layer.y + DUPLICATE_OFFSET })
+  // Ids first, bottom → top, each one clear of the ids given before it. A Group's
+  // copy gives every Layer inside it a new id too, and offsets its leaves.
+  const given: Layer[] = []
+  const fresh = (layer: Layer): Layer => {
+    const id = nextLayerId({ layers: [...next.layers, ...given] }, layer.type)
+    given.push({ ...layer, id })
+    if (layer.type === 'group') return { ...layer, id, layers: layer.layers.map(fresh) }
+    return { ...layer, id, x: layer.x + DUPLICATE_OFFSET, y: layer.y + DUPLICATE_OFFSET }
   }
+  const made = originals.map(({ layer }) => fresh(structuredClone(layer)))
   // Then each copy right above its original, top → bottom so earlier positions hold.
   // `next` is a fresh copy, so its parents' `layers` may be changed in place.
   for (let i = originals.length - 1; i >= 0; i--) {

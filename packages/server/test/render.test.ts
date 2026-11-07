@@ -310,3 +310,43 @@ describe('renderDocument: rect Layers', () => {
     await expectImageSnapshot('rect-transparent-canvas', png)
   })
 })
+
+describe('renderDocument: Groups', () => {
+  const red: Layer = { id: 'red', type: 'rect', x: 0, y: 0, width: 120, height: 100, fill: '#ff0000' }
+  const blue: Layer = { id: 'blue', type: 'rect', x: 80, y: 0, width: 120, height: 100, fill: '#0000ff' }
+
+  it('composites a Group with opacity as one surface, not child by child (CSS opacity)', async () => {
+    const png = await renderDocument(doc([{ id: 'group-1', type: 'group', opacity: 0.5, layers: [red, blue] }]))
+    const at = await pixels(png)
+    // Where the children overlap, blue covers red before the Group fades: half blue on white.
+    near(at(100, 50), [128, 128, 255, 255], 3)
+    near(at(40, 50), [255, 128, 128, 255], 3)
+    near(at(160, 50), [128, 128, 255, 255], 3)
+
+    // Fading each child instead would let red show through blue in the overlap.
+    const perChild = await renderDocument(doc([{ ...red, opacity: 0.5 }, { ...blue, opacity: 0.5 }]))
+    near((await pixels(perChild))(100, 50), [128, 64, 191, 255], 3)
+    await expectImageSnapshot('group-opacity', png)
+  })
+
+  it('draws a Group at full opacity like its children on their own', async () => {
+    const grouped = await renderDocument(doc([{ id: 'group-1', type: 'group', layers: [red, { ...blue, rotation: 20 }] }]))
+    const flat = await renderDocument(doc([red, { ...blue, rotation: 20 }]))
+
+    expect(grouped.equals(flat)).toBe(true)
+  })
+
+  it('multiplies the opacity of nested Groups', async () => {
+    const png = await renderDocument(
+      doc([
+        { id: 'outer', type: 'group', opacity: 0.5, layers: [{ id: 'inner', type: 'group', opacity: 0.5, layers: [{ ...red, fill: '#000000' }] }] },
+      ]),
+    )
+    near((await pixels(png))(40, 50), [191, 191, 191, 255], 3)
+  })
+
+  it('skips a hidden Group with everything in it', async () => {
+    const png = await renderDocument(doc([{ id: 'group-1', type: 'group', visible: false, layers: [red, blue] }]))
+    expect((await pixels(png))(100, 50)).toEqual([255, 255, 255, 255])
+  })
+})

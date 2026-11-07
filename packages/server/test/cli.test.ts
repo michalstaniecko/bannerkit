@@ -139,6 +139,21 @@ describe('bannerkit doc resize', () => {
     expect(run.json().result.document.layers[0]).toMatchObject({ x, y })
   })
 
+  it('moves the children of Groups, at any depth', async () => {
+    const { root, path } = await heroProject()
+    const document = JSON.parse(await readFile(path, 'utf8'))
+    const rect = (id: string, x: number, y: number) => ({ id, type: 'rect', x, y, width: 5, height: 5, fill: '#000000' })
+    document.layers = [{ id: 'group-1', type: 'group', layers: [rect('rect-1', 10, 20), { id: 'group-2', type: 'group', layers: [rect('rect-2', 30, 0)] }] }]
+    await writeFile(path, JSON.stringify(document))
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', '--size', '280x80', '--anchor', 'bottom-right', '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(0)
+    expect(JSON.parse(await readFile(path, 'utf8')).layers).toEqual([
+      { id: 'group-1', type: 'group', layers: [rect('rect-1', 190, 50), { id: 'group-2', type: 'group', layers: [rect('rect-2', 210, 30)] }] },
+    ])
+  })
+
   it('prints a human-readable line without --json', async () => {
     const { root, path } = await heroProject()
 

@@ -1,6 +1,6 @@
 // Layer list and toolbar actions: pure Document → Document functions the UI applies
 // through `editor.apply(document, { cause: 'layers' })`.
-import { validateDocument, type Document, type Layer } from '@bannerkit/core'
+import { validateDocument, type Document, type Layer, type LeafLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
 import { addLayer, deleteLayers, duplicateLayers, moveLayer, setLayerFlag } from '../src/layer-actions.ts'
 
@@ -29,9 +29,23 @@ describe('duplicateLayers', () => {
     expect(ids(document)).toEqual(['rect-1', 'rect-3', 'text-1', 'text-2', 'rect-2', 'rect-4'])
     expect(validateDocument(document)).toMatchObject({ ok: true })
   })
+
+  it('copies a Group with new ids for everything in it, its leaves offset', () => {
+    const group: Layer = { id: 'group-1', type: 'group', layers: [rect('rect-1'), { id: 'group-2', type: 'group', layers: [rect('rect-2')] }] }
+
+    const { document, ids: copies } = duplicateLayers(doc([group]), ['group-1'])
+
+    expect(copies).toEqual(['group-3'])
+    expect(document.layers[1]).toEqual({
+      id: 'group-3',
+      type: 'group',
+      layers: [{ ...rect('rect-3'), x: 20, y: 30 }, { id: 'group-4', type: 'group', layers: [{ ...rect('rect-4'), x: 20, y: 30 }] }],
+    })
+    expect(validateDocument(document)).toMatchObject({ ok: true })
+  })
 })
 
-const rect = (id: string, over: Partial<Extract<Layer, { type: 'rect' }>> = {}): Layer => ({
+const rect =(id: string, over: Partial<Extract<Layer, { type: 'rect' }>> = {}): Layer => ({
   id,
   type: 'rect',
   x: 10,
@@ -88,7 +102,7 @@ describe('addLayer', () => {
     const { document, id } = addLayer(doc([rect('rect-1'), rect('rect-3')]), { type: 'rect' })
 
     expect(id).toBe('rect-4')
-    const added = document.layers.at(-1)!
+    const added = document.layers.at(-1)! as LeafLayer
     expect(added).toMatchObject({ id: 'rect-4', type: 'rect' })
     expect(added.x + added.width / 2).toBe(150)
     expect(added.y + added.height! / 2).toBe(125)
@@ -105,7 +119,7 @@ describe('addLayer', () => {
     const { document, id } = addLayer(doc([]), { type: 'image', src: 'assets/shoe.png', width: 1000, height: 500 })
 
     expect(id).toBe('image-1')
-    const image = document.layers[0]!
+    const image = document.layers[0]! as LeafLayer
     expect(image).toMatchObject({ type: 'image', src: 'assets/shoe.png', fit: 'contain' })
     expect(image.width / image.height!).toBe(2)
     expect(image.width).toBeLessThanOrEqual(300)

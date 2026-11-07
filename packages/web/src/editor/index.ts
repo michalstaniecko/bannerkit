@@ -31,7 +31,7 @@
 // reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
 //
 // `export` renders the shown Canvas offscreen (export.ts).
-import { faceKey, layoutText, walkLayers, type Document, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { faceKey, layoutText, walkLayers, type Document, type Layer, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
@@ -185,7 +185,7 @@ export type Editor = {
   destroy(): Promise<void>
 }
 
-type Entry = { base: Layer; object: FabricObject }
+type Entry = { base: LeafLayer; object: FabricObject }
 
 /** Arrow-key nudge in Document px; Shift multiplies it. */
 const NUDGE = 1
@@ -199,6 +199,28 @@ const ARROWS: Record<string, [number, number]> = {
 
 /** Keys typed into these go to the field, not the editor. */
 const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
+
+/**
+ * The Document's Layers, when none is a Group. The editor cannot show Groups yet
+ * (ticket #23), so a Document with one is refused with a readable message rather
+ * than half shown.
+ */
+function shownLayers(document: Document): LeafLayer[] {
+  const group = document.layers.find((l) => l.type === 'group')
+  if (group) throw new GroupsNotShown(group.id, document.layers.indexOf(group))
+  return document.layers as LeafLayer[]
+}
+
+/** Thrown for a Document the editor cannot show because it has a Group. */
+export class GroupsNotShown extends Error {
+  /** Issue path of the first Group, e.g. `layers[1]`. */
+  readonly path: string
+  constructor(id: string, index: number) {
+    super(`This Document has a Group "${id}" and the editor cannot show Groups yet; edit it as JSON or with the bannerkit CLI`)
+    this.name = 'GroupsNotShown'
+    this.path = `layers[${index}]`
+  }
+}
 
 /** Whether two Documents are the same (as JSON: same keys, in the same order). */
 const sameDocument = (a: Document, b: Document): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -293,8 +315,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
    */
   const show = async (document: Document, nextEnv: MapperEnv): Promise<boolean> => {
     const c = requireCanvas()
+    shownLayers(document) // refuses a Group before anything (even a show in flight) is touched
     const token = ++loads
     const next = structuredClone(document)
+    const layers = next.layers as LeafLayer[]
     // Fonts first: text is laid out (AutoFit, wrapping) only with the real font.
     await loadFonts(facesUsed(next))
     if (token !== loads || canvas !== c) return false
@@ -302,13 +326,13 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     for (const object of c.getObjects()) if (object instanceof Textbox) object.initDimensions()
     c.requestRenderAll()
 
-    const objects = await Promise.all(next.layers.map((layer) => layerToObject(layer, nextEnv)))
+    const objects = await Promise.all(layers.map((layer) => layerToObject(layer, nextEnv)))
     if (token !== loads || canvas !== c) return false // a newer show (or destroy) won
     c.discardActiveObject()
     c.remove(...c.getObjects())
     current = next
     env = nextEnv
-    entries = next.layers.map((layer, i) => ({ base: layer, object: objects[i]! }))
+    entries = layers.map((layer, i) => ({ base: layer, object: objects[i]! }))
     for (const { object } of entries) if (object instanceof Textbox) object.controls = textControls(resizeText)
     c.backgroundColor = current.canvas.background ?? ''
     c.add(...entries.map((e) => e.object))
@@ -351,7 +375,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       const group = active instanceof ActiveSelection ? active.getObjects() : undefined
       if (group) c.discardActiveObject()
       current = structuredClone(next)
-      current.layers.forEach((layer, i) => {
+      // In place means every Layer has the type of the one shown, so none is a Group.
+      ;(current.layers as LeafLayer[]).forEach((layer, i) => {
         const entry = entries[i]!
         entry.base = layer
         applyLayer(entry.object, layer, env)
@@ -700,8 +725,8 @@ function sameObject(base: Layer, next: Layer): boolean {
  * a rotation of 0.1°, so the human's edits stay readable in the JSON. Nudges move
  * by whole pixels already and keep whatever the Layer had.
  */
-function wholePixels(layer: Layer): Layer {
-  const rounded: Layer = { ...layer, x: roundPx(layer.x), y: roundPx(layer.y), width: roundPx(layer.width) }
+function wholePixels(layer: LeafLayer): LeafLayer {
+  const rounded: LeafLayer = { ...layer, x: roundPx(layer.x), y: roundPx(layer.y), width: roundPx(layer.width) }
   if ('height' in layer && layer.height !== undefined) (rounded as { height: number }).height = roundPx(layer.height)
   if (layer.rotation !== undefined) rounded.rotation = roundAngle(layer.rotation)
   return rounded

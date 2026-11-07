@@ -34,6 +34,7 @@ import {
   validate,
   type AddAssetsResult,
   type InspectResult,
+  type LayerInspection,
   type MigrateResult,
   type ValidateResult,
 } from '../ops/index.ts'
@@ -185,19 +186,27 @@ const px = (n: number) => `${Math.round(n * 100) / 100}`
 function inspectReport(r: InspectResult): string {
   const lines = [`${r.name} ${r.canvas.width}x${r.canvas.height} (${r.path})`]
   lines.push(r.selection ? `Selection: ${r.selection.selectedLayerIds.join(', ') || '(none)'}` : 'Selection: not recorded')
-  for (const l of r.layers) {
+  // Group children are indented two spaces per level.
+  const add = (l: LayerInspection, depth: number) => {
     const b = l.extent
+    const indent = '  '.repeat(depth)
+    const name = l.type === 'group' && l.name !== undefined ? ` ${JSON.stringify(l.name)}` : ''
     lines.push(
-      `${l.selected ? '*' : ' '} [${l.index}] ${l.type} ${l.id} at ${px(b.x)},${px(b.y)} ${px(b.width)}x${px(b.height)} ${l.placement}`,
+      `${l.selected ? '*' : ' '} ${indent}[${l.index}] ${l.type} ${l.id}${name} at ${px(b.x)},${px(b.y)} ${px(b.width)}x${px(b.height)} ${l.placement}`,
     )
+    if (l.type === 'group') {
+      for (const child of l.layers) add(child, depth + 1)
+      return
+    }
     if (l.text) {
       const t = l.text
       const size = t.fontSize === t.requestedFontSize ? `${t.fontSize}px` : `${t.fontSize}px (AutoFit from ${t.requestedFontSize}px)`
       const text = t.lines.map((line) => JSON.stringify(line.text)).join(' / ')
-      lines.push(`      ${size}, ${t.lines.length} line(s): ${text}${t.overflow ? ' OVERFLOW' : ''}`)
+      lines.push(`      ${indent}${size}, ${t.lines.length} line(s): ${text}${t.overflow ? ' OVERFLOW' : ''}`)
     }
-    if (l.asset) lines.push(`      asset ${l.asset.src} ${l.asset.width}x${l.asset.height}`)
+    if (l.asset) lines.push(`      ${indent}asset ${l.asset.src} ${l.asset.width}x${l.asset.height}`)
   }
+  for (const l of r.layers) add(l, 0)
   for (const issue of r.warnings) lines.push(`warning ${issueLine(issue)}`)
   return lines.join('\n')
 }

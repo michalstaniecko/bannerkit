@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { boxExtent, layoutText, svgIntrinsicSize, walkLayers, type Issue, type LayerType, type Rect, type Size } from '@bannerkit/core'
+import { layerExtent, layoutText, svgIntrinsicSize, type Issue, type Layer, type LeafLayer, type Rect, type Size } from '@bannerkit/core'
 import sharp from 'sharp'
 import { z } from 'zod'
 import { measureText } from '../render/fonts.ts'
@@ -38,21 +38,34 @@ export type CanvasPlacement = 'inside' | 'partial' | 'outside'
 
 export type AssetInspection = { src: string; width: number; height: number }
 
-export type LayerInspection = {
-  /** Position in `layers` (0 = bottom). */
+type InspectionBase = {
+  /** Position in its parent's `layers` (0 = bottom): the Document's, or its Group's. */
   index: number
   id: string
-  type: LayerType
-  /** The axis-aligned Canvas-space extent of the (rotated) Box (see core's `boxExtent`). */
+  /** The axis-aligned Canvas-space extent: of the (rotated) Box, or a Group's Box bounding all its children (core's `layerExtent`). */
   extent: Rect
   /** Where `extent` falls relative to the Canvas. */
   placement: CanvasPlacement
   /** In the editor's current Selection. */
   selected: boolean
+}
+
+/** A rect, image or text Layer. */
+export type LeafInspection = InspectionBase & {
+  type: LeafLayer['type']
   text?: TextInspection
   /** Image Layers: the Asset and its intrinsic size (what Fit scales from). */
   asset?: AssetInspection
 }
+
+/** A Group, with its children's entries nested in draw order. */
+export type GroupInspection = InspectionBase & {
+  type: 'group'
+  name?: string
+  layers: LayerInspection[]
+}
+
+export type LayerInspection = LeafInspection | GroupInspection
 
 export type InspectResult = {
   project: string
@@ -87,27 +100,28 @@ export async function inspect(input: z.input<typeof InspectInput>): Promise<Insp
 
   const outside: Issue[] = []
   const dir = projectDir(root, project)
-  const layers: LayerInspection[] = []
-  // v2: a Group's entry nests its children's (`parent` tells where each one goes).
-  for (const { layer, index, path } of walkLayers(document)) {
-    const layout = layer.type === 'text' ? layoutText(layer, measureText) : undefined
-    const extent = boxExtent({ ...layer, height: layout?.height ?? layer.height! })
+
+  /** The entry of `layer`, sitting at `index` of its parent, with Issue path `path`. */
+  async function entry(layer: Layer, index: number, path: string): Promise<LayerInspection> {
+    const extent = layerExtent(layer, measureText)
     const placement = placementOf(extent, document.canvas)
+    const base = { index, id: layer.id, extent, placement, selected: selected.has(layer.id) }
+    if (layer.type === 'group') {
+      // No "outside" warning: a Group's Box is derived, its leaves get their own.
+      return { ...base, type: 'group', ...(layer.name !== undefined && { name: layer.name }), layers: await entries(layer.layers, path) }
+    }
     if (placement !== 'inside') {
       const where = placement === 'outside' ? 'entirely outside' : 'partly outside'
       outside.push({ path, message: `Layer "${layer.id}" is ${where} the Canvas` })
     }
-    const base = { index, id: layer.id, type: layer.type, extent, placement, selected: selected.has(layer.id) }
     if (layer.type === 'image') {
-      layers.push({ ...base, asset: { src: layer.src, ...(await assetSize(dir, layer.src)) } })
-      continue
+      return { ...base, type: layer.type, asset: { src: layer.src, ...(await assetSize(dir, layer.src)) } }
     }
-    if (!layout || layer.type !== 'text') {
-      layers.push(base)
-      continue
-    }
-    layers.push({
+    if (layer.type === 'rect') return { ...base, type: layer.type }
+    const layout = layoutText(layer, measureText)
+    return {
       ...base,
+      type: layer.type,
       text: {
         fontSize: layout.fontSize,
         requestedFontSize: layer.fontSize,
@@ -115,8 +129,19 @@ export async function inspect(input: z.input<typeof InspectInput>): Promise<Insp
         overflow: layout.overflow,
         lines: layout.lines.map((l) => ({ text: l.text, width: l.width })),
       },
-    })
+    }
   }
+
+  /** The entries of the Layers held by the parent at `parentPath` (`''` for the Document), one after another so warnings stay in draw order. */
+  async function entries(layers: Layer[], parentPath: string): Promise<LayerInspection[]> {
+    const found: LayerInspection[] = []
+    for (const [i, layer] of layers.entries()) {
+      found.push(await entry(layer, i, `${parentPath && `${parentPath}.`}layers[${i}]`))
+    }
+    return found
+  }
+
+  const layers = await entries(document.layers, '')
 
   return {
     project,

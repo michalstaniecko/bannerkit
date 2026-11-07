@@ -45,8 +45,9 @@ export function resizeCanvas(document: Document, size: Size, anchor: Anchor = 't
   // `+ 0` turns a -0 from floor(-0) into 0.
   const dx = Math.floor(fx * (width - document.canvas.width)) + 0
   const dy = Math.floor(fy * (height - document.canvas.height)) + 0
-  // Every Layer in the tree moves: Layers hold Canvas coordinates at every depth.
-  const moved = mapLayers(document, (layer) => ({ ...layer, x: layer.x + dx, y: layer.y + dy }))
+  // Every leaf in the tree moves: Layers hold Canvas coordinates at every depth,
+  // and a Group has no position of its own (its Box follows its children).
+  const moved = mapLayers(document, (layer) => (layer.type === 'group' ? layer : { ...layer, x: layer.x + dx, y: layer.y + dy }))
   // Guides stay where they were relative to the Layers.
   const guides = document.guides && { x: document.guides.x.map((x) => x + dx), y: document.guides.y.map((y) => y + dy) }
   return { ...moved, canvas: { ...document.canvas, width, height }, ...(guides && { guides }) }
