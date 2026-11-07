@@ -8,6 +8,7 @@ import {
   splitRuleIssues,
   textOverflow,
   validateDocument,
+  walkLayers,
   type Document,
   type DocumentRule,
   type ImageLayer,
@@ -58,9 +59,9 @@ export const SERVER_DOCUMENT_RULES: DocumentRule[] = [
 export const assetsExist: ServerRule = async (document, { projectDir, missingAssets = 'error' }) => {
   const issues: RuleIssue[] = []
   let assets: string[] | undefined
-  for (const [i, layer] of document.layers.entries()) {
+  for (const { layer, path: at } of walkLayers(document)) {
     if (layer.type !== 'image') continue
-    const path = `layers[${i}].src`
+    const path = `${at}.src`
     const { src } = layer
     if (isAbsolute(src) || /^[A-Za-z]:/.test(src) || src.split(/[\\/]/).includes('..')) {
       issues.push({ path, message: `src "${src}" must be a project-relative path inside the Project` })

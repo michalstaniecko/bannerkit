@@ -2,7 +2,7 @@
 // front (drawing is synchronous), then draws each one into its Box by Fit.
 import { readFile } from 'node:fs/promises'
 import { extname, isAbsolute, join } from 'node:path'
-import { boxTransform, type Document, fitImage, type ImageLayer, type Rect, type Size, svgIntrinsicSize } from '@bannerkit/core'
+import { boxTransform, type Document, fitImage, type ImageLayer, type Rect, type Size, svgIntrinsicSize, walkLayers } from '@bannerkit/core'
 import { Canvas, type CanvasRenderingContext2D, type Image, loadImage } from 'skia-canvas'
 import { OpError } from '../ops/errors.ts'
 
@@ -15,18 +15,18 @@ export type LayerImages = Map<string, LoadedImage>
 /**
  * Loads the Asset of every image Layer, resolving `src` against `projectDir`. Any failure
  * (no projectDir, missing file, undecodable data) is a RENDER_FAILED OpError naming the Layer
- * id and `src`, located at `layers[i].src`.
+ * id and `src`, located at the Layer's `src` path (`layers[i].src`).
  */
 export async function loadLayerImages(doc: Document, projectDir: string | undefined): Promise<LayerImages> {
   const images: LayerImages = new Map()
-  for (const [i, layer] of doc.layers.entries()) {
+  for (const { layer, path } of walkLayers(doc)) {
     if (layer.type !== 'image') continue
     try {
       images.set(layer.id, await loadAsset(layer.src, projectDir))
     } catch (error) {
       const reason = (error as Error).message
       const message = `image Layer "${layer.id}" could not load src "${layer.src}": ${reason}`
-      throw new OpError('RENDER_FAILED', message, [{ path: `layers[${i}].src`, message }])
+      throw new OpError('RENDER_FAILED', message, [{ path: `${path}.src`, message }])
     }
   }
   return images
