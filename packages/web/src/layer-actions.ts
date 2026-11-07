@@ -1,18 +1,20 @@
 // Layer list and toolbar actions: pure functions from a Document to the next one.
 // The UI applies each result with `editor.apply(document, { cause: 'layers' })`, so
 // every action is exactly one undo step. Inputs are never mutated.
-import { nextLayerId, type Document, type Layer } from '@bannerkit/core'
+import { findLayer, nextLayerId, removeLayers, replaceLayer, walkLayers, type Document, type Layer } from '@bannerkit/core'
 
 const copy = (document: Document): Document => structuredClone(document)
 
 /** Moves Layer `id` to the stacking position currently held by `targetId`. */
 export function moveLayer(document: Document, id: string, targetId: string): Document {
   const next = copy(document)
-  const from = next.layers.findIndex((l) => l.id === id)
-  const to = next.layers.findIndex((l) => l.id === targetId)
-  if (from < 0 || to < 0 || from === to) return next
-  const [layer] = next.layers.splice(from, 1)
-  next.layers.splice(to, 0, layer!)
+  const from = findLayer(next, id)
+  const to = findLayer(next, targetId)
+  if (!from || !to || from.parent !== to.parent || from.index === to.index) return next
+  // `next` is a fresh copy, so its parents' `layers` may be changed in place.
+  const siblings = from.parent.layers as Layer[]
+  const [layer] = siblings.splice(from.index, 1)
+  siblings.splice(to.index, 0, layer!)
   return next
 }
 
@@ -33,9 +35,7 @@ export function withLayerFlag<L extends Layer>(layer: L, flag: LayerFlag, value:
 
 /** Sets a Layer's `visible` or `locked` (see `withLayerFlag`). */
 export function setLayerFlag(document: Document, id: string, flag: LayerFlag, value: boolean): Document {
-  const next = copy(document)
-  next.layers = next.layers.map((l) => (l.id === id ? withLayerFlag(l, flag, value) : l))
-  return next
+  return replaceLayer(copy(document), id, (l) => withLayerFlag(l, flag, value))
 }
 
 /** What the toolbar adds. An image refers to an added Asset and its intrinsic size. */
@@ -48,7 +48,7 @@ const NEW_SHARE = 0.5
 export function addLayer(document: Document, spec: NewLayer): { document: Document; id: string } {
   const next = copy(document)
   const { width: cw, height: ch } = next.canvas
-  const id = nextLayerId(next.layers, spec.type)
+  const id = nextLayerId(next, spec.type)
   const centred = (width: number, height: number) => ({ x: (cw - width) / 2, y: (ch - height) / 2, width, height })
   let layer: Layer
   if (spec.type === 'rect') {
@@ -67,9 +67,7 @@ export function addLayer(document: Document, spec: NewLayer): { document: Docume
 
 /** Removes the Layers `ids`. */
 export function deleteLayers(document: Document, ids: readonly string[]): Document {
-  const next = copy(document)
-  next.layers = next.layers.filter((l) => !ids.includes(l.id))
-  return next
+  return removeLayers(copy(document), ids)
 }
 
 /** How far a duplicate is moved from its original, so it is visible, in Document px. */
@@ -81,15 +79,19 @@ const DUPLICATE_OFFSET = 10
  */
 export function duplicateLayers(document: Document, ids: readonly string[]): { document: Document; ids: string[] } {
   const next = copy(document)
-  const copies: string[] = []
-  const layers: Layer[] = []
-  for (const layer of next.layers) {
-    layers.push(layer)
-    if (!ids.includes(layer.id)) continue
-    const id = nextLayerId([...next.layers, ...layers], layer.type)
-    layers.push({ ...structuredClone(layer), id, x: layer.x + DUPLICATE_OFFSET, y: layer.y + DUPLICATE_OFFSET })
-    copies.push(id)
+  const originals = walkLayers(next).filter(({ layer }) => ids.includes(layer.id))
+  // Ids first, bottom → top, each one clear of the copies made before it.
+  const made: Layer[] = []
+  for (const { layer } of originals) {
+    const id = nextLayerId({ layers: [...next.layers, ...made] }, layer.type)
+    made.push({ ...structuredClone(layer), id, x: layer.x + DUPLICATE_OFFSET, y: layer.y + DUPLICATE_OFFSET })
   }
-  next.layers = layers
-  return { document: next, ids: copies }
+  // Then each copy right above its original, top → bottom so earlier positions hold.
+  // `next` is a fresh copy, so its parents' `layers` may be changed in place.
+  for (let i = originals.length - 1; i >= 0; i--) {
+    const { parent, index } = originals[i]!
+    const siblings = parent.layers as Layer[]
+    siblings.splice(index + 1, 0, made[i]!)
+  }
+  return { document: next, ids: made.map((l) => l.id) }
 }

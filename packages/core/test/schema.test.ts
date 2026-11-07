@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DOCUMENT_SCHEMA_FILE, documentJsonSchema, nextLayerId } from '../src/index.ts'
+import { DOCUMENT_SCHEMA_FILE, documentJsonSchema, nextLayerId, type Layer } from '../src/index.ts'
 
 const committedSchemaPath = join(import.meta.dirname, '..', DOCUMENT_SCHEMA_FILE)
 
@@ -25,10 +25,11 @@ describe('documentJsonSchema', () => {
 
 describe('nextLayerId', () => {
   it('generates readable <type>-<n> ids that do not collide', () => {
-    const layers = [{ id: 'text-1' }, { id: 'image-3' }, { id: 'hero-text' }, { id: 'text-2' }]
+    const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 1, height: 1, fill: '#000' })
+    const root = { layers: ['text-1', 'image-3', 'hero-text', 'text-2'].map(rect) }
 
-    expect(nextLayerId(layers, 'text')).toBe('text-3')
-    expect(nextLayerId(layers, 'image')).toBe('image-4')
-    expect(nextLayerId(layers, 'rect')).toBe('rect-1')
+    expect(nextLayerId(root, 'text')).toBe('text-3')
+    expect(nextLayerId(root, 'image')).toBe('image-4')
+    expect(nextLayerId(root, 'rect')).toBe('rect-1')
   })
 })
