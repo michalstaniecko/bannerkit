@@ -1,6 +1,7 @@
 // What the precision tools draw over the Canvas (on Fabric's `contextTop`, never in a
 // Render or an Export), in Canvas coordinates. A tagged union on `kind`: each tool adds
 // its own kind (equal gaps, Measurement, …) and a case in the overlay's drawing.
+import type { Rect } from '@bannerkit/core'
 import type { Axis, TargetSource } from './targets.ts'
 
 /**
@@ -11,4 +12,23 @@ import type { Axis, TargetSource } from './targets.ts'
  */
 export type SnapLineMark = { kind: 'snap-line'; axis: Axis; at: number; from: number; to: number; source: TargetSource }
 
-export type Mark = SnapLineMark
+export type Mark = SnapLineMark | MeasureMark | MeasureBoxMark
+
+/**
+ * A Measurement distance on `axis` (`x`: horizontal, from x = `from` to `to`, drawn at
+ * y = `at`; `y`: vertical), labelled in px. `extension`: a dashed line across the other
+ * axis (for `x`, vertical at x = `extension.at`, from y = `extension.from` to `to`) that
+ * carries the distance on to the measured box when the two share nothing on that axis.
+ */
+export type MeasureMark = {
+  kind: 'measure'
+  axis: Axis
+  at: number
+  from: number
+  to: number
+  label: string
+  extension?: { at: number; from: number; to: number }
+}
+
+/** The outline of the box measured to (a Layer's extent or the Canvas), highlighted. */
+export type MeasureBoxMark = { kind: 'measure-box'; rect: Rect }
