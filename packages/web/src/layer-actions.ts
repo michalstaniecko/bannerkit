@@ -4,9 +4,11 @@
 import {
   duplicateLayers as duplicate,
   findLayer,
+  group,
   nextLayerId,
   removeLayers,
   replaceLayer,
+  ungroup,
   type Document,
   type Layer,
 } from '@bannerkit/core'
@@ -88,4 +90,35 @@ const DUPLICATE_OFFSET = 10
  */
 export function duplicateLayers(document: Document, ids: readonly string[]): { document: Document; ids: string[] } {
   return duplicate(document, ids, { offset: DUPLICATE_OFFSET })
+}
+
+/** A Layer action's next Document and the Layers to select after it. */
+export type LayerActionResult = { document: Document; select: string[] }
+
+/**
+ * Groups the Selection (Cmd+G) into a new unnamed Group, selected after. Undefined —
+ * the action is unavailable — without a Selection or when its Layers have different parents.
+ */
+export function groupSelection(document: Document, selection: readonly string[]): LayerActionResult | undefined {
+  if (selection.length === 0) return undefined
+  const result = group(document, selection)
+  return result.ok ? { document: result.document, select: [result.id] } : undefined
+}
+
+/**
+ * Ungroups every selected Group (Cmd+Shift+G) and selects their former children.
+ * Undefined — the action is unavailable — when the Selection holds no Group.
+ */
+export function ungroupSelection(document: Document, selection: readonly string[]): LayerActionResult | undefined {
+  const groups = selection.filter((id) => findLayer(document, id)?.layer.type === 'group')
+  if (groups.length === 0) return undefined
+  let next = document
+  const select: string[] = []
+  for (const id of groups) {
+    const result = ungroup(next, id)
+    if (!result.ok) return undefined
+    next = result.document
+    select.push(...result.ids)
+  }
+  return { document: next, select }
 }
