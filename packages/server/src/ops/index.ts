@@ -6,15 +6,19 @@ export { createProject, listProjects, type CreateProjectInput, type ProjectRef }
 export {
   createDocument,
   duplicateDocument,
+  groupLayers,
   listDocuments,
   readDocument,
   resizeDocument,
+  ungroupLayer,
   writeDocument,
   type CreateDocumentInput,
   type DocumentRef,
   type DocumentResult,
   type DuplicateDocumentInput,
+  type GroupLayersInput,
   type ResizeDocumentInput,
+  type UngroupLayerInput,
 } from './documents.ts'
 export {
   SERVER_DOCUMENT_RULES,
