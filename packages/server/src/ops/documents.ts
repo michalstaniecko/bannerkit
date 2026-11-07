@@ -4,14 +4,17 @@ import {
   DEFAULT_BACKGROUND,
   DOCUMENT_VERSION,
   exactlyOneSize,
+  group,
   resizeCanvas,
   resolveSize,
   sizeChoiceShape,
+  ungroup,
   type Anchor,
   type Document,
   type DocumentRef,
   type DocumentResult,
   type SizeChoice,
+  type TreeEditResult,
 } from '@bannerkit/core'
 import { z } from 'zod'
 import { OpError, parseInput, type ConflictCurrent } from './errors.ts'
@@ -183,4 +186,50 @@ export async function resizeDocument(input: ResizeDocumentInput): Promise<Docume
   const { root, project, name, anchor, ...choice } = parseInput(ResizeDocumentInput, input)
   const { document } = await readDocument({ root, project, name })
   return writeDocument({ root, project, name, document: resizeCanvas(document, resolveSize(choice), anchor) })
+}
+
+// groupLayers / ungroupLayer --------------------------------------------------
+
+/** A core tree edit's result as an op result: the write, or the core error as an OpError. */
+async function writeTreeEdit<Extra>(
+  ref: { root: string; project: string; name: string },
+  result: TreeEditResult<Extra>,
+): Promise<DocumentResult & Extra> {
+  if (!result.ok) throw new OpError(result.code, result.message)
+  const { ok: _, document, ...extra } = result
+  return { ...(await writeDocument({ ...ref, document })), ...(extra as Extra) }
+}
+
+const GroupLayersInput = z.object({
+  root: Root,
+  project: Name,
+  name: Name,
+  ids: z.array(z.string().min(1)).min(1),
+  groupName: z.string().optional(),
+})
+export type GroupLayersInput = z.input<typeof GroupLayersInput>
+
+/**
+ * Wraps Layers sharing a parent in a new Group (core `group`) and writes the
+ * Document (as v2). The write is unconditional. Unknown ids are NOT_FOUND,
+ * Layers with different parents INVALID_INPUT.
+ */
+export async function groupLayers(input: GroupLayersInput): Promise<DocumentResult & { id: string }> {
+  const { root, project, name, ids, groupName } = parseInput(GroupLayersInput, input)
+  const { document } = await readDocument({ root, project, name })
+  return writeTreeEdit({ root, project, name }, group(document, ids, groupName === undefined ? {} : { name: groupName }))
+}
+
+const UngroupLayerInput = z.object({ root: Root, project: Name, name: Name, id: z.string().min(1) })
+export type UngroupLayerInput = z.input<typeof UngroupLayerInput>
+
+/**
+ * Puts a Group's children where the Group was (core `ungroup`) and writes the
+ * Document. The write is unconditional. An unknown id is NOT_FOUND, a Layer
+ * that is not a Group INVALID_INPUT. Answers the former children's `ids`.
+ */
+export async function ungroupLayer(input: UngroupLayerInput): Promise<DocumentResult & { ids: string[] }> {
+  const { root, project, name, id } = parseInput(UngroupLayerInput, input)
+  const { document } = await readDocument({ root, project, name })
+  return writeTreeEdit({ root, project, name }, ungroup(document, id))
 }

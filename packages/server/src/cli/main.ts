@@ -8,6 +8,7 @@ import {
   EXPORT_FORMATS,
   closest,
   EXPORT_SCALES,
+  findLayer,
   isExportFormat,
   isExportScale,
   parseSize,
@@ -24,12 +25,14 @@ import {
   createDocument,
   createProject,
   duplicateDocument,
+  groupLayers,
   inspect,
   migrate,
   preview,
   render,
   resizeDocument,
   resolveProjectsRoot,
+  ungroupLayer,
   type RenderResult,
   validate,
   type AddAssetsResult,
@@ -248,6 +251,33 @@ const COMMANDS: Record<string, Command> = {
       return resizeDocument({ root, project: project!, name: name!, ...sizeChoice(values), ...(anchor ? { anchor } : {}) })
     },
     human: (r) => `Resized Document ${r.name} to ${r.document.canvas.width}x${r.document.canvas.height} at ${r.path}`,
+  },
+  'layer group': {
+    usage: 'bannerkit layer group <project> <doc> <ids...> [--name N]',
+    summary: 'Wrap Layers sharing a parent in a new Group where the topmost of them was; prints its id',
+    positionals: [3, Infinity],
+    options: { name: { type: 'string' } },
+    run: ({ root, args: [project, name, ...ids], values }) =>
+      groupLayers({
+        root,
+        project: project!,
+        name: name!,
+        ids,
+        ...(values.name !== undefined ? { groupName: values.name as string } : {}),
+      }),
+    human: (r) => {
+      const found = findLayer(r.document, r.id)?.layer
+      const children = found?.type === 'group' ? found.layers.map((l) => l.id).join(', ') : ''
+      return `Grouped ${children} as ${r.id} in Document ${r.name} at ${r.path}`
+    },
+  },
+  'layer ungroup': {
+    usage: 'bannerkit layer ungroup <project> <doc> <id>',
+    summary: "Put a Group's children where the Group was, coordinates unchanged; prints their ids",
+    positionals: [3, 3],
+    options: {},
+    run: ({ root, args: [project, name, id] }) => ungroupLayer({ root, project: project!, name: name!, id: id! }),
+    human: (r) => `Ungrouped into ${r.ids.join(', ')} in Document ${r.name} at ${r.path}`,
   },
   'asset add': {
     usage: 'bannerkit asset add <project> <files...>',
