@@ -8,6 +8,7 @@
 import {
   boxExtent,
   mapLayers,
+  translateLayer,
   validateDocument,
   walkLayers,
   type Document,
@@ -139,8 +140,7 @@ export function selectedLayers(document: Document, ids: readonly string[]): Laye
 /** `document` with every Layer in `ids` moved by `dx`, `dy` (a Group by moving everything in it). */
 export function moveLayers(document: Document, ids: readonly string[], dx: number, dy: number): Document {
   if (dx === 0 && dy === 0) return document
-  const move = (l: Layer): Layer => (l.type === 'group' ? { ...l, layers: l.layers.map(move) } : { ...l, x: l.x + dx, y: l.y + dy })
-  return editLayers(document, ids, move)
+  return editLayers(document, ids, (l) => translateLayer(l, dx, dy))
 }
 
 /** The options of `field` every one of `layers` can take, in the first Layer's order. */
