@@ -15,6 +15,9 @@
 // transform), never resampled, so the browser Export matches the server Render.
 // Fabric's own object cache is off: it would resample (and it is skipped anyway when
 // a child has a shadow).
+//
+// Selection: Fabric-`interactive`, so a Layer inside can be the active object (picked by the
+// editor's rules, picking.ts) and a Textbox inside enters editing on click.
 import { Group, LayoutManager, util, type FabricObject } from 'fabric'
 
 /** Fabric's layout never moves or resizes a DocumentGroup: the mapper places it. */

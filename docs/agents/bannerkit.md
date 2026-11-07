@@ -61,10 +61,9 @@ Every leaf Layer (`rect`, `image`, `text`) has these fields: `id`, `type`, `x`, 
 ```
 
 - Children keep **Canvas coordinates**: a child's `x`/`y` mean the same as at the root. To move a Group, move every Layer inside it by the same delta. The Group's Box is derived: the axis-aligned rectangle around all its children, hidden ones included (`inspect` reports it as the Group's `extent`).
-- `opacity` applies to the children composited together, as in CSS: where children overlap, the lower one does not show through the upper one. `visible: false` hides everything inside.
+- `opacity` applies to the children composited together, as in CSS: where children overlap, the lower one does not show through the upper one. `visible: false` hides everything inside, and `locked: true` locks everything inside (the editor neither picks nor moves those Layers), whatever the children's own flags say.
 - An empty Group is an error; delete it instead. Prefer `layer group`/`layer ungroup` over hand-editing to create or dissolve a Group. To move a Layer into or out of a Group, move its object between `layers` arrays in the JSON. Ids are unique across the whole tree, and issue paths go through Groups: `layers[1].layers[0].fontWeight`. Name new Groups `group-<n>`.
 - Groups need `version: 2`. In a v1 file, `"type": "group"` fails with `"group" requires version: 2; run bannerkit migrate`.
-- The editor cannot show Groups yet; it refuses such a Document with a message. The CLI handles them fully.
 
 Conventions:
 
@@ -114,6 +113,6 @@ Each `inspect` entry in `layers` has the form `{ index, id, type, extent, placem
 
 When the human says "this", "the selected one" or "what I picked", they mean the editor's Selection.
 
-- `pnpm bannerkit inspect <project> --json` without `<doc>` opens the Document the editor has selected. `result.selection` is `{ doc, selectedLayerIds }`, and the matching `layers[]` entries (at any depth; a Group can be selected) have `selected: true`. In the text output these are marked with `*`.
+- `pnpm bannerkit inspect <project> --json` without `<doc>` opens the Document the editor has selected. `result.selection` is `{ doc, selectedLayerIds }`, and the matching `layers[]` entries (at any depth; a Group can be selected) have `selected: true`. The human can select Layers inside a Group (double click, Cmd+click), from different Groups at once, but never a Layer together with a Group holding it. In the text output these are marked with `*`.
 - If no Selection is recorded, that command fails with `INVALID_INPUT`. Ask the human which Layer they mean, or pass `<doc>` explicitly. Then `selection` is `null`.
 - The Selection is a snapshot taken from the open editor. Read it again before each new request that relies on it.

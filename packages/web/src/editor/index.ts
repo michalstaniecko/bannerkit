@@ -8,9 +8,12 @@
 // the objects via the mapper, so whatever Fabric shows is what you get back.
 //
 // A Group is selected and moved as a whole: a click on any of its Layers takes the
-// top-level Group (the Canvas only ever targets top-level objects; `DocumentCanvas`
-// hits a Group only where one of its Layers is hit). Moving it moves every Layer in it
-// by the same delta, and the Group is laid out again around them.
+// top-level Group (`DocumentCanvas` hits a Group only where one of its Layers is hit).
+// Moving it moves every Layer in it by the same delta, and the Group is laid out again
+// around them. A double click, Cmd+click or a click in the context of a selected child
+// selects a Layer inside a Group instead (picking.ts); it then moves, resizes, rotates
+// and edits like any Layer, and its Group is laid out again around it on commit. A Layer
+// in a locked or hidden Group is never hit and, selected from the list, has no handles.
 //
 // Direct manipulation: Fabric runs the drag, scale, rotate and text editing. When
 // one *logical modification* ends (a transform's `object:modified`, a text edit's
