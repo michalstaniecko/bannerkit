@@ -20,6 +20,7 @@ import {
   LAYER_FIELDS,
   writeNumber,
   type ColorFieldSpec,
+  type FieldContext,
   type FieldGroup,
   type FieldTable,
   type FieldSpec,
@@ -42,8 +43,7 @@ export type Recipe = (document: Document) => Document
 /** The height of a text Layer's Box when it has none (its Text Layout height). */
 export type TextHeight = (layer: TextLayer) => number
 
-export type InspectOptions = {
-  textHeight: TextHeight
+export type InspectOptions = FieldContext & {
   /** Box fields stand for the shared Box of `layers`. Default: when there are several. */
   sharedBox?: boolean
 }
@@ -51,7 +51,7 @@ export type InspectOptions = {
 /** What one field shows, and the Document change for a value set on it. */
 export type InspectedField =
   | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => Recipe }
-  | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; write: (value: boolean) => Recipe }
+  | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; disabled: boolean; write: (value: boolean) => Recipe }
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
   | {
       control: 'select'
@@ -142,53 +142,61 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
   const ids = layers.map((l) => l.id)
   const shared = options.sharedBox ?? layers.length > 1
   const each = (write: (layer: Layer) => Layer): Recipe => (document) => editLayers(document, ids, write)
+  const context: FieldContext = { textLayout: options.textLayout }
+  const textHeight: TextHeight = (layer) => options.textLayout(layer).height
 
   switch (field.control) {
     case 'readonly':
-      return { control: 'readonly', field, value: sharedValue(layers, field.read) }
+      return { control: 'readonly', field, value: sharedValue(layers, (l) => field.read(l, context)) }
     case 'toggle':
-      return { control: 'toggle', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
+      return {
+        control: 'toggle',
+        field,
+        value: sharedValue(layers, (l) => field.read(l, context)),
+        disabled: layers.some((l) => field.disabled?.(l) ?? false),
+        write: (value) => each((l) => field.write(l, value, context)),
+      }
     case 'select':
       return {
         control: 'select',
         field,
         options: sharedOptions(field, layers),
-        value: sharedValue(layers, field.read),
-        write: (value) => each((l) => field.write(l, value)),
+        value: sharedValue(layers, (l) => field.read(l, context)),
+        write: (value) => each((l) => field.write(l, value, context)),
       }
     case 'color': {
       // `undefined` is a value the field cannot show (a gradient fill). One Layer shows
       // the field's placeholder for it; with several it is Mixed.
-      const value = sharedValue(layers, field.read)
+      const value = sharedValue(layers, (l) => field.read(l, context))
       return {
         control: 'color',
         field,
         value: value === undefined && layers.length > 1 ? MIXED : value,
-        write: (value) => each((l) => field.write(l, value)),
+        write: (value) => each((l) => field.write(l, value, context)),
       }
     }
     case 'gradient': {
-      const stops = sharedValue(layers, (l) => JSON.stringify(field.read(l)?.stops))
+      const stops = sharedValue(layers, (l) => JSON.stringify(field.read(l, context)?.stops))
       return {
         control: 'gradient',
         field,
-        angle: sharedValue(layers, (l) => field.read(l)?.angle ?? 0),
+        angle: sharedValue(layers, (l) => field.read(l, context)?.angle ?? 0),
         stops: stops === MIXED ? MIXED : (JSON.parse(stops) as GradientStop[]),
         write: (change) =>
           each((l) => {
-            const gradient = field.read(l)
-            return gradient ? field.write(l, change(gradient)) : l
+            const gradient = field.read(l, context)
+            return gradient ? field.write(l, change(gradient), context) : l
           }),
       }
     }
     case 'number': {
       if (shared && field.box) {
         const side = field.box
-        const box = sharedBox(layers, options.textHeight)
+        const box = sharedBox(layers, textHeight)
         if (side === 'width' || side === 'height') return { control: 'number', field, value: roundPx(box[side]), disabled: true, write: () => (d) => d }
         // The Box's side shows on whole px; the typed value moves every Layer by one whole-px delta.
         const write = (value: number): Recipe => (document) => {
-          const now = sharedBox(document.layers.filter((l) => ids.includes(l.id)), options.textHeight)
+          const now = sharedBox(document.layers.filter((l) => ids.includes(l.id)), textHeight)
           const delta = roundPx(value - now[side])
           return side === 'x' ? moveLayers(document, ids, delta, 0) : moveLayers(document, ids, 0, delta)
         }
@@ -197,9 +205,9 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
       return {
         control: 'number',
         field,
-        value: sharedValue(layers, field.read),
+        value: sharedValue(layers, (l) => field.read(l, context)),
         disabled: false,
-        write: (value) => each((l) => writeNumber(field, l, value)),
+        write: (value) => each((l) => writeNumber(field, l, value, context)),
       }
     }
   }

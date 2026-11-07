@@ -6,9 +6,8 @@
 // Canvas (useEdits) and commits one step on release; with several Layers, dragging X/Y
 // moves the Selection Box. With an empty Selection it shows the Document
 // (DocumentFields); the Anchor it resizes from is held by the caller for the session.
-import { layoutText, type Anchor } from '@bannerkit/core'
+import type { Anchor, TextLayer, TextLayout } from '@bannerkit/core'
 import type { RefObject } from 'react'
-import { measureText } from '../editor/fonts.ts'
 import type { Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
 import { ColorField } from '../ui/ColorField.tsx'
@@ -17,7 +16,7 @@ import { Section } from '../ui/Panel.tsx'
 import { Select } from '../ui/Select.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
-import { inspectField, MIXED, sharedFields, type InspectedField, type Recipe, type TextHeight } from './inspect.ts'
+import { inspectField, MIXED, sharedFields, type InspectedField, type Recipe } from './inspect.ts'
 import { useEdits } from './useEdits.ts'
 import { useInspected } from './useInspected.ts'
 
@@ -32,12 +31,16 @@ type Props = {
 /** Shown for a value that differs between the selected Layers. */
 const MIXED_LABEL = 'Mixed'
 
-const textHeight: TextHeight = (layer) => layoutText(layer, measureText).height
-
 export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
   const { document, selection, reloads } = useInspected(editor, loaded)
   const layers = document ? document.layers.filter((l) => selection.includes(l.id)) : []
   const edits = useEdits(editor)
+  // Text Layout (used font size, Auto height) as the editor lays it out: core
+  // `layoutText` with the Canvas's measure, never read back from Fabric.
+  const textLayout = (layer: TextLayer): TextLayout => {
+    if (!editor.current) throw new Error('No editor')
+    return editor.current.textLayout(layer)
+  }
 
   if (document && layers.length === 0) {
     return (
@@ -55,7 +58,7 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
             {group.fields.map((field) => (
               <Field
                 key={field.key}
-                inspected={inspectField(field, layers, { textHeight })}
+                inspected={inspectField(field, layers, { textLayout })}
                 resetKey={reloads}
                 onWrite={edits.commit}
                 onPreview={edits.preview}
@@ -105,6 +108,7 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
           label={field.label}
           checked={inspected.value === true}
           mixed={inspected.value === MIXED}
+          disabled={inspected.disabled}
           onChange={(value) => onWrite(inspected.write(value))}
         />
       )
@@ -148,15 +152,15 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
         />
       )
     case 'readonly':
-      return <ReadOnly label={field.label} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
+      return <ReadOnly label={field.label} name={field.name} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
   }
 }
 
-function ReadOnly({ label, value }: { label: string; value: string }) {
+function ReadOnly({ label, name = label, value }: { label: string; name?: string; value: string }) {
   return (
     <div className="readonly-field">
       <span className="readonly-field-label">{label}</span>
-      <output className="readonly-field-value" aria-label={label}>
+      <output className="readonly-field-value" aria-label={name}>
         {value}
       </output>
     </div>

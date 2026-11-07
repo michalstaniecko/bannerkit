@@ -1,6 +1,6 @@
 // The Inspector's Properties tab rendered with a real editor (jsdom + node-canvas),
 // driven by user-event like a human: fields are found by their accessible names.
-import type { Anchor, Document } from '@bannerkit/core'
+import type { Anchor, Document, MeasureText } from '@bannerkit/core'
 import { cleanup, render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { useState, type RefObject } from 'react'
@@ -12,11 +12,15 @@ import { openEditor } from './editor-harness.ts'
 afterEach(cleanup)
 
 /**
- * Opens `document_` in a real editor (see `openEditor`), selects `select` and renders
- * the Properties tab for it. `field(name)` finds a field by its accessible name.
+ * Opens `document_` in a real editor (see `openEditor`, `measure` included), selects
+ * `select` and renders the Properties tab for it. `field(name)` finds a field by its
+ * accessible name.
  */
-export async function openInspector(document_: Document, { select = [] }: { select?: string[] } = {}) {
-  const opened = await openEditor(document_)
+export async function openInspector(
+  document_: Document,
+  { select = [], measure }: { select?: string[]; measure?: MeasureText } = {},
+) {
+  const opened = await openEditor(document_, { measure })
   opened.editor.select(select)
   const user = userEvent.setup()
   const view = render(<WithAnchor editor={{ current: opened.editor }} />)

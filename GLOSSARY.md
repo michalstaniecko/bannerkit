@@ -23,7 +23,7 @@ A named standard Canvas size (1200×628, 1080×1080, 1080×1920, 300×250, 728×
 _Avoid_: format, template
 
 **Layer**:
-One visual element of a Document (`rect`, `image`, `text` or `group`), positioned by its unrotated box. Its position in the list is its stacking order, from bottom to top.
+One visual element of a Document (`rect`, `image`, `text` or `group`; `group` comes with v2), positioned by its unrotated box. Its position in the list is its stacking order, from bottom to top.
 _Avoid_: object, element, shape, node
 
 **Group**:
@@ -63,6 +63,10 @@ How an image fills its Box: `contain`, `cover` or `stretch`.
 **AutoFit**:
 Shrinking a text Layer's font size, from its declared size down to a minimum, until the wrapped text fits its Box.
 _Avoid_: auto-size, shrink-to-fit
+
+**Declared size / used size**:
+A text Layer's `fontSize` as written in the Document (the largest size AutoFit may use), and the font size its Text Layout actually draws after AutoFit. `bannerkit inspect` reports them as `requestedFontSize` and `fontSize`; the Inspector shows the used size beside the declared one.
+_Avoid_: actual size, effective size, max size
 
 **Text Layout**:
 The resolved line breaks and font size of a text Layer. Both renderers compute it the same way and draw it, never deriving it on their own.

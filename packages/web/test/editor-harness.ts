@@ -1,7 +1,7 @@
 // Shared by editor and Inspector tests (jsdom + node-canvas): Document fixtures and
 // `openEditor`, a real editor mounted in the page with its `change` and `selection`
 // events recorded. Destroyed after each test.
-import type { Document, ImageLayer, Layer, RectLayer, TextLayer } from '@bannerkit/core'
+import type { Document, ImageLayer, Layer, MeasureText, RectLayer, TextLayer } from '@bannerkit/core'
 import { afterEach } from 'vitest'
 import { createEditor, type ChangeEvent, type Editor } from '../src/editor/index.ts'
 
@@ -72,13 +72,13 @@ afterEach(async () => {
 
 /**
  * Opens `document_` in a real editor mounted in the page (fonts are not loaded;
- * `assets/two-tone.png` loads, any other Asset is missing). `changes` and
- * `selections` record the editor's events from then on.
+ * `assets/two-tone.png` loads, any other Asset is missing), measuring text with
+ * `measure` when given. `changes` and `selections` record the editor's events from then on.
  */
-export async function openEditor(document_: Document) {
+export async function openEditor(document_: Document, { measure }: { measure?: MeasureText } = {}) {
   const container = document.createElement('div')
   document.body.append(container)
-  const editor = createEditor({ loadFonts: async () => {} })
+  const editor = createEditor({ loadFonts: async () => {}, measure })
   opened.push(editor)
   editor.mount(container)
   await editor.load(document_, {

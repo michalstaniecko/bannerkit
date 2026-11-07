@@ -20,10 +20,14 @@ import {
   type LinearGradient,
   type RectLayer,
   type TextLayer,
+  type TextLayout,
 } from '@bannerkit/core'
 import { fontManifest } from '../editor/fonts.ts'
 import { roundAngle, roundPx } from '../editor/rounding.ts'
 import type { SelectOption } from '../ui/Select.tsx'
+
+/** What a field may need besides the Layer: the Text Layout of a text Layer, as the editor lays it out. */
+export type FieldContext = { textLayout: (layer: TextLayer) => TextLayout }
 
 type FieldBase<L extends Layer = Layer> = {
   /** Stable id of the field, unique within its Layer type (and shared across types for the same field). */
@@ -53,21 +57,23 @@ export type NumberFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
    * Layer by one delta, `width`/`height` are shown but disabled.
    */
   box?: 'x' | 'y' | 'width' | 'height'
-  read: (layer: L) => number | undefined
-  write: (layer: L, value: number) => L
+  read: (layer: L, context: FieldContext) => number | undefined
+  write: (layer: L, value: number, context: FieldContext) => L
 }
 
 /** An on/off switch. */
 export type ToggleFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'toggle'
-  read: (layer: L) => boolean
-  write: (layer: L, value: boolean) => L
+  /** The switch is shown but cannot be changed (e.g. Auto height while AutoFit is on). Default: never. */
+  disabled?: (layer: L) => boolean
+  read: (layer: L, context: FieldContext) => boolean
+  write: (layer: L, value: boolean, context: FieldContext) => L
 }
 
 /** A value shown but never edited (the Layer id). */
 export type ReadOnlyFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'readonly'
-  read: (layer: L) => string
+  read: (layer: L, context: FieldContext) => string
 }
 
 /** One of a set of options, picked from a Select. */
@@ -75,8 +81,8 @@ export type SelectFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'select'
   /** The options, or the options a Layer can take (e.g. the weights of its font family). */
   options: readonly SelectOption[] | ((layer: L) => readonly SelectOption[])
-  read: (layer: L) => string
-  write: (layer: L, value: string) => L
+  read: (layer: L, context: FieldContext) => string
+  write: (layer: L, value: string, context: FieldContext) => L
 }
 
 /** A CSS colour, typed or picked in a ColorField; `null` is "none" (only when `nullable`). */
@@ -85,15 +91,15 @@ export type ColorFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   nullable?: boolean
   /** Shown when `read` gives `undefined` (e.g. a gradient fill). */
   placeholder?: string
-  read: (layer: L) => string | null | undefined
-  write: (layer: L, value: string | null) => L
+  read: (layer: L, context: FieldContext) => string | null | undefined
+  write: (layer: L, value: string | null, context: FieldContext) => L
 }
 
 /** A linear gradient (angle and stops) edited in the gradient editor. */
 export type GradientFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'gradient'
-  read: (layer: L) => LinearGradient | undefined
-  write: (layer: L, value: LinearGradient) => L
+  read: (layer: L, context: FieldContext) => LinearGradient | undefined
+  write: (layer: L, value: LinearGradient, context: FieldContext) => L
 }
 
 export type FieldSpec<L extends Layer = Layer> =
@@ -157,6 +163,24 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           placeholder: 'Auto',
           read: (l) => ('height' in l ? l.height : undefined),
           write: (l, height) => ({ ...l, height }),
+        },
+        {
+          // On: the text Layer has no `height` (Auto). Off: it gets its Text Layout height.
+          // AutoFit needs a height, so Auto cannot come back while it is on.
+          control: 'toggle',
+          key: 'height.auto',
+          label: 'Auto height',
+          when: (l) => l.type === 'text',
+          disabled: (l) => l.type === 'text' && l.autoFit !== undefined,
+          read: (l) => l.type === 'text' && l.height === undefined,
+          write: (l, auto, { textLayout }) => {
+            if (l.type !== 'text') return l
+            if (!auto) return l.height === undefined ? { ...l, height: Math.ceil(textLayout(l).height) } : l
+            if (l.autoFit) return l
+            const next = { ...l }
+            delete next.height
+            return next
+          },
         },
         {
           control: 'number',
@@ -441,6 +465,15 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           write: (l, fontSize) => ({ ...l, fontSize }),
         },
         {
+          // The used size: what AutoFit shrank the declared size to (core Text Layout).
+          control: 'readonly',
+          key: 'fontSize.used',
+          label: 'Used',
+          name: 'Used font size',
+          when: (l) => l.autoFit !== undefined,
+          read: (l, { textLayout }) => String(textLayout(l).fontSize),
+        },
+        {
           control: 'number',
           key: 'lineHeight',
           label: 'Line',
@@ -477,7 +510,51 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
         },
       ],
     },
+    autoFitGroup(),
   ]
+}
+
+/**
+ * AutoFit of a text Layer: a switch and, while on, `minFontSize`. Turned on, a text
+ * without `height` gets its Text Layout height (rounded up) and `minFontSize` starts
+ * at half the declared size (at least 1). Turned off, the height stays.
+ */
+function autoFitGroup(): FieldGroup<TextLayer> {
+  return {
+    key: 'autoFit',
+    title: 'AutoFit',
+    fields: [
+      {
+        control: 'toggle',
+        key: 'autoFit',
+        label: 'AutoFit',
+        read: (l) => l.autoFit !== undefined,
+        write: (l, on, { textLayout }) => {
+          if (!on) {
+            const next = { ...l }
+            delete next.autoFit
+            return next
+          }
+          if (l.autoFit) return l
+          return {
+            ...l,
+            height: l.height ?? Math.ceil(textLayout(l).height),
+            autoFit: { minFontSize: Math.max(1, Math.round(l.fontSize / 2)) },
+          }
+        },
+      },
+      {
+        // Above 0, which the schema checks on write.
+        control: 'number',
+        key: 'autoFit.minFontSize',
+        label: 'Min',
+        name: 'Min font size',
+        when: (l) => l.autoFit !== undefined,
+        read: (l) => l.autoFit?.minFontSize,
+        write: (l, minFontSize) => (l.autoFit ? { ...l, autoFit: { ...l.autoFit, minFontSize } } : l),
+      },
+    ],
+  }
 }
 
 /** The Inspector's fields per Layer type, top to bottom. */
@@ -496,6 +573,6 @@ export function layerFields(manifest: FontManifest): FieldTable {
 export const LAYER_FIELDS: FieldTable = layerFields(fontManifest)
 
 /** Writes `value` into `field` of `layer`, rounded as the field rounds typed values. */
-export function writeNumber(field: NumberFieldSpec, layer: Layer, value: number): Layer {
-  return field.write(layer, field.round ? field.round(value) : value)
+export function writeNumber(field: NumberFieldSpec, layer: Layer, value: number, context: FieldContext): Layer {
+  return field.write(layer, field.round ? field.round(value) : value, context)
 }

@@ -40,10 +40,10 @@ describe('sharedFields', () => {
 describe('a toggle over several Layers', () => {
   const visible = sharedFields([rect()]).flatMap((g) => g.fields).find((f) => f.key === 'visible')!
   const layers = [rect({ id: 'a' }), rect({ id: 'b', visible: false })]
-  const textHeight = () => 0
+  const textLayout = () => ({ fontSize: 0, lines: [], height: 0, overflow: false })
 
   it('is Mixed when the Layers differ, and on for all once set', () => {
-    const inspected = inspectField(visible, layers, { textHeight })
+    const inspected = inspectField(visible, layers, { textLayout })
     if (inspected.control !== 'toggle') throw new Error('not a toggle')
 
     expect(inspected.value).toBe(MIXED)
@@ -54,10 +54,10 @@ describe('a toggle over several Layers', () => {
 describe('font family and weight from a font manifest', () => {
   const face = (family: string, weight: TextLayer['fontWeight']) => ({ family, weight, style: 'normal' as const, file: `${family}-${weight}.ttf` })
   const manifest = [face('Inter', 400), face('Inter', 700), face('Serif', 300), face('Serif', 500), face('Serif', 900), face('Mono', 400)]
-  const textHeight = () => 0
+  const textLayout = () => ({ fontSize: 0, lines: [], height: 0, overflow: false })
   const inspect = (key: string, layers: Layer[]) => {
     const field = sharedFields(layers, layerFields(manifest)).flatMap((g) => g.fields).find((f) => f.key === key)!
-    const inspected = inspectField(field, layers, { textHeight })
+    const inspected = inspectField(field, layers, { textLayout })
     if (inspected.control !== 'select') throw new Error('not a select')
     return inspected
   }

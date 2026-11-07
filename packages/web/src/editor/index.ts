@@ -33,7 +33,7 @@
 // Later tickets extend this file: Layer list actions (14), JSON apply (15),
 // reload from disk (16) and Selection sent to the server (17); `export` (18)
 // renders the shown Canvas offscreen (export.ts).
-import type { Document, Layer, TextLayer } from '@bannerkit/core'
+import { layoutText, type Document, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
@@ -50,6 +50,11 @@ export type EditorOptions = {
    * tests without a FontFaceSet inject their own.
    */
   loadFonts?: LoadFonts
+  /**
+   * Measures text for its Text Layout (what the Canvas draws and `textLayout` gives).
+   * Defaults to the browser's canvas `measureText`; tests inject a deterministic one.
+   */
+  measure?: MeasureText
 }
 
 export type LoadOptions = {
@@ -161,6 +166,12 @@ export type Editor = {
   select(ids: readonly string[]): void
   /** Subscribes to an editor event; returns the unsubscribe function. */
   on<K extends keyof EditorEvents>(type: K, listener: (event: EditorEvents[K]) => void): () => void
+  /**
+   * The Text Layout of `layer` (its lines, height and the font size used after
+   * AutoFit), from core `layoutText` with the measure the Canvas draws with (ADR 0004),
+   * never read back from Fabric.
+   */
+  textLayout(layer: TextLayer): TextLayout
   /** The Fabric object showing a Layer, for adapters that need it (Selection, tests). */
   objectFor(layerId: string): FabricObject | undefined
   /** Canvas px per Document px. The canvas element is resized to the zoomed Canvas size. */
@@ -199,11 +210,11 @@ function changedLayerIds(before: Document, after: Document): string[] {
   return [...ids, ...before.layers.filter((l) => !kept.has(l.id)).map((l) => l.id)]
 }
 
-export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {}): Editor {
+export function createEditor({ loadFonts = loadBrowserFonts, measure = measureText }: EditorOptions = {}): Editor {
   let canvas: Canvas | undefined
   let current: Document | undefined
   let entries: Entry[] = []
-  let env: MapperEnv = { assetUrl: (src) => src, measure: measureText }
+  let env: MapperEnv = { assetUrl: (src) => src, measure }
   let zoom = 1
   /** Bumped by every `load`, so only the latest one shows its Document. */
   let loads = 0
@@ -545,7 +556,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 
     async load(document, { assetUrl = (src: string) => src } = {}) {
       previewing?.end()
-      if (!(await show(document, { assetUrl, measure: measureText }))) return
+      if (!(await show(document, { assetUrl, measure }))) return
       history.reset(document)
       settleSize()
     },
@@ -607,6 +618,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       listeners[type].add(listener)
       return () => listeners[type].delete(listener)
     },
+
+    textLayout: (layer) => layoutText(layer, measure),
 
     objectFor(layerId) {
       return entries.find((e) => e.base.id === layerId)?.object
