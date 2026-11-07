@@ -40,7 +40,7 @@ The full schema is `packages/core/schema/document.schema.json`. It is generated 
 }
 ```
 
-**Versions.** Write new Documents as `version: 2`. Files with `version: 1` still work unchanged: every command reads them as v2 in memory and leaves the file alone, and the first saved change (CLI or editor) writes it as v2. A v1 file must not contain v2 fields; one that does fails with ``"<field>" requires version: 2; run `bannerkit migrate` ``. Fix such a file by setting `"version": 2` yourself, because `migrate` only rewrites valid v1 files. `bannerkit migrate <project>` upgrades every valid v1 Document of a Project at once.
+**Versions.** Write new Documents as `version: 2`. Files with `version: 1` still work unchanged: every command reads them as v2 in memory and leaves the file alone, and the first saved change (CLI or editor) writes it as v2. A v1 file must not contain v2 fields; one that does fails with `"<field>" requires "version": 2; set "version": 2 in this file`. Do exactly that; `migrate` only rewrites valid v1 files, so it won't fix this one. `bannerkit migrate <project>` upgrades every valid v1 Document of a Project at once.
 
 **Guides** are editor-only alignment lines: `guides: { x: number[], y: number[] }`. `x` holds the positions of vertical Guides and `y` of horizontal ones, in Canvas pixels. Both arrays are required when `guides` is present, may be empty, and take any finite numbers in any order. Guides never appear in a Preview or Render. `doc resize` moves them with the Layers, and `doc duplicate` copies them unchanged.
 
@@ -63,7 +63,7 @@ Every leaf Layer (`rect`, `image`, `text`) has these fields: `id`, `type`, `x`, 
 - Children keep **Canvas coordinates**: a child's `x`/`y` mean the same as at the root. To move a Group, move every Layer inside it by the same delta. The Group's Box is derived: the axis-aligned rectangle around all its children, hidden ones included (`inspect` reports it as the Group's `extent`).
 - `opacity` applies to the children composited together, as in CSS: where children overlap, the lower one does not show through the upper one. `visible: false` hides everything inside, and `locked: true` locks everything inside (the editor neither picks nor moves those Layers), whatever the children's own flags say.
 - An empty Group is an error; delete it instead. Prefer `layer group`/`layer ungroup` over hand-editing to create or dissolve a Group. To move a Layer into or out of a Group, move its object between `layers` arrays in the JSON. Ids are unique across the whole tree, and issue paths go through Groups: `layers[1].layers[0].fontWeight`. Name new Groups `group-<n>`.
-- Groups need `version: 2`. In a v1 file, `"type": "group"` fails with ``"group" requires version: 2; run `bannerkit migrate` ``.
+- Groups need `version: 2`. In a v1 file, `"type": "group"` fails with `"group" requires "version": 2; set "version": 2 in this file`.
 
 Conventions:
 

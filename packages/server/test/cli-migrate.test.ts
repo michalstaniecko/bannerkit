@@ -42,7 +42,7 @@ describe('bannerkit migrate', () => {
           {
             name: 'broken',
             path: docPath(root, 'broken'),
-            errors: [{ path: 'guides', message: '"guides" requires version: 2; run `bannerkit migrate`' }],
+            errors: [{ path: 'guides', message: '"guides" requires "version": 2; set "version": 2 in this file' }],
           },
         ],
       },
@@ -82,7 +82,7 @@ describe('bannerkit migrate', () => {
     expect(run.exitCode).toBe(1)
     expect(run.stdout).toContain(`migrated ${docPath(root, 'hero')}`)
     expect(run.stdout).toContain(`invalid ${docPath(root, 'broken')}`)
-    expect(run.stdout).toContain('guides: "guides" requires version: 2')
+    expect(run.stdout).toContain('guides: "guides" requires "version": 2; set "version": 2 in this file')
     expect(run.stdout).toContain('2 migrated, 2 unchanged, 1 invalid')
   })
 
