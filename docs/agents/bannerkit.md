@@ -25,19 +25,24 @@ You are done when validation passes and you have looked at a Preview of the fina
 
 The root is `./projects` by default. Pass `--root <dir>` or set `BANNERKIT_ROOT` to use another one. Names of Projects and Documents must match `[A-Za-z0-9][A-Za-z0-9._-]*`. Create Documents with `doc new` or `doc duplicate`, which also set `$schema`. A file you write by hand only needs to be valid; validation does not compare its `name` with the filename.
 
-## Document schema (v1)
+## Document schema (v2)
 
-The full schema is `packages/core/schema/document.schema.json`. It is generated from `packages/core/src/document.ts`, which is the source of truth. `examples/demo/documents/hero.json` uses every Layer type.
+The full schema is `packages/core/schema/document.schema.json`. It is generated from `packages/core/src/document.ts`, which is the source of truth. `examples/demo/documents/hero.json` uses every Layer type (as a v1 file), and `story.json` is a v2 Document with Guides.
 
 ```jsonc
 {
   "$schema": "…/document.schema.json",
-  "version": 1,
+  "version": 2,
   "name": "hero",
   "canvas": { "width": 1200, "height": 628, "background": "#ffffff" },  // background null = transparent
+  "guides": { "x": [64, 600], "y": [314] },  // optional
   "layers": [ /* bottom → top */ ]
 }
 ```
+
+**Versions.** Write new Documents as `version: 2`. Files with `version: 1` still work unchanged: every command reads them as v2 in memory and leaves the file alone, and the first saved change (CLI or editor) writes it as v2. A v1 file must not contain v2 fields; one that does fails with ``"<field>" requires version: 2; run `bannerkit migrate` ``. Fix such a file by setting `"version": 2` yourself, because `migrate` only rewrites valid v1 files. `bannerkit migrate <project>` upgrades every valid v1 Document of a Project at once.
+
+**Guides** are editor-only alignment lines: `guides: { x: number[], y: number[] }`. `x` holds the positions of vertical Guides and `y` of horizontal ones, in Canvas pixels. Both arrays are required when `guides` is present, may be empty, and take any finite numbers in any order. Guides never appear in a Preview or Render. `doc resize` moves them with the Layers, and `doc duplicate` copies them unchanged.
 
 Every Layer has these fields: `id`, `type`, `x`, `y`, `width`, plus the optional `rotation`, `opacity` (0–1), `visible`, `locked` and `shadow: { color, blur, offsetX, offsetY }`.
 
@@ -67,7 +72,7 @@ With `--json`, stdout carries exactly one JSON line:
 
 - success: `{ "ok": true, "result": … }`
 - failure: `{ "ok": false, "error": { "code", "message", "issues": [{ "path", "message", "suggestion"? }] } }`
-- `validate` with invalid Documents: `{ "ok": false, "result": … }`
+- `validate` or `migrate` with invalid Documents: `{ "ok": false, "result": … }`
 
 Exit codes are 0 for success, 1 for an operation error or invalid Documents, and 2 for a usage error. Error codes include `NOT_FOUND`, `ALREADY_EXISTS`, `INVALID_DOCUMENT`, `INVALID_INPUT` and `UNSUPPORTED_ASSET`.
 
@@ -79,6 +84,7 @@ Exit codes are 0 for success, 1 for an operation error or invalid Documents, and
 | `doc resize <project> <doc> (--preset WxH \| --size WxH) [--anchor top-left\|top\|top-right\|left\|center\|right\|bottom-left\|bottom\|bottom-right]` | same as `doc new`. Resizes the Canvas in place, keeping the Anchor point put (default `top-left`). Layers are not scaled: they all move by the same delta and may stick out past the Canvas, so check `placement` with `inspect` afterwards |
 | `asset add <project> <files…>` | `{ project, assets: [{ src, path, format, width, height }] }`. Use `src` verbatim. If the name is taken, ingest adds a suffix (`bottle-1.png`) |
 | `validate <project \| path/to/doc.json>` | `{ ok, documents: [{ project, name, path, ok, errors, warnings }] }` |
+| `migrate <project>` | `{ project, migrated: [{ name, path }], unchanged: [{ name, path }], invalid: [{ name, path, errors }] }`. Rewrites each valid v1 Document as v2; only `version` changes (`$schema` stays). `unchanged` are already v2. `invalid` Documents (the errors `validate` reports) are not written, and the command exits 1. Safe to run again |
 | `inspect <project> [<doc>]` | `{ project, name, path, canvas, selection, layers, warnings }` (see below) |
 | `preview <project> <doc>` | `{ project, name, path, width, height }` |
 | `render <project> [--doc N …] [--size WxH …] [--format png\|jpg\|webp] [--scale 1\|2] [--quality N]` | `{ project, files: [{ name, path, width, height, format, scale }] }` |

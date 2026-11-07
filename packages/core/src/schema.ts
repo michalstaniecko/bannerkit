@@ -5,7 +5,7 @@ import { walkLayers, type LayerParent } from './tree.ts'
 /** The generated JSON Schema, relative to the `@bannerkit/core` package root. Regenerate with `pnpm schema`. */
 export const DOCUMENT_SCHEMA_FILE = 'schema/document.schema.json'
 
-/** JSON Schema (draft 2020-12) for Document v1, generated from the zod schema. */
+/** JSON Schema (draft 2020-12) for Document v2 (the current version), generated from the zod schema. */
 export function documentJsonSchema(): Record<string, unknown> {
   return z.toJSONSchema(DocumentSchema, { target: 'draft-2020-12' }) as Record<string, unknown>
 }

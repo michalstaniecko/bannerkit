@@ -18,7 +18,7 @@ function presetDocument(width: number, height: number): Document {
   const u = Math.min(width, height)
   const tall = height > width
   return {
-    version: 1,
+    version: 2,
     name: `preset-${width}x${height}`,
     canvas: { width, height, background: '#ffffff' },
     layers: [
@@ -89,7 +89,7 @@ const demoAssets = join(repoRoot, 'examples/demo/assets')
 
 /** The demo Documents as committed, then one Document per Preset, each in its own Project. */
 const cases: { project: string; doc: string; document?: Document }[] = [
-  ...['hero', 'rectangle', 'square'].map((doc) => ({ project: 'demo', doc })),
+  ...['hero', 'rectangle', 'square', 'story'].map((doc) => ({ project: 'demo', doc })),
   ...Object.values(PRESETS).map(({ width, height }) => ({
     project: `s3-parity-${width}x${height}`,
     doc: 'banner',

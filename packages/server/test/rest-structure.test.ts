@@ -11,7 +11,7 @@ import { createApp } from '../src/rest/app.ts'
 import { tempRoot } from './harness.ts'
 
 const hero: Document = {
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 300, height: 250, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x: 10, y: 20, width: 100, height: 50, fill: '#ff0000' }],

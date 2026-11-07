@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { renderDocument } from '../src/render/renderDocument.ts'
 
 function doc(layers: Layer[], background: string | null, width = 100, height = 50): Document {
-  return { version: 1, name: 'test', canvas: { width, height, background }, layers }
+  return { version: 2, name: 'test', canvas: { width, height, background }, layers }
 }
 
 async function decode(image: Buffer) {

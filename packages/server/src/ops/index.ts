@@ -25,6 +25,7 @@ export {
   type ServerRule,
   type ValidateResult,
 } from './validation.ts'
+export { migrate, type MigrateResult, type MigratedDocument } from './migrate.ts'
 export { preview, type PreviewResult } from './preview.ts'
 export { exportDocument, render, type ExportDocumentInput, type ExportFile, type RenderInput, type RenderResult } from './render.ts'
 export {

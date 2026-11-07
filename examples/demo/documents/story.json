@@ -1,0 +1,109 @@
+{
+  "$schema": "../../../packages/core/schema/document.schema.json",
+  "version": 2,
+  "name": "story",
+  "canvas": { "width": 1080, "height": 1920, "background": "#ffffff" },
+  "guides": { "x": [72, 540, 1008], "y": [160, 1760] },
+  "layers": [
+    {
+      "id": "rect-1",
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 1080,
+      "height": 1920,
+      "fill": { "type": "linear", "angle": 180, "stops": [["#2f8f76", 0], ["#1f6f5c", 0.45], ["#0e3a32", 1]] },
+      "locked": true
+    },
+    {
+      "id": "rect-2",
+      "type": "rect",
+      "x": 190,
+      "y": 860,
+      "width": 700,
+      "height": 700,
+      "fill": "#ffffff",
+      "cornerRadius": 350,
+      "opacity": 0.12
+    },
+    {
+      "id": "image-1",
+      "type": "image",
+      "x": 390,
+      "y": 840,
+      "width": 300,
+      "height": 720,
+      "src": "assets/bottle.png",
+      "fit": "contain",
+      "rotation": 6,
+      "shadow": { "color": "rgba(0,0,0,0.45)", "blur": 40, "offsetX": 18, "offsetY": 24 }
+    },
+    {
+      "id": "image-2",
+      "type": "image",
+      "x": 72,
+      "y": 160,
+      "width": 234,
+      "height": 48,
+      "src": "assets/alder-logo.svg",
+      "fit": "contain",
+      "locked": true
+    },
+    {
+      "id": "text-1",
+      "type": "text",
+      "x": 72,
+      "y": 300,
+      "width": 936,
+      "height": 380,
+      "text": "Ice cold for 24 hours. Hot for 12.",
+      "fontFamily": "Inter",
+      "fontWeight": 800,
+      "fontSize": 120,
+      "lineHeight": 1.05,
+      "letterSpacing": -2,
+      "fill": "#ffffff",
+      "verticalAlign": "bottom",
+      "autoFit": { "minFontSize": 56 }
+    },
+    {
+      "id": "text-2",
+      "type": "text",
+      "x": 72,
+      "y": 710,
+      "width": 936,
+      "text": "Double-wall steel bottle, 750 ml",
+      "fontFamily": "Inter",
+      "fontWeight": 400,
+      "fontSize": 40,
+      "fill": "#d4efe6"
+    },
+    {
+      "id": "rect-3",
+      "type": "rect",
+      "x": 390,
+      "y": 1640,
+      "width": 300,
+      "height": 120,
+      "fill": "#f6c453",
+      "cornerRadius": 60,
+      "shadow": { "color": "rgba(0,0,0,0.25)", "blur": 16, "offsetX": 0, "offsetY": 8 }
+    },
+    {
+      "id": "text-3",
+      "type": "text",
+      "x": 390,
+      "y": 1640,
+      "width": 300,
+      "height": 120,
+      "text": "$29",
+      "fontFamily": "Inter",
+      "fontWeight": 800,
+      "fontSize": 64,
+      "fill": "#0e3a32",
+      "align": "center",
+      "verticalAlign": "middle",
+      "autoFit": { "minFontSize": 32 }
+    }
+  ]
+}

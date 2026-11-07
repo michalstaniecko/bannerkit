@@ -7,7 +7,7 @@
     },
     "version": {
       "type": "number",
-      "const": 1
+      "const": 2
     },
     "name": {
       "type": "string",
@@ -46,6 +46,9 @@
       ],
       "additionalProperties": false
     },
+    "guides": {
+      "$ref": "#/$defs/Guides"
+    },
     "layers": {
       "type": "array",
       "items": {
@@ -71,8 +74,33 @@
     "layers"
   ],
   "additionalProperties": false,
-  "title": "Bannerkit Document v1",
+  "title": "Bannerkit Document v2",
   "$defs": {
+    "Guides": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Vertical Guides: x positions in Document px"
+        },
+        "y": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Horizontal Guides: y positions in Document px"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "description": "Editor-only alignment lines; never rendered"
+    },
     "RectLayer": {
       "type": "object",
       "properties": {

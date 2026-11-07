@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ANCHORS, resizeCanvas, type Document } from '../src/index.ts'
 
 const doc = (width: number, height: number): Document => ({
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width, height, background: '#ffffff' },
   layers: [
@@ -91,6 +91,19 @@ describe('resizeCanvas', () => {
     { width: 100, height: 8193 },
   ])('rejects %j, a size outside the Canvas limits', (size) => {
     expect(() => resizeCanvas(doc(100, 50), size, 'top-left')).toThrow()
+  })
+
+  it('moves Guides by the same delta as the Layers', () => {
+    const guided = { ...doc(100, 50), guides: { x: [0, 50, 100], y: [25] } }
+
+    const resized = resizeCanvas(guided, { width: 300, height: 80 }, 'center')
+
+    expect(resized.guides).toEqual({ x: [100, 150, 200], y: [40] })
+    expect(guided.guides).toEqual({ x: [0, 50, 100], y: [25] })
+  })
+
+  it('leaves a Document without Guides without Guides', () => {
+    expect(resizeCanvas(doc(100, 50), { width: 300, height: 80 }, 'center')).not.toHaveProperty('guides')
   })
 
   it('accepts the largest Canvas side', () => {

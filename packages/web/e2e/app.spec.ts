@@ -7,7 +7,7 @@ import { expect, test } from './fixtures.ts'
 const RED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#ff0000"/></svg>'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [
@@ -50,7 +50,7 @@ test('shows Assets with their Fit, a hatched placeholder for a missing one, and 
 
 type Checked = { id: string; image: boolean } | { id: string; lines: string[]; core: string[] }
 
-for (const name of ['hero', 'rectangle', 'square']) {
+for (const name of ['hero', 'rectangle', 'square', 'story']) {
   test(`the demo ${name} banner shows every Asset and breaks text like core`, async ({ harness }) => {
     const result = await harness.evaluate(async (name) => {
       const { createEditor, core, fonts, host } = window.bannerkit

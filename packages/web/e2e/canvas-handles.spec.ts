@@ -6,7 +6,7 @@ import { expect, test } from './fixtures.ts'
 
 // Tall, so Fit is limited by the height and zooms in when the Canvas gets shorter.
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 200, height: 800, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x: 50, y: 50, width: 100, height: 100, fill: '#ff0000' }],
