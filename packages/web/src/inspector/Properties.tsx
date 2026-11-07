@@ -153,6 +153,9 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
       )
     case 'readonly':
       return <ReadOnly label={field.label} name={field.name} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
+    default:
+      // Every control is handled above: a new one fails to compile here.
+      return inspected satisfies never
   }
 }
 
