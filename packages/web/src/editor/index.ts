@@ -91,9 +91,10 @@ export type ManipulationCause = 'transform' | 'text' | 'nudge'
 
 /**
  * An action that replaces the whole Document through `apply` or `update`; `resize`
- * is a change of the Canvas size (Inspector fields, Canvas resize handles).
+ * is a change of the Canvas size (Inspector fields, Canvas resize handles); `guides`
+ * a Guide created, moved or removed (`dragGuide`).
  */
-export type ApplyCause = 'layers' | 'json' | 'reload' | 'inspector' | 'resize'
+export type ApplyCause = 'layers' | 'json' | 'reload' | 'inspector' | 'resize' | 'guides'
 
 /** What made one undo step (or moved through the history). */
 export type ChangeCause = ManipulationCause | ApplyCause | 'undo' | 'redo'
@@ -249,6 +250,10 @@ const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="
 
 /** Whether two Documents are the same (as JSON: same keys, in the same order). */
 const sameDocument = (a: Document, b: Document): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/** Whether `next` differs from `shown` by nothing the Canvas draws (only `guides`, the name, …), so no Layer is laid out again. */
+const sameScene = (shown: Document, next: Document): boolean =>
+  JSON.stringify(shown.canvas) === JSON.stringify(next.canvas) && JSON.stringify(shown.layers) === JSON.stringify(next.layers)
 
 /** Ids of the Layers that differ between two Documents, in `after` order then removed ones. */
 function changedLayerIds(before: Document, after: Document): string[] {
@@ -466,6 +471,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   const show = async (document: Document, nextEnv: MapperEnv): Promise<boolean> => {
     const c = requireCanvas()
     const token = ++loads
+    if (current && nextEnv === env && sameScene(documentNow(), document)) {
+      showGuidesOnly(document)
+      return true
+    }
     const next = structuredClone(document)
     const layers = next.layers
     // Fonts first: text is laid out (AutoFit, wrapping) only with the real font.
@@ -503,6 +512,17 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   }
 
   /**
+   * The fast path of a step or preview that changes nothing the Canvas draws (a Guide
+   * dragged in a Document full of text): `next` becomes the shown Document, but no Layer
+   * is laid out again; only the overlay draws again.
+   */
+  const showGuidesOnly = (next: Document) => {
+    const layers = current!.layers
+    current = { ...structuredClone({ ...next, layers: [] }), layers }
+    canvas?.requestRenderAll()
+  }
+
+  /**
    * Shows `next` keeping the Selection. When every Layer keeps its id, type and `src`
    * (in the same order, in the same Groups) each is laid out again on its own object; otherwise the
    * Document is shown afresh and the same Layers selected again. Resolves false when
@@ -510,6 +530,11 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
    */
   const relayout = async (next: Document): Promise<boolean> => {
     const c = requireCanvas()
+    if (current && sameScene(documentNow(), next)) {
+      ++loads
+      showGuidesOnly(next)
+      return true
+    }
     const ids = [...selected]
     const inPlace = sameShape(roots, next.layers)
     holdSelection = true

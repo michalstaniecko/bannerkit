@@ -2,7 +2,7 @@
 // they live on the Document, not on a Fabric object.
 import { resizeCanvas } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
-import { doc, openEditor, rect } from './editor-harness.ts'
+import { doc, openEditor, rect, text } from './editor-harness.ts'
 
 const guides = { x: [0, 200], y: [150] }
 
@@ -38,5 +38,28 @@ describe('Guides in the editor', () => {
     await editor.update((d) => resizeCanvas(d, { width: 600, height: 300 }, 'right'), { cause: 'resize' })
 
     expect(editor.getDocument().guides).toEqual({ x: [200, 400], y: [150] })
+  })
+})
+
+describe('a step or preview changing only Guides', () => {
+  it('does not lay the Layers out again (no text is measured)', async () => {
+    let measured = 0
+    const measure = (font: { size: number }, text: string) => {
+      measured++
+      return text.length * font.size * 0.5
+    }
+    const { editor } = await openEditor(doc([text(), rect()], { guides }), { measure })
+    measured = 0
+
+    const preview = editor.preview()
+    await preview.show((d) => ({ ...d, guides: { x: [0, 210], y: [150] } }))
+    expect(editor.getDocument().guides).toEqual({ x: [0, 210], y: [150] })
+    await preview.commit({ cause: 'guides' })
+    await editor.undo()
+    await editor.redo()
+    await editor.update((d) => ({ ...d, guides: { x: [5], y: [] } }), { cause: 'guides' })
+
+    expect(editor.getDocument().guides).toEqual({ x: [5], y: [] })
+    expect(measured).toBe(0)
   })
 })
