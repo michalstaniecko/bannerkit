@@ -1,6 +1,6 @@
 // Groups (Document v2) in the editor: shown as one Fabric object per Group with its
 // children inside, selected and moved as a whole (ticket #23).
-import type { GroupLayer, Layer } from '@bannerkit/core'
+import type { GroupLayer, Layer, RectLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
 import { doc, openEditor, rect, text } from './editor-harness.ts'
 
@@ -63,6 +63,37 @@ describe('drawing a Group', () => {
     const { container } = await openEditor(overlapping({ visible: false }))
 
     expect(pixel(container, 150, 125)).toEqual([255, 255, 255, 255])
+  })
+})
+
+describe('updating a Document with Groups', () => {
+  it('lays a changed Layer in a Group out in place, keeping the Selection and its Group around it', async () => {
+    const { editor } = await openEditor(nested())
+    editor.select(['group-1'])
+    const object = editor.objectFor('rect-2')
+
+    await editor.update(
+      (d) => {
+        const g = d.layers[1] as GroupLayer
+        g.layers[0] = { ...(g.layers[0] as RectLayer), x: 60, fill: '#123456' }
+        return d
+      },
+      { cause: 'inspector' },
+    )
+
+    expect(editor.objectFor('rect-2')).toBe(object)
+    expect(editor.getSelection()).toEqual(['group-1'])
+    expect((editor.getDocument().layers[1] as GroupLayer).layers[0]).toMatchObject({ x: 60, fill: '#123456' })
+    expect(editor.objectFor('group-1')!.getBoundingRect().left).toBe(60)
+  })
+
+  it('shows a Document whose Groups changed shape afresh', async () => {
+    const { editor } = await openEditor(nested())
+    const regrouped = doc([group('group-9', [rect({ id: 'rect-1' })]), rect({ id: 'rect-2', x: 300 })])
+
+    await editor.apply(regrouped, { cause: 'json' })
+
+    expect(editor.getDocument()).toEqual(regrouped)
   })
 })
 
@@ -184,6 +215,20 @@ describe('moving a Group', () => {
     expect(editor.getDocument()).toEqual(flat())
     await editor.redo()
     expect(editor.getDocument()).toEqual(moved)
+  })
+
+  it('moves with other Layers in a rubber-band Selection', async () => {
+    const { editor, upper, changes } = await openEditor(flat())
+    drag(upper, [5, 5], [395, 295])
+    expect(editor.getSelection()).toEqual(['rect-1', 'group-1'])
+
+    drag(upper, [20, 20], [25, 30])
+
+    expect(changes).toHaveLength(1)
+    const [r1, g1] = editor.getDocument().layers as [Layer, GroupLayer]
+    expect(r1).toMatchObject({ x: 15, y: 20 })
+    expect(g1.layers[0]).toMatchObject({ x: 105, y: 110 })
+    expect((g1.layers[1] as GroupLayer).layers[0]).toMatchObject({ x: 255, y: 210 })
   })
 
   it('a locked Group selected from the Layer list does not move', async () => {
