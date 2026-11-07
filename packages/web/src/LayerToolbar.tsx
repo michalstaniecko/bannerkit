@@ -1,11 +1,12 @@
 // The top bar's Layer toolbar: add a text, rect or image Layer (images are picked with
-// the file picker and added as Assets first), and delete or duplicate the selected
-// Layers. Each action is one undo step and leaves its result selected.
-import { Copy, ImagePlus, Square, Trash2, Type } from 'lucide-react'
+// the file picker and added as Assets first) next to the Selection, delete or duplicate
+// the selected Layers (a Group with everything in it), and group or ungroup them (like
+// Ctrl/Cmd+G and Ctrl/Cmd+Shift+G). Each action is one undo step and leaves its result selected.
+import { Copy, Group, ImagePlus, Square, Trash2, Type, Ungroup } from 'lucide-react'
 import { useRef, type RefObject } from 'react'
 import { api } from './api.ts'
 import type { Editor } from './editor/index.ts'
-import { addLayer, deleteLayers, duplicateLayers, type NewLayer } from './layer-actions.ts'
+import { addLayer, deleteLayers, duplicateLayers, groupSelection, ungroupSelection, type NewLayer } from './layer-actions.ts'
 import { IconButton } from './ui/IconButton.tsx'
 import { useLayers } from './useLayers.ts'
 
@@ -20,16 +21,19 @@ type Props = {
 const IMAGE_TYPES = 'image/png,image/jpeg,image/webp,image/svg+xml'
 
 export function LayerToolbar({ editor, project, loaded, onError }: Props) {
-  const { selection, run } = useLayers(editor, loaded, onError)
+  const { document: shown, selection, run } = useLayers(editor, loaded, onError)
   const picker = useRef<HTMLInputElement>(null)
 
   const add = (specs: NewLayer[]) =>
     run((document) => {
       const select: string[] = []
+      // Each next one goes right above the one added before it.
+      let context = selection
       for (const spec of specs) {
-        const added = addLayer(document, spec)
+        const added = addLayer(document, spec, context)
         document = added.document
         select.push(added.id)
+        context = [added.id]
       }
       return { document, select }
     })
@@ -45,6 +49,8 @@ export function LayerToolbar({ editor, project, loaded, onError }: Props) {
   }
 
   const none = !loaded || selection.length === 0
+  const canGroup = loaded && shown !== null && groupSelection(shown, selection) !== undefined
+  const canUngroup = loaded && shown !== null && ungroupSelection(shown, selection) !== undefined
   return (
     <div className="toolbar-group layer-toolbar" role="group" aria-label="Layer actions">
       <IconButton icon={Type} label="Add text" disabled={!loaded} onClick={() => void add([{ type: 'text' }])} />
@@ -73,6 +79,20 @@ export function LayerToolbar({ editor, project, loaded, onError }: Props) {
             return { document, select: ids }
           })
         }
+      />
+      <IconButton
+        icon={Group}
+        label="Group"
+        shortcut="Ctrl/Cmd+G"
+        disabled={!canGroup}
+        onClick={() => void run((d) => groupSelection(d, selection) ?? d)}
+      />
+      <IconButton
+        icon={Ungroup}
+        label="Ungroup"
+        shortcut="Ctrl/Cmd+Shift+G"
+        disabled={!canUngroup}
+        onClick={() => void run((d) => ungroupSelection(d, selection) ?? d)}
       />
       <IconButton
         icon={Trash2}

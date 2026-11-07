@@ -2,7 +2,7 @@
 // through `editor.apply(document, { cause: 'layers' })`.
 import { validateDocument, type Document, type Layer, type LeafLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
-import { addLayer, deleteLayers, duplicateLayers, moveLayer, setLayerFlag } from '../src/layer-actions.ts'
+import { addLayer, deleteLayers, duplicateLayers, groupSelection, moveLayer, setLayerFlag, ungroupSelection } from '../src/layer-actions.ts'
 
 describe('deleteLayers', () => {
   it('removes one or several Layers', () => {
@@ -131,5 +131,70 @@ describe('addLayer', () => {
       d = addLayer(d, spec).document
     }
     expect(validateDocument(d)).toMatchObject({ ok: true, errors: [] })
+  })
+
+  describe('in the context of the Selection', () => {
+    const tree = () =>
+      doc([
+        rect('rect-1'),
+        { id: 'group-1', type: 'group', layers: [rect('rect-2'), rect('rect-3'), rect('rect-4')] },
+        rect('rect-5'),
+      ])
+    const childIds = (d: Document) => (d.layers[1] as Extract<Layer, { type: 'group' }>).layers.map((l) => l.id)
+
+    it('puts it in the parent of selected children, right above the topmost one', () => {
+      const { document, id } = addLayer(tree(), { type: 'rect' }, ['rect-3', 'rect-2'])
+
+      expect(id).toBe('rect-6')
+      expect(ids(document)).toEqual(['rect-1', 'group-1', 'rect-5'])
+      expect(childIds(document)).toEqual(['rect-2', 'rect-3', 'rect-6', 'rect-4'])
+      expect(validateDocument(document)).toMatchObject({ ok: true })
+    })
+
+    it('puts it right above a selected Group, on its level', () => {
+      const { document } = addLayer(tree(), { type: 'text' }, ['group-1'])
+
+      expect(ids(document)).toEqual(['rect-1', 'group-1', 'text-1', 'rect-5'])
+      expect(childIds(document)).toEqual(['rect-2', 'rect-3', 'rect-4'])
+    })
+
+    it('puts it on top of the root without a Selection', () => {
+      expect(ids(addLayer(tree(), { type: 'rect' }, []).document)).toEqual(['rect-1', 'group-1', 'rect-5', 'rect-6'])
+    })
+  })
+})
+
+describe('groupSelection', () => {
+  it('wraps the selected Layers in a new unnamed Group and selects it', () => {
+    const result = groupSelection(doc([rect('rect-1'), rect('rect-2'), rect('rect-3')]), ['rect-3', 'rect-1'])
+
+    expect(result?.select).toEqual(['group-1'])
+    expect(result?.document.layers).toEqual([rect('rect-2'), { id: 'group-1', type: 'group', layers: [rect('rect-1'), rect('rect-3')] }])
+  })
+
+  it('is unavailable without a Selection or for Layers of different parents', () => {
+    const d = doc([rect('rect-1'), { id: 'group-1', type: 'group', layers: [rect('rect-2')] }])
+    expect(groupSelection(d, [])).toBeUndefined()
+    expect(groupSelection(d, ['rect-1', 'rect-2'])).toBeUndefined()
+  })
+})
+
+describe('ungroupSelection', () => {
+  const nested = doc([
+    { id: 'group-1', type: 'group', opacity: 0.5, layers: [rect('rect-1'), rect('rect-2')] },
+    rect('rect-3'),
+    { id: 'group-2', type: 'group', layers: [rect('rect-4')] },
+  ])
+
+  it('ungroups every selected Group and selects their former children', () => {
+    const result = ungroupSelection(nested, ['group-1', 'rect-3', 'group-2'])
+
+    expect(result?.select).toEqual(['rect-1', 'rect-2', 'rect-4'])
+    expect(result && ids(result.document)).toEqual(['rect-1', 'rect-2', 'rect-3', 'rect-4'])
+  })
+
+  it('is unavailable when no Group is selected', () => {
+    expect(ungroupSelection(nested, [])).toBeUndefined()
+    expect(ungroupSelection(nested, ['rect-3'])).toBeUndefined()
   })
 })
