@@ -88,6 +88,15 @@ describe('live reload', () => {
     expect(editor.canUndo()).toBe(false)
   })
 
+  it('keeps the Selection across a reload, so the Inspector shows the reloaded values', async () => {
+    const { editor, live, write } = await open()
+    editor.select(['rect-1'])
+
+    await live.changed(write(doc(250)))
+
+    expect(editor.getSelection()).toEqual(['rect-1'])
+  })
+
   it('ignores its own autosave echo', async () => {
     const { editor, autosave, live, disk, conflicts } = await open()
     await edit(editor, 120)

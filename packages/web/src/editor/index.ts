@@ -18,6 +18,8 @@
 // manipulation records one when it is committed; any other action that replaces
 // the Document (Layer list actions, JSON apply, reload from disk) goes through
 // `apply(document, { cause })`, which shows it and records exactly one step.
+// The Inspector and reloads from disk use `update(recipe, { cause })` instead: also
+// one step, but the Selection stays and unchanged Layers are laid out in place.
 // `undo` / `redo` show a snapshot again and emit `change` like any other edit, so
 // autosave follows them. `load` starts a fresh history.
 //
@@ -30,6 +32,7 @@ import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
 import { createHistory } from './history.ts'
+import { roundAngle, roundPx } from './rounding.ts'
 import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
 import { fitZoom, type Size } from './zoom.ts'
 
@@ -514,8 +517,8 @@ function sameObject(base: Layer, next: Layer): boolean {
  * by whole pixels already and keep whatever the Layer had.
  */
 function wholePixels(layer: Layer): Layer {
-  const rounded: Layer = { ...layer, x: Math.round(layer.x), y: Math.round(layer.y), width: Math.round(layer.width) }
-  if ('height' in layer && layer.height !== undefined) (rounded as { height: number }).height = Math.round(layer.height)
-  if (layer.rotation !== undefined) rounded.rotation = Math.round(layer.rotation * 10) / 10 || 0
+  const rounded: Layer = { ...layer, x: roundPx(layer.x), y: roundPx(layer.y), width: roundPx(layer.width) }
+  if ('height' in layer && layer.height !== undefined) (rounded as { height: number }).height = roundPx(layer.height)
+  if (layer.rotation !== undefined) rounded.rotation = roundAngle(layer.rotation)
   return rounded
 }
