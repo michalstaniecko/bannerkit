@@ -317,6 +317,62 @@
   flex: none;
 }
 
+/* Segmented. */
+.field-grid > .segmented-field {
+  grid-column: 1 / -1;
+}
+
+.segmented-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.segmented-field-label {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.segmented-field-options {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.segmented-field-option {
+  height: var(--control-size);
+  padding: var(--pad-none) var(--pad-control-y);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  color: var(--text-default);
+  font: inherit;
+  cursor: pointer;
+}
+
+.segmented-field-option[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.segmented-field-option:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.segmented-field-option:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-sunken);
+  cursor: default;
+}
+
+.segmented-field-placeholder {
+  color: var(--text-disabled);
+}
+
 /* Checkbox. */
 .checkbox {
   display: inline-flex;

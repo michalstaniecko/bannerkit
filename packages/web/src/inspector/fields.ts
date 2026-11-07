@@ -1,8 +1,8 @@
 // The Inspector's fields, described as data: for each Layer type, titled groups of
 // fields, each with its control, range and how it reads and writes the Layer. The
 // Properties tab only renders these, so a new field of an existing control (a later
-// ticket, M2's Group, `textTransform`, `fontStyle`) is a new entry here, not a change
-// to the Inspector. A new kind of control is a new FieldSpec member plus a case in
+// ticket, M2's Group, `fontStyle`) is a new entry here, not a change to the
+// Inspector. A new kind of control (`segmented`, for `textTransform`) is a new FieldSpec member plus a case in
 // `inspectField` (inspect.ts) and in Properties' `Field`; both switches are exhaustive,
 // so the compiler points at each.
 //
@@ -24,10 +24,12 @@ import {
   type RectLayer,
   type TextLayer,
   type TextLayout,
+  type TextTransform,
 } from '@bannerkit/core'
 import { fontManifest } from '../editor/fonts.ts'
 import { layerFlag, withLayerFlag } from '../layer-actions.ts'
 import { roundAngle, roundPx } from '../editor/rounding.ts'
+import type { SegmentedOption } from '../ui/Segmented.tsx'
 import type { SelectOption } from '../ui/Select.tsx'
 
 /** What a field may need besides the Layer: the Text Layout of a text Layer, as the editor lays it out. */
@@ -89,6 +91,14 @@ export type SelectFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   write: (layer: L, value: string, context: FieldContext) => L
 }
 
+/** One of a few options, picked from a row of buttons (Segmented). */
+export type SegmentedFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
+  control: 'segmented'
+  options: readonly SegmentedOption[]
+  read: (layer: L, context: FieldContext) => string
+  write: (layer: L, value: string, context: FieldContext) => L
+}
+
 /** A CSS colour, typed or picked in a ColorField; `null` is "none" (only when `nullable`). */
 export type ColorFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'color'
@@ -113,6 +123,7 @@ export type FieldSpec<L extends Layer = Layer> =
   | ToggleFieldSpec<L>
   | ReadOnlyFieldSpec<L>
   | SelectFieldSpec<L>
+  | SegmentedFieldSpec<L>
 
 /** A titled group of fields: one Section in the Inspector. */
 export type FieldGroup<L extends Layer = Layer> = { key: string; title: string; fields: FieldSpec<L>[] }
@@ -405,6 +416,13 @@ const textShape = TextLayerSchema.shape
 const ALIGNS = textShape.align.unwrap().options
 const VERTICAL_ALIGNS = textShape.verticalAlign.unwrap().options
 
+/** The `textTransform` choices, each shown in the case it gives. */
+const TEXT_TRANSFORM_OPTIONS: readonly SegmentedOption<TextTransform>[] = [
+  { value: 'none', label: 'Aa', name: 'None' },
+  { value: 'uppercase', label: 'AA', name: 'Uppercase' },
+  { value: 'lowercase', label: 'aa', name: 'Lowercase' },
+]
+
 /** The common name of each font weight, shown beside the number. */
 const WEIGHT_NAMES: Record<FontWeight, string> = {
   100: 'Thin',
@@ -515,6 +533,15 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           options: options(VERTICAL_ALIGNS),
           read: (l) => l.verticalAlign ?? 'top',
           write: (l, verticalAlign) => setOptional(l, 'verticalAlign', verticalAlign as VerticalAlign, 'top'),
+        },
+        {
+          control: 'segmented',
+          key: 'textTransform',
+          label: 'Case',
+          name: 'Text transform',
+          options: TEXT_TRANSFORM_OPTIONS,
+          read: (l) => l.textTransform ?? 'none',
+          write: (l, textTransform) => setOptional(l, 'textTransform', textTransform as TextTransform, 'none'),
         },
       ],
     },
