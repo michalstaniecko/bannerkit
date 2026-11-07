@@ -4,21 +4,21 @@
 // what it drew on `before:render`, draw on `after:render` (also fired by `renderTop`),
 // in screen px with 1 px lines whatever the zoom.
 //
-// Colours are CSS tokens read from the editor's container at `mount` (`--snap`, …).
+// Colours are CSS tokens read from the editor's container at `mount` (`--snap`, `--measure`, …).
 // A new Mark kind adds its colour to `OverlayColors` and a case to `drawMark`.
 import type { Canvas } from 'fabric'
-import type { Mark } from './snapping/marks.ts'
+import type { GapMark, Mark, MeasureMark } from './snapping/marks.ts'
 
-export type OverlayColors = { snap: string }
+export type OverlayColors = { snap: string; measure: string }
 
 /** Used when the container's stylesheet has no token (tests, a host page without tokens.css). */
-const FALLBACK: OverlayColors = { snap: '#f24822' }
+const FALLBACK: OverlayColors = { snap: '#f24822', measure: '#f24822' }
 
 /** Reads the overlay's colour tokens from `container`'s computed style. */
 export function readOverlayColors(container: HTMLElement): OverlayColors {
   const style = container.ownerDocument.defaultView?.getComputedStyle(container)
   const token = (name: string, fallback: string) => style?.getPropertyValue(name).trim() || fallback
-  return { snap: token('--snap', FALLBACK.snap) }
+  return { snap: token('--snap', FALLBACK.snap), measure: token('--measure', FALLBACK.measure) }
 }
 
 /**
@@ -72,5 +72,89 @@ function drawMark(ctx: CanvasRenderingContext2D, mark: Mark, zoom: number, color
       ctx.stroke()
       return
     }
+    case 'measure-box': {
+      ctx.strokeStyle = colors.measure
+      ctx.lineWidth = 1
+      const { x, y, width, height } = mark.rect
+      const left = crisp(x, zoom)
+      const top = crisp(y, zoom)
+      ctx.strokeRect(left, top, crisp(x + width, zoom) - left, crisp(y + height, zoom) - top)
+      return
+    }
+    case 'measure':
+      drawMeasure(ctx, mark, zoom, colors.measure)
+      return
+    case 'gap':
+      drawGap(ctx, mark, zoom, colors)
+      return
   }
+}
+
+/** Half the length of the ticks across both ends of a Measurement distance, in screen px. */
+const TICK = 3
+
+/** A Measurement distance: a 1 px line with ticks at its ends, its dashed extension and its label in a pill. */
+function drawMeasure(ctx: CanvasRenderingContext2D, mark: MeasureMark, zoom: number, color: string): void {
+  // In screen px, `u` along the distance and `v` across it.
+  const point = (u: number, v: number): [number, number] => (mark.axis === 'x' ? [u, v] : [v, u])
+  const line = (u1: number, v1: number, u2: number, v2: number) => {
+    ctx.moveTo(...point(u1, v1))
+    ctx.lineTo(...point(u2, v2))
+  }
+  const at = crisp(mark.at, zoom)
+  const from = crisp(mark.from, zoom)
+  const to = crisp(mark.to, zoom)
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  line(from, at, to, at)
+  line(from, at - TICK, from, at + TICK)
+  line(to, at - TICK, to, at + TICK)
+  ctx.stroke()
+  if (mark.extension) {
+    const e = mark.extension
+    ctx.save()
+    ctx.setLineDash([4, 3])
+    ctx.beginPath()
+    line(crisp(e.at, zoom), crisp(e.from, zoom), crisp(e.at, zoom), crisp(e.to, zoom))
+    ctx.stroke()
+    ctx.restore()
+  }
+  ctx.font = '11px system-ui, sans-serif'
+  const width = ctx.measureText(mark.label).width + 8
+  const height = 16
+  const [cx, cy] = point((from + to) / 2, at)
+  ctx.fillStyle = color
+  ctx.fillRect(Math.round(cx - width / 2), Math.round(cy - height / 2), Math.round(width), height)
+  ctx.fillStyle = '#ffffff'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(mark.label, cx, cy)
+}
+
+/** Half the length of the ticks closing a gap, in screen px. */
+const GAP_TICK = 4
+
+/** An equal gap: a segment closed by ticks, its px label beside its middle. */
+function drawGap(ctx: CanvasRenderingContext2D, mark: GapMark, zoom: number, colors: OverlayColors): void {
+  const at = crisp(mark.at, zoom)
+  const from = mark.from * zoom
+  const to = mark.to * zoom
+  // Along the gap's axis (u) and across it (v), whichever way the gap runs.
+  const point = (u: number, v: number): [number, number] => (mark.axis === 'x' ? [u, v] : [v, u])
+  ctx.strokeStyle = colors.snap
+  ctx.fillStyle = colors.snap
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(...point(from, at))
+  ctx.lineTo(...point(to, at))
+  for (const end of [crisp(mark.from, zoom), crisp(mark.to, zoom)]) {
+    ctx.moveTo(...point(end, at - GAP_TICK))
+    ctx.lineTo(...point(end, at + GAP_TICK))
+  }
+  ctx.stroke()
+  ctx.font = '11px sans-serif'
+  ctx.textAlign = mark.axis === 'x' ? 'center' : 'left'
+  ctx.textBaseline = mark.axis === 'x' ? 'bottom' : 'middle'
+  ctx.fillText(mark.label, ...point((from + to) / 2, mark.axis === 'x' ? at - GAP_TICK - 2 : at + GAP_TICK + 2))
 }

@@ -88,6 +88,8 @@
   --focus-ring: var(--color-blue-600);
   /* Precision overlay on the Canvas (read by the editor at mount): snap lines. */
   --snap: var(--color-red-500);
+  /* Measurement with Alt: distances, their labels and the outline measured to. */
+  --measure: var(--color-red-500);
 
   --gap-none: var(--space-0);
   --gap-tight: var(--space-1);
