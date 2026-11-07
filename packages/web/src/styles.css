@@ -1,9 +1,23 @@
-/* Layout only (spec: plain HTML, minimal layout CSS, no UI styling). */
+/* Editor layout. Colors, spacing and radii come from semantic tokens (tokens.css). */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  color: var(--text-default);
+  background: var(--surface-app);
+}
+
+/* Form controls take the UI font instead of the UA default. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 .app {
@@ -15,9 +29,9 @@ body,
 .topbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-bottom: 1px solid #ccc;
+  gap: var(--gap-control);
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .topbar .spacer {
@@ -30,8 +44,8 @@ body,
 }
 
 .error {
-  padding: 6px 8px;
-  color: #b00;
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+  color: var(--text-danger);
 }
 
 .viewport {
@@ -40,7 +54,7 @@ body,
   overflow: auto;
   display: grid;
   place-items: center;
-  background: #eee;
+  background: var(--surface-canvas-area);
 }
 
 .canvas-host[hidden] {
@@ -66,23 +80,23 @@ body,
 .layer-list {
   width: 200px;
   overflow: auto;
-  border-right: 1px solid #ccc;
+  border-right: 1px solid var(--border-subtle);
 }
 
 .layer-list ol {
   list-style: none;
   margin: 0;
-  padding: 4px;
+  padding: var(--pad-list);
 }
 
 .layer-list li {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--gap-tight);
 }
 
 .layer-list li[aria-selected='true'] {
-  background: #cde;
+  background: var(--surface-selected);
 }
 
 .layer-list .layer-name {
@@ -97,20 +111,20 @@ body,
   width: 360px;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid #ccc;
+  border-left: 1px solid var(--border-subtle);
 }
 
 .json-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: var(--gap-control);
+  padding: var(--pad-bar-y) var(--pad-bar-x);
 }
 
 .json-errors {
   margin: 0;
-  padding: 6px 8px 6px 24px;
-  color: #b00;
+  padding: var(--pad-bar-y) var(--pad-bar-x) var(--pad-bar-y) var(--indent-list);
+  color: var(--text-danger);
 }
 
 .json-code {
@@ -125,8 +139,8 @@ body,
 .reload-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: #fff4cc;
-  border-bottom: 1px solid #e0c96a;
+  gap: var(--gap-control);
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+  background: var(--surface-warning);
+  border-bottom: 1px solid var(--border-warning);
 }

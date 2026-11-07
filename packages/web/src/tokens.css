@@ -1,0 +1,104 @@
+/*
+ * Design tokens: the only file in the editor's CSS allowed to hold literal colors,
+ * spacing and radii (enforced by packages/web/test/css-tokens.test.ts).
+ *
+ * Two layers:
+ * - primitive (`--color-*`, `--space-*`, `--radius-*`, `--font-size-*`, `--font-family-*`):
+ *   the raw scale, referenced only from the semantic layer below;
+ * - semantic (`--surface-*`, `--text-*`, `--border-*`, `--accent*`, `--gap-*`, `--pad-*`, ...):
+ *   what layout and components use.
+ *
+ * A dark theme is a second semantic block (e.g. `[data-theme='dark']`) over the same
+ * primitives. The UI uses the system font; Inter stays the font of banner content.
+ */
+
+/* Primitive layer. */
+:root {
+  --color-white: #fff;
+  --color-gray-50: #f6f6f6;
+  --color-gray-100: #eee;
+  --color-gray-200: #ddd;
+  --color-gray-300: #ccc;
+  --color-gray-500: #888;
+  --color-gray-600: #666;
+  --color-gray-900: #1a1a1a;
+  --color-blue-100: #cde;
+  --color-blue-600: #2f6fdb;
+  --color-blue-700: #2459b3;
+  --color-red-700: #b00;
+  --color-yellow-100: #fff4cc;
+  --color-yellow-400: #e0c96a;
+
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-8: 24px;
+
+  --radius-0: 0;
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-3: 6px;
+  --radius-full: 9999px;
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 15px;
+
+  --font-family-system: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Semantic layer: light theme. */
+:root {
+  color-scheme: light;
+
+  --font-ui: var(--font-family-system);
+  --font-code: var(--font-family-mono);
+  --text-size-ui: var(--font-size-md);
+  --text-size-small: var(--font-size-sm);
+
+  --surface-app: var(--color-white);
+  --surface-panel: var(--color-white);
+  --surface-sunken: var(--color-gray-50);
+  --surface-canvas-area: var(--color-gray-100);
+  --surface-hover: var(--color-gray-100);
+  --surface-selected: var(--color-blue-100);
+  --surface-warning: var(--color-yellow-100);
+
+  --text-default: var(--color-gray-900);
+  --text-muted: var(--color-gray-600);
+  --text-disabled: var(--color-gray-500);
+  --text-danger: var(--color-red-700);
+  --text-on-accent: var(--color-white);
+
+  --border-subtle: var(--color-gray-300);
+  --border-strong: var(--color-gray-500);
+  --border-warning: var(--color-yellow-400);
+
+  --accent: var(--color-blue-600);
+  --accent-hover: var(--color-blue-700);
+  --focus-ring: var(--color-blue-600);
+
+  --gap-none: var(--space-0);
+  --gap-tight: var(--space-1);
+  --gap-control: var(--space-4);
+  --gap-section: var(--space-6);
+  --pad-none: var(--space-0);
+  --pad-list: var(--space-2);
+  --pad-bar-y: var(--space-3);
+  --pad-bar-x: var(--space-4);
+  --pad-control-y: var(--space-2);
+  --pad-control-x: var(--space-4);
+  --pad-section: var(--space-5);
+  --indent-list: var(--space-8);
+
+  --radius-control: var(--radius-2);
+  --radius-panel: var(--radius-3);
+  --radius-pill: var(--radius-full);
+}
