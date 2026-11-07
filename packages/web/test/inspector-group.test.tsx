@@ -112,3 +112,54 @@ describe('Properties of a Group', () => {
     expect(g.layers).toEqual(badge().layers)
   })
 })
+
+describe('Properties of several Layers with a Group among them', () => {
+  const mixed = () => doc([badge(), rect({ id: 'rect-3', x: 300, y: 250, width: 50, height: 20, opacity: 0.5 })])
+
+  it('shows only the fields they share; a value that differs is Mixed', async () => {
+    const { view, field, toggle } = await openInspector(mixed(), { select: ['group-1', 'rect-3'] })
+
+    const shown = view.getAllByRole('textbox').map((input) => input.getAttribute('aria-label') ?? (input as HTMLInputElement).labels?.[0]?.textContent)
+    expect(shown).toEqual(['X', 'Y', 'Width', 'Height', 'Opacity'])
+    expect(view.getByLabelText('ID').textContent).toBe('Mixed')
+    expect(field('Opacity').placeholder).toBe('Mixed')
+    expect([field('X').value, field('Y').value, field('Width').value, field('Height').value]).toEqual(['10', '20', '340', '250'])
+    expect(toggle('Visible').checked).toBe(true)
+    expect(toggle('Locked').checked).toBe(false)
+  })
+
+  it('typing x moves the Selection Box: every Layer in it, the Group’s children too, in one step', async () => {
+    const original = mixed()
+    const { editor, user, field, changes } = await openInspector(original, { select: ['group-1', 'rect-3'] })
+
+    await user.clear(field('X'))
+    await user.type(field('X'), '20{Enter}')
+    await settle()
+
+    expect(childXs(editor.getDocument())).toEqual([20, 210])
+    expect(editor.getDocument().layers[1]).toMatchObject({ x: 310 })
+    expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+    await act(() => editor.undo())
+    expect(editor.getDocument()).toEqual(original)
+  })
+
+  it('a flag set on the Selection goes to each Layer, the Group itself included', async () => {
+    const { editor, user, toggle } = await openInspector(mixed(), { select: ['group-1', 'rect-3'] })
+
+    await user.click(toggle('Locked'))
+    await settle()
+
+    const [g, r] = editor.getDocument().layers
+    expect([g!.locked, r!.locked]).toEqual([true, true])
+    expect((g as GroupLayer).layers.map((l) => l.locked)).toEqual([undefined, undefined])
+  })
+
+  it('two Groups with different names show the name as Mixed', async () => {
+    const { field } = await openInspector(doc([badge(), group('group-2', [rect({ id: 'rect-3' })], { name: 'Other' })]), {
+      select: ['group-1', 'group-2'],
+    })
+
+    expect(field('Name').value).toBe('')
+    expect(field('Name').placeholder).toBe('Mixed')
+  })
+})
