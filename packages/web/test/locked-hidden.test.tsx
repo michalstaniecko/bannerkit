@@ -115,6 +115,7 @@ describe.each([
   it('shows its fields; toggling keeps it selected, is one undo step, and frees it on the Canvas', async () => {
     const original = doc([rect(flag)])
     const { editor, user, toggle, field, upper, changes } = await openInspector(original, { select: ['rect-1'] })
+    editor.setSnapping(false) // the drag itself, not Snapping (snapping.test.ts)
     expect(field('X').value).toBe('100')
 
     await user.click(toggle(name))

@@ -78,8 +78,7 @@ afterEach(async () => {
  * `assets/two-tone.png` loads, any other Asset is missing), measuring text with
  * `measure` when given. `changes` and `selections` record the editor's events from then on.
  */
-export async function openEditor(document_: Document, { measure }: { measure?: MeasureText } = {}) {
-  const container = document.createElement('div')
+export async function openEditor(document_: Document, { measure, container = document.createElement('div') }: { measure?: MeasureText; container?: HTMLElement } = {}) {
   document.body.append(container)
   const editor = createEditor({ loadFonts: async () => {}, measure })
   opened.push(editor)
@@ -94,3 +93,46 @@ export async function openEditor(document_: Document, { measure }: { measure?: M
   const upper = container.querySelector<HTMLCanvasElement>('canvas.upper-canvas')!
   return { editor, container, upper, changes, selections }
 }
+
+/** A point in client px; at zoom 1 in jsdom it is also the Canvas point (the canvas element sits at 0, 0). */
+export type At = [number, number]
+
+/** Dispatches one real mouse event of `type` at `at` on `target` (the `upper` canvas). */
+export const mouse = (target: EventTarget, type: string, [x, y]: At, init: MouseEventInit = {}) =>
+  target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, ...init }))
+
+/**
+ * A drag by real mouse events: pressed at `from` now, then `move(at)` as often as
+ * needed (each move may carry its own modifier keys), then `release()`. Lets a test
+ * look at the editor in the middle of a gesture (`marks()`, a reload from disk, …).
+ */
+export function gesture(upper: HTMLCanvasElement, from: At, init: MouseEventInit = {}) {
+  let last = from
+  mouse(upper, 'mousedown', from, init)
+  return {
+    move(to: At, moveInit: MouseEventInit = init) {
+      last = to
+      mouse(upper, 'mousemove', to, moveInit)
+    },
+    release(releaseInit: MouseEventInit = init) {
+      mouse(upper, 'mouseup', last, releaseInit)
+    },
+  }
+}
+
+/** A press at `from`, a few moves along the way, and a release at `to`. */
+export function drag(upper: HTMLCanvasElement, from: At, to: At, init: MouseEventInit = {}) {
+  const g = gesture(upper, from, init)
+  for (const t of [0.25, 0.5, 0.75, 1]) g.move([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t])
+  g.release()
+}
+
+/** A click (press and release without moving) at `at`. */
+export const click = (upper: HTMLCanvasElement, at: At, init: MouseEventInit = {}) => {
+  mouse(upper, 'mousedown', at, init)
+  mouse(upper, 'mouseup', at, init)
+}
+
+/** A keydown of `name` on the page. */
+export const key = (name: string, init: KeyboardEventInit = {}) =>
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init }))

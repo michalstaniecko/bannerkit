@@ -205,6 +205,7 @@ describe('changing a selected Layer in a Group', () => {
 
   it('a nested Group selected inside its Group moves its own Layers only', async () => {
     const { editor, upper, changes } = await openEditor(nested())
+    editor.setSnapping(false) // the drag itself, not Snapping (snapping.test.ts)
     editor.select(['rect-2'])
     click(upper, RECT_3) // group-2, in group-1's context
 

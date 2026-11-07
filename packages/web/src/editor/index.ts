@@ -42,6 +42,13 @@
 // A different Canvas size left by a step, an undo/redo, a reload or a `load` is also
 // reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
 //
+// Snapping (ADR 0008): while a Layer, a Group, a Layer in a Group or several Layers are
+// dragged, the adapter (snap-adapter.ts) pulls their Selection Box onto other Layers,
+// the Canvas and Guides (snapping/), on whole px, and the overlay (overlay.ts) draws
+// the snap lines on Fabric's top context, never in a Render or an Export. Cmd/Ctrl
+// held, or `setSnapping(false)`, moves freely. `marks()` gives what is drawn. A reload
+// from disk during a gesture abandons it (no step), dropping the active object.
+//
 // `export` renders the shown Canvas offscreen (export.ts).
 import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, walkLayers, type Document, type GroupLayer, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject, type TPointerEvent } from 'fabric'
@@ -55,6 +62,9 @@ import { DocumentGroup } from './group.ts'
 import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
 import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
 import { fitZoom, type Size } from './zoom.ts'
+import { attachOverlay, readOverlayColors } from './overlay.ts'
+import { attachSnapAdapter, type SnapAdapter } from './snap-adapter.ts'
+import type { Mark } from './snapping/marks.ts'
 import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
 export type EditorOptions = {
@@ -193,6 +203,16 @@ export type Editor = {
   measureText: MeasureText
   /** The Fabric object showing a Layer, for adapters that need it (Selection, tests). */
   objectFor(layerId: string): FabricObject | undefined
+  /**
+   * Turns Snapping on or off (a session setting, like the Anchor; on by default). Off, a
+   * drag moves freely, still by whole px.
+   */
+  setSnapping(on: boolean): void
+  /**
+   * What the precision tools draw over the Canvas now (snap lines while a drag snaps), in
+   * Canvas coordinates, for adapters and tests (like `objectFor`). Empty outside a gesture.
+   */
+  marks(): Mark[]
   /** Canvas px per Document px. The canvas element is resized to the zoomed Canvas size. */
   setZoom(zoom: number): void
   getZoom(): number
@@ -246,6 +266,9 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   const history = createHistory()
   /** The preview running, if any; `drop` ends it and shows the Document from before it again. */
   let previewing: { base: Document; drop: () => Promise<void>; end: () => void } | undefined
+  let snapping = true
+  /** The Snapping adapter, from `mount`. */
+  let snap: SnapAdapter | undefined
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
@@ -492,6 +515,20 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     reportSelection()
   }
 
+  /**
+   * Abandons a drag, resize or rotate in progress (a reload from disk replaced what it
+   * moves): no step, no `change`, the active object dropped and the Snapping session ended.
+   */
+  const abandonGesture = () => {
+    const c = canvas
+    if (!c?._currentTransform) return
+    c._currentTransform.target.isMoving = false
+    c._currentTransform = null
+    snap?.end()
+    c.discardActiveObject()
+    c.requestRenderAll()
+  }
+
   /** Ends a text edit in progress, so it becomes its own step before anything else. */
   const finishTextEdit = () => {
     const active = canvas?.getActiveObject()
@@ -525,6 +562,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     previewing = state
 
     const showNow = async (recipe: DocumentRecipe, token: number) => {
+      snap?.end()
       const next = recipe(structuredClone(base))
       if (!sameFaces(base, next)) {
         await loadFonts(facesUsed(next))
@@ -698,6 +736,15 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       c.pick = pick
       c.toggleSelected = toggle
       c.on('mouse:dblclick', ({ e }) => onDoubleClick(e))
+      const adapter = attachSnapAdapter(c, {
+        document: documentNow,
+        idsOf: (objects) => allEntries(roots).filter((e) => objects.includes(e.object)).map((e) => e.base.id),
+        measure: () => env.measure,
+        zoom: () => zoom,
+      })
+      adapter.setEnabled(snapping)
+      snap = adapter
+      const detachOverlay = attachOverlay(c, () => adapter.marks(), () => zoom, readOverlayColors(container))
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
       c.on('selection:created', groupSelectionControls)
@@ -707,6 +754,9 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       keyTarget.addEventListener('keydown', onKeyDown)
       unmount = () => {
         keyTarget.removeEventListener('keydown', onKeyDown)
+        detachOverlay()
+        adapter.detach()
+        snap = undefined
         return element
       }
     },
@@ -722,6 +772,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
     async apply(document, { cause }) {
       if (!current) throw new Error('No Document loaded')
+      if (cause === 'reload') abandonGesture()
       finishTextEdit()
       await dropPreview()
       if (sameDocument(document, documentNow())) return
@@ -730,6 +781,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
     async update(recipe, { cause }) {
       if (!current) throw new Error('No Document loaded')
+      if (cause === 'reload') abandonGesture()
       finishTextEdit()
       await dropPreview()
       let before = documentNow()
@@ -793,6 +845,13 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     },
 
     getZoom: () => zoom,
+
+    setSnapping(on) {
+      snapping = on
+      snap?.setEnabled(on)
+    },
+
+    marks: () => [...(snap?.marks() ?? [])],
 
     zoomToFit(viewport) {
       if (!current) throw new Error('No Document loaded')

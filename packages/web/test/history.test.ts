@@ -49,6 +49,8 @@ async function open(document_: Document) {
   document.body.append(container)
   editor = createEditor({ loadFonts: async () => {} })
   editor.mount(container)
+  // These tests are about the drag itself; Snapping (on by default) has its own (snapping.test.ts).
+  editor.setSnapping(false)
   await editor.load(document_)
   const changes: ChangeEvent[] = []
   editor.on('change', (event) => changes.push(event))

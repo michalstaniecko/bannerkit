@@ -26,6 +26,7 @@
   --color-blue-100: #cde;
   --color-blue-600: #2f6fdb;
   --color-blue-700: #2459b3;
+  --color-red-500: #f24822;
   --color-red-700: #b00;
   --color-yellow-100: #fff4cc;
   --color-yellow-400: #e0c96a;
@@ -85,6 +86,8 @@
   --accent: var(--color-blue-600);
   --accent-hover: var(--color-blue-700);
   --focus-ring: var(--color-blue-600);
+  /* Precision overlay on the Canvas (read by the editor at mount): snap lines. */
+  --snap: var(--color-red-500);
 
   --gap-none: var(--space-0);
   --gap-tight: var(--space-1);
