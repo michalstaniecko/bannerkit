@@ -6,16 +6,15 @@
 // disabled. Every write is a recipe for `editor.update`: all Layers change in one
 // step, or, when any result is not a valid Document, none does.
 import {
-  boxExtent,
   mapLayers,
+  selectionBox,
   translateLayer,
   validateDocument,
   walkLayers,
   type Document,
   type Layer,
   type LinearGradient,
-  type Rect,
-  type TextLayer,
+  type MeasureText,
 } from '@bannerkit/core'
 import type { DocumentRecipe } from '../editor/index.ts'
 import { roundPx } from '../editor/rounding.ts'
@@ -43,10 +42,9 @@ export type Mixed = typeof MIXED
 /** The value every Layer shares, or MIXED. */
 export type Shared<T> = T | Mixed
 
-/** The height of a text Layer's Box when it has none (its Text Layout height). */
-export type TextHeight = (layer: TextLayer) => number
-
 export type InspectOptions = FieldContext & {
+  /** The measure the Canvas lays text out with, for the Selection Box (core `selectionBox`). */
+  measure: MeasureText
   /** Box fields stand for the shared Box of `layers`. Default: when there are several, or a Group (its Box). */
   sharedBox?: boolean
 }
@@ -106,20 +104,6 @@ export function sharedValue<T>(layers: readonly Layer[], read: (layer: Layer) =>
   return values.every((v) => v === values[0]) ? values[0]! : MIXED
 }
 
-/** The axis-aligned union of the `boxExtent`s of `layers` (a Group's: of its children): their Selection Box. */
-export function sharedBox(layers: readonly Layer[], textHeight: TextHeight): Rect {
-  const extents = layers.map((l) =>
-    l.type === 'group'
-      ? sharedBox(l.layers, textHeight)
-      : boxExtent({ ...l, height: 'height' in l && l.height !== undefined ? l.height : textHeight(l as TextLayer) }),
-  )
-  const x = Math.min(...extents.map((e) => e.x))
-  const y = Math.min(...extents.map((e) => e.y))
-  const right = Math.max(...extents.map((e) => e.x + e.width))
-  const bottom = Math.max(...extents.map((e) => e.y + e.height))
-  return { x, y, width: right - x, height: bottom - y }
-}
-
 /**
  * `document` with every Layer in `ids` rewritten by `write`. When the result is not a
  * valid Document (a value outside the schema, a broken cross-field rule) `document`
@@ -157,7 +141,6 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
   const shared = options.sharedBox ?? (layers.length > 1 || layers.some((l) => l.type === 'group'))
   const each = (write: (layer: Layer) => Layer): DocumentRecipe => (document) => editLayers(document, ids, write)
   const context: FieldContext = { textLayout: options.textLayout }
-  const textHeight: TextHeight = (layer) => options.textLayout(layer).height
 
   switch (field.control) {
     case 'readonly':
@@ -220,11 +203,11 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
     case 'number': {
       if (shared && field.box) {
         const side = field.box
-        const box = sharedBox(layers, textHeight)
+        const box = selectionBox(layers, options.measure)!
         if (side === 'width' || side === 'height') return { control: 'number', field, value: roundPx(box[side]), disabled: true, write: () => (d) => d }
         // The Box's side shows on whole px; the typed value moves every Layer by one whole-px delta.
         const write = (value: number): DocumentRecipe => (document) => {
-          const now = sharedBox(selectedLayers(document, ids), textHeight)
+          const now = selectionBox(selectedLayers(document, ids), options.measure)!
           const delta = roundPx(value - now[side])
           return side === 'x' ? moveLayers(document, ids, delta, 0) : moveLayers(document, ids, 0, delta)
         }

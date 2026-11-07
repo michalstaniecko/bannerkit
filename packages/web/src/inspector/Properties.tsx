@@ -8,7 +8,7 @@
 // it locks or hides shows its own flags plus a note naming that Group. With an empty
 // Selection it shows the Document (DocumentFields); the Anchor it resizes from is held
 // by the caller for the session.
-import { inheritedFlags, type Anchor, type Document, type GroupLayer, type Layer, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { inheritedFlags, type Anchor, type Document, type GroupLayer, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import type { RefObject } from 'react'
 import type { DocumentRecipe, Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
@@ -45,6 +45,10 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
     if (!editor.current) throw new Error('No editor')
     return editor.current.textLayout(layer)
   }
+  const measure: MeasureText = (font, text, letterSpacing) => {
+    if (!editor.current) throw new Error('No editor')
+    return editor.current.measureText(font, text, letterSpacing)
+  }
 
   if (document && layers.length === 0) {
     return (
@@ -63,7 +67,7 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
             {group.fields.map((field) => (
               <Field
                 key={field.key}
-                inspected={inspectField(field, layers, { textLayout })}
+                inspected={inspectField(field, layers, { textLayout, measure })}
                 resetKey={reloads}
                 onWrite={edits.commit}
                 onPreview={edits.preview}

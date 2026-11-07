@@ -1,10 +1,10 @@
 // inspect.ts on its own: which fields several Layers share, and Mixed toggles (hidden or
 // locked Layers, the only ones that differ there, are selected from the Layer list),
 // and font family/weight picked from a font manifest.
-import type { Layer, TextLayer } from '@bannerkit/core'
+import { selectionBox, type Layer, type MeasureText, type TextLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
 import { layerFields, type FieldGroup } from '../src/inspector/fields.ts'
-import { inspectField, MIXED, moveLayers, sharedBox, sharedFields } from '../src/inspector/inspect.ts'
+import { inspectField, MIXED, moveLayers, sharedFields } from '../src/inspector/inspect.ts'
 import { doc, image, rect, text } from './editor-harness.ts'
 
 const toggle = (key: string) => ({ control: 'toggle' as const, key, label: key, read: () => true, write: (l: Layer) => l })
@@ -14,6 +14,7 @@ const table = {
   text: groups(['layout', ['x', 'y']], ['fill', ['fill']], ['type', ['fontSize']]),
   image: groups(['layout', ['x']], ['fit', ['fit']]),
 }
+const measure: MeasureText = () => 0
 const keys = (shown: FieldGroup[]) => shown.map((g) => [g.key, g.fields.map((f) => f.key)])
 
 describe('sharedFields', () => {
@@ -43,7 +44,7 @@ describe('a toggle over several Layers', () => {
   const textLayout = () => ({ fontSize: 0, lines: [], height: 0, overflow: false })
 
   it('is Mixed when the Layers differ, and on for all once set', () => {
-    const inspected = inspectField(visible, layers, { textLayout })
+    const inspected = inspectField(visible, layers, { textLayout, measure })
     if (inspected.control !== 'toggle') throw new Error('not a toggle')
 
     expect(inspected.value).toBe(MIXED)
@@ -57,7 +58,7 @@ describe('font family and weight from a font manifest', () => {
   const textLayout = () => ({ fontSize: 0, lines: [], height: 0, overflow: false })
   const inspect = (key: string, layers: Layer[]) => {
     const field = sharedFields(layers, layerFields(manifest)).flatMap((g) => g.fields).find((f) => f.key === key)!
-    const inspected = inspectField(field, layers, { textLayout })
+    const inspected = inspectField(field, layers, { textLayout, measure })
     if (inspected.control !== 'select') throw new Error('not a select')
     return inspected
   }
@@ -84,13 +85,13 @@ describe('font family and weight from a font manifest', () => {
   })
 })
 
-describe('moveLayers and sharedBox with a Group', () => {
+describe('moveLayers and the Selection Box with a Group', () => {
   it('move every Layer inside a selected Group and bound its children', () => {
     const group: Layer = { id: 'g', type: 'group', layers: [rect({ id: 'a', x: 0, y: 0 }), { id: 'h', type: 'group', layers: [rect({ id: 'b', x: 200, y: 50 })] }] }
 
     const moved = moveLayers(doc([group]), ['g'], 5, 7)
 
-    expect(sharedBox(moved.layers, () => 0)).toEqual({ x: 5, y: 7, width: 300, height: 100 })
+    expect(selectionBox(moved.layers, measure)).toEqual({ x: 5, y: 7, width: 300, height: 100 })
   })
 })
 
@@ -105,12 +106,12 @@ describe('italic from a font manifest', () => {
   const textLayout = () => ({ fontSize: 0, lines: [], height: 0, overflow: false })
   const field = (key: string, layers: Layer[]) => sharedFields(layers, layerFields(manifest)).flatMap((g) => g.fields).find((f) => f.key === key)!
   const italic = (layers: Layer[]) => {
-    const inspected = inspectField(field('fontStyle', layers), layers, { textLayout })
+    const inspected = inspectField(field('fontStyle', layers), layers, { textLayout, measure })
     if (inspected.control !== 'toggle') throw new Error('not a toggle')
     return inspected
   }
   const select = (key: string, layers: Layer[]) => {
-    const inspected = inspectField(field(key, layers), layers, { textLayout })
+    const inspected = inspectField(field(key, layers), layers, { textLayout, measure })
     if (inspected.control !== 'select') throw new Error('not a select')
     return inspected
   }
