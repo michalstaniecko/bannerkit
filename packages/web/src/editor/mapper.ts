@@ -23,6 +23,7 @@ import {
   applyMatrix,
   boxTransform,
   fitImage,
+  fontStyleOf,
   layoutText,
   linearGradientLine,
   type ImageLayer,
@@ -187,6 +188,7 @@ function applyText(textbox: Textbox, layer: TextLayer, env: MapperEnv): LocalBox
     scaleY: 1,
     fontFamily: layer.fontFamily,
     fontWeight: layer.fontWeight,
+    fontStyle: fontStyleOf(layer),
     fontSize: layout.fontSize,
     lineHeight: layer.lineHeight ?? DEFAULT_LINE_HEIGHT,
     // Fabric's charSpacing is in 1/1000 em; letterSpacing is in px.
