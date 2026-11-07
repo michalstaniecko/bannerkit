@@ -6,8 +6,7 @@
 // (6 screen px, inclusive) and the tie-break (Guide > Canvas > Layer) are a drag's.
 import { walkLayers, type Document, type MeasureText, type Rect } from '@bannerkit/core'
 import type { Mark, SnapLineMark } from './marks.ts'
-import { SNAP_DISTANCE } from './move.ts'
-import { buildTargets, type Axis, type TargetLine, type Targets } from './targets.ts'
+import { buildTargets, EPSILON, mergeSnapLines, nearestTarget, RANK, SNAP_DISTANCE, type Axis, type TargetLine, type Targets } from './targets.ts'
 
 /** What a resize snaps to, taken once at its start. */
 export type ResizeStart = { targets: Targets }
@@ -61,7 +60,7 @@ export function snapResize({ targets }: ResizeStart, box: Rect, handle: ResizeHa
   }
   if (handle.proportional && handle.x && handle.y) {
     // The nearer target wins (on a tie, the higher-ranked one, then x).
-    hits.sort((a, b) => a.hit.distance - b.hit.distance || RANK[a.hit.source] - RANK[b.hit.source])
+    hits.sort((a, b) => a.hit.distance - b.hit.distance || a.hit.rank - b.hit.rank)
     hits.splice(1)
   }
   let out = box
@@ -79,7 +78,7 @@ export function snapResize({ targets }: ResizeStart, box: Rect, handle: ResizeHa
   return { box: out, marks: snapped.flatMap(({ axis, at, hit }) => snapLines(out, axis, at, hit, targets)) }
 }
 
-type Hit = { axis: Axis; edge: Edge; at: number; hit: TargetLine & { distance: number } }
+type Hit = { axis: Axis; edge: Edge; at: number; hit: TargetLine & { distance: number; rank: number } }
 
 /** The size on its axis of `box` with the snapped edge of `hit` at its target. */
 function sizeAfter(box: Rect, { axis, edge, at }: Hit, centred = false): number {
@@ -103,39 +102,18 @@ function resizeAxis(box: Rect, axis: Axis, edge: Edge | undefined, size: number,
  */
 function snapLines(box: Rect, axis: Axis, at: number, hit: TargetLine, targets: Targets): SnapLineMark[] {
   const residual = Math.abs(hit.at - at)
-  const across = axis === 'x' ? targets.canvas.height : targets.canvas.width
   const other = axis === 'x' ? 'y' : 'x'
-  const boxFrom = startOf(box, other)
-  const boxTo = boxFrom + sizeOf(box, other)
-  const marks = new Map<string, SnapLineMark>()
-  for (const target of targets[axis]) {
-    if (Math.abs(target.at - at) > residual + EPSILON) continue
-    const key = `${target.source}:${target.at}`
-    const own = target.source === 'layer' ? { from: Math.min(boxFrom, target.from), to: Math.max(boxTo, target.to) } : { from: 0, to: across }
-    const mark = marks.get(key)
-    if (mark) {
-      mark.from = Math.min(mark.from, own.from)
-      mark.to = Math.max(mark.to, own.to)
-    } else marks.set(key, { kind: 'snap-line', axis, at: target.at, source: target.source, ...own })
-  }
-  return [...marks.values()]
+  const from = startOf(box, other)
+  const matched = targets[axis].filter((target) => Math.abs(target.at - at) <= residual + EPSILON)
+  return mergeSnapLines(axis, matched, targets.canvas, { from, to: from + sizeOf(box, other) })
 }
 
-/** Tie-break order of equally near targets: lower wins. */
-const RANK = { guide: 0, canvas: 1, layer: 2 } as const
-
-/** Comparisons of Canvas px computed by different sums; far below any visible difference. */
-const EPSILON = 1e-6
-
-function nearest(at: number, targets: readonly TargetLine[], threshold: number): (TargetLine & { distance: number }) | undefined {
-  let best: (TargetLine & { distance: number }) | undefined
-  for (const target of targets) {
-    const distance = Math.abs(target.at - at)
-    if (distance > threshold + EPSILON) continue
-    if (best && (distance > best.distance + EPSILON || (distance > best.distance - EPSILON && RANK[target.source] >= RANK[best.source]))) continue
-    best = { ...target, distance }
-  }
-  return best
+/** The target nearest `at` within `threshold`, with its distance. */
+function nearest(at: number, targets: readonly TargetLine[], threshold: number): (TargetLine & { distance: number; rank: number }) | undefined {
+  return nearestTarget(
+    targets.map((target) => ({ ...target, distance: Math.abs(target.at - at), rank: RANK[target.source] })),
+    threshold,
+  )
 }
 
 const startOf = (box: Rect, axis: Axis) => (axis === 'x' ? box.x : box.y)

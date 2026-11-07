@@ -7,6 +7,10 @@
 // none (a Group's extent follows its moving child). The Canvas gives its edges and
 // centre, and every Guide in `document.guides` its line.
 import { layerExtent, walkLayers, type Document, type Layer, type MeasureText, type Rect } from '@bannerkit/core'
+import type { SnapLineMark } from './marks.ts'
+
+/** The snap threshold in screen px (so `SNAP_DISTANCE / zoom` Canvas px, inclusive). */
+export const SNAP_DISTANCE = 6
 
 /** Lines on the `x` axis are vertical (at an x), on `y` horizontal (at a y). */
 export type Axis = 'x' | 'y'
@@ -80,4 +84,56 @@ function targetLayers(document: Document, moving: ReadonlySet<string>): Layer[] 
 
 function holdsAny(group: Layer, ids: ReadonlySet<string>): boolean {
   return walkLayers({ layers: [group] }).some((v) => ids.has(v.layer.id))
+}
+
+/** Tie-break order of equally near targets: lower wins. */
+export const RANK: Record<TargetSource, number> = { guide: 0, canvas: 1, layer: 2 }
+
+/** Comparisons of Canvas px computed by different sums; far below any visible difference. */
+export const EPSILON = 1e-6
+
+/** Rounding to whole px, never −0. */
+export const whole = (value: number) => Math.round(value) || 0
+
+/** A place something can snap to: how far it is and its tie-break rank (lower wins). */
+export type Candidate = { distance: number; rank: number }
+
+/**
+ * The nearest of `candidates` within `threshold` Canvas px (inclusive); of equally near
+ * ones (to `EPSILON`), the lowest rank, then the first. Undefined when none is in reach.
+ */
+export function nearestTarget<T extends Candidate>(candidates: Iterable<T>, threshold: number): T | undefined {
+  let best: T | undefined
+  for (const candidate of candidates) {
+    const { distance, rank } = candidate
+    if (distance > threshold + EPSILON) continue
+    if (best && (distance > best.distance + EPSILON || (distance > best.distance - EPSILON && rank >= best.rank))) continue
+    best = candidate
+  }
+  return best
+}
+
+/**
+ * One snap line per position and source among `matched` on `axis` (see `SnapLineMark`).
+ * A Canvas or Guide line runs across the Canvas; a Layer's from `along` (the snapped
+ * box's span on the other axis, if any) to the farthest Layer matched there.
+ */
+export function mergeSnapLines(axis: Axis, matched: readonly TargetLine[], canvas: Targets['canvas'], along?: { from: number; to: number }): SnapLineMark[] {
+  const across = axis === 'x' ? canvas.height : canvas.width
+  const marks = new Map<string, SnapLineMark>()
+  for (const target of matched) {
+    const key = `${target.source}:${target.at}`
+    const own =
+      target.source !== 'layer'
+        ? { from: 0, to: across }
+        : along
+          ? { from: Math.min(along.from, target.from), to: Math.max(along.to, target.to) }
+          : { from: target.from, to: target.to }
+    const mark = marks.get(key)
+    if (mark) {
+      mark.from = Math.min(mark.from, own.from)
+      mark.to = Math.max(mark.to, own.to)
+    } else marks.set(key, { kind: 'snap-line', axis, at: target.at, source: target.source, ...own })
+  }
+  return [...marks.values()]
 }

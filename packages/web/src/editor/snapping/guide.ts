@@ -7,8 +7,7 @@
 // whole px (a fractional target lands on its nearest whole px).
 import type { Document, MeasureText } from '@bannerkit/core'
 import type { SnapLineMark } from './marks.ts'
-import { SNAP_DISTANCE } from './move.ts'
-import { buildTargets, type Axis, type Targets } from './targets.ts'
+import { buildTargets, EPSILON, mergeSnapLines, nearestTarget, RANK, SNAP_DISTANCE, whole, type Axis, type Targets } from './targets.ts'
 
 export type GuideSnap = {
   /** The whole-px value the Guide lands on. */
@@ -23,38 +22,14 @@ export function guideTargets(document: Document, measure: MeasureText): Targets 
   return { ...targets, x: targets.x.filter((t) => t.source !== 'guide'), y: targets.y.filter((t) => t.source !== 'guide') }
 }
 
-const RANK = { guide: 0, canvas: 1, layer: 2 } as const
-
-/** Rounding to whole px, never −0. */
-const whole = (value: number) => Math.round(value) || 0
-
-const EPSILON = 1e-6
-
 /** Snaps a Guide on `axis` (`x`: a vertical Guide at an x) dragged to `raw` Canvas px, at `zoom`. */
 export function snapGuide(targets: Targets, axis: Axis, raw: number, zoom: number): GuideSnap {
-  const threshold = SNAP_DISTANCE / zoom
   const lines = targets[axis]
-  let best: { distance: number; rank: number; at: number } | undefined
-  for (const target of lines) {
-    const distance = Math.abs(target.at - raw)
-    if (distance > threshold + EPSILON) continue
-    const rank = RANK[target.source]
-    if (best && (distance > best.distance + EPSILON || (distance > best.distance - EPSILON && rank >= best.rank))) continue
-    best = { distance, rank, at: target.at }
-  }
+  const best = nearestTarget(
+    lines.map((target) => ({ at: target.at, distance: Math.abs(target.at - raw), rank: RANK[target.source] })),
+    SNAP_DISTANCE / zoom,
+  )
   if (!best) return { value: whole(raw), marks: [] }
-  const at = best.at
-  const across = axis === 'x' ? targets.canvas.height : targets.canvas.width
-  const marks = new Map<string, SnapLineMark>()
-  for (const target of lines) {
-    if (Math.abs(target.at - at) > EPSILON) continue
-    const own = target.source === 'layer' ? { from: target.from, to: target.to } : { from: 0, to: across }
-    const key = target.source
-    const mark = marks.get(key)
-    if (mark) {
-      mark.from = Math.min(mark.from, own.from)
-      mark.to = Math.max(mark.to, own.to)
-    } else marks.set(key, { kind: 'snap-line', axis, at: target.at, source: target.source, ...own })
-  }
-  return { value: whole(at), marks: [...marks.values()] }
+  const matched = lines.filter((target) => Math.abs(target.at - best.at) <= EPSILON)
+  return { value: whole(best.at), marks: mergeSnapLines(axis, matched, targets.canvas) }
 }
