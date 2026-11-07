@@ -244,6 +244,73 @@
   color: var(--text-disabled);
 }
 
+/* Select and ColorField: a label beside a full-width control (a row of their own in a field grid). */
+.field-grid > .select-field,
+.field-grid > .color-field {
+  grid-column: 1 / -1;
+}
+
+.select-field,
+.color-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.select-field-label,
+.color-field-label {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.select-field-input,
+.color-field-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-size);
+  padding: var(--pad-none) var(--pad-control-y);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  color: var(--text-default);
+  font: inherit;
+}
+
+.color-field-swatch {
+  flex: none;
+  width: var(--control-size);
+  height: var(--control-size);
+  padding: var(--pad-none);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  cursor: pointer;
+}
+
+.select-field-input:focus-visible,
+.color-field-input:focus-visible,
+.color-field-swatch:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.select-field-input:disabled,
+.color-field-input:disabled,
+.color-field-swatch:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-sunken);
+  cursor: default;
+}
+
+.color-field-input::placeholder {
+  color: var(--text-disabled);
+}
+
+.color-field-none {
+  flex: none;
+}
+
 /* Checkbox. */
 .checkbox {
   display: inline-flex;

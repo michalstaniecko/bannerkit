@@ -7,7 +7,15 @@
 // step, or, when any result is not a valid Document, none does.
 import { boxExtent, validateDocument, type Document, type Layer, type LayerType, type Rect, type TextLayer } from '@bannerkit/core'
 import { roundPx } from '../editor/rounding.ts'
-import { LAYER_FIELDS, writeNumber, type FieldGroup, type FieldSpec, type NumberFieldSpec } from './fields.ts'
+import {
+  LAYER_FIELDS,
+  writeNumber,
+  type ColorFieldSpec,
+  type FieldGroup,
+  type FieldSpec,
+  type NumberFieldSpec,
+  type SelectFieldSpec,
+} from './fields.ts'
 
 /** A value that differs between the Layers in the Inspector. */
 export const MIXED = Symbol('Mixed')
@@ -33,12 +41,16 @@ export type InspectedField =
   | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => Recipe }
   | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; write: (value: boolean) => Recipe }
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
+  | { control: 'select'; field: SelectFieldSpec; value: Shared<string>; write: (value: string) => Recipe }
+  | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => Recipe }
 
 type FieldTable = { [T in LayerType]: FieldGroup<Extract<Layer, { type: T }>>[] }
 
 /**
  * The field groups shown for `layers`: the groups and fields every Layer type in it
- * has, in the order of the first one. A group left without fields is dropped.
+ * has, in the order of the first one, less a field whose `when` fails for any of the
+ * Layers (e.g. shadow blur while some Layer has no shadow). A group left without
+ * fields is dropped.
  */
 export function sharedFields(layers: readonly Layer[], table: FieldTable = LAYER_FIELDS): FieldGroup[] {
   const types = [...new Set(layers.map((l) => l.type))]
@@ -48,7 +60,8 @@ export function sharedFields(layers: readonly Layer[], table: FieldTable = LAYER
     .map((group) => ({
       ...group,
       fields: group.fields.filter((field) =>
-        rest.every((groups) => groups.find((g) => g.key === group.key)?.fields.some((f) => f.key === field.key)),
+        rest.every((groups) => groups.find((g) => g.key === group.key)?.fields.some((f) => f.key === field.key)) &&
+        layers.every((layer) => field.when?.(layer) ?? true),
       ),
     }))
     .filter((group) => group.fields.length > 0)
@@ -99,6 +112,10 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
       return { control: 'readonly', field, value: sharedValue(layers, field.read) }
     case 'toggle':
       return { control: 'toggle', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
+    case 'select':
+      return { control: 'select', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
+    case 'color':
+      return { control: 'color', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
     case 'number': {
       if (shared && field.box) {
         const side = field.box

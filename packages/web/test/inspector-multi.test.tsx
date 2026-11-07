@@ -39,6 +39,39 @@ describe('Properties of several Layers', () => {
     expect(view.getByLabelText('ID').textContent).toBe('Mixed')
   })
 
+  it('shadow fields show only when every Layer has a shadow; a differing colour is Mixed', async () => {
+    const shadow = { color: '#000000', blur: 8, offsetX: 0, offsetY: 4 }
+    const some = await openInspector(doc([rect({ id: 'a', shadow }), rect({ id: 'b' })]), { select: ['a', 'b'] })
+    expect(some.toggle('Shadow').indeterminate).toBe(true)
+    expect(some.view.queryByRole('textbox', { name: 'Blur' })).toBeNull()
+    some.view.unmount()
+
+    const { editor, user, field } = await openInspector(
+      doc([rect({ id: 'a', shadow }), rect({ id: 'b', shadow: { ...shadow, color: '#ff0000' } })]),
+      { select: ['a', 'b'] },
+    )
+    expect(field('Shadow color').value).toBe('')
+    expect(field('Shadow color').placeholder).toBe('Mixed')
+    expect(field('Blur').value).toBe('8')
+
+    await user.type(field('Shadow color'), '#336699{Enter}')
+    await settle()
+    expect(editor.getDocument().layers.map((l) => l.shadow?.color)).toEqual(['#336699', '#336699'])
+  })
+
+  it('a fill mixing a colour and a gradient is Mixed; a typed colour replaces both', async () => {
+    const gradient = { type: 'linear' as const, angle: 90, stops: [['#000000', 0], ['#ffffff', 1]] as [string, number][] }
+    const { editor, user, field, changes } = await openInspector(doc([rect({ id: 'a', fill: gradient }), rect({ id: 'b' })]), {
+      select: ['a', 'b'],
+    })
+    expect(field('Fill').value).toBe('')
+    expect(field('Fill').placeholder).toBe('Mixed')
+
+    await user.type(field('Fill'), '#123456{Enter}')
+    await settle()
+    expect(editor.getDocument().layers.map((l) => (l.type === 'rect' ? l.fill : undefined))).toEqual(['#123456', '#123456'])
+    expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+  })
 })
 
 describe('the Selection Box', () => {

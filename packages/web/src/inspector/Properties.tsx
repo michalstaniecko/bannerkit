@@ -10,8 +10,10 @@ import type { RefObject } from 'react'
 import { measureText } from '../editor/fonts.ts'
 import type { Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
+import { ColorField } from '../ui/ColorField.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
+import { Select } from '../ui/Select.tsx'
 import { inspectField, MIXED, sharedFields, type InspectedField, type Recipe, type TextHeight } from './inspect.ts'
 import { useEdits } from './useEdits.ts'
 import { useInspected } from './useInspected.ts'
@@ -92,6 +94,33 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
           onChange={(value) => onWrite(inspected.write(value))}
         />
       )
+    case 'color': {
+      const { field, value } = inspected
+      return (
+        <ColorField
+          label={field.label}
+          name={field.name}
+          value={value === MIXED ? undefined : value}
+          nullable={field.nullable}
+          placeholder={value === MIXED ? MIXED_LABEL : field.placeholder}
+          resetKey={resetKey}
+          onCommit={(value) => onWrite(inspected.write(value))}
+        />
+      )
+    }
+    case 'select': {
+      const { field, value } = inspected
+      return (
+        <Select
+          label={field.label}
+          name={field.name}
+          value={value === MIXED ? undefined : value}
+          options={field.options}
+          placeholder={MIXED_LABEL}
+          onChange={(value) => onWrite(inspected.write(value))}
+        />
+      )
+    }
     case 'readonly':
       return <ReadOnly label={field.label} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
   }

@@ -6,9 +6,11 @@
 // Ranges come from the Document schema. A write returns the next Layer; an optional
 // field written with its default value leaves the key out of the Document.
 import {
+  FITS,
   RectLayerSchema,
-  validateDocument,
-  type Document,
+  ShadowSchema,
+  type Fit,
+  type Shadow,
   type ImageLayer,
   type Layer,
   type LayerType,
@@ -16,18 +18,21 @@ import {
   type TextLayer,
 } from '@bannerkit/core'
 import { roundAngle, roundPx } from '../editor/rounding.ts'
+import type { SelectOption } from '../ui/Select.tsx'
 
-type FieldBase = {
+type FieldBase<L extends Layer = Layer> = {
   /** Stable id of the field, unique within its Layer type (and shared across types for the same field). */
   key: string
   /** Shown beside the control. */
   label: string
   /** Accessible name of the control; defaults to `label`. */
   name?: string
+  /** The field is shown only when this holds (e.g. shadow blur while the shadow is on). Default: always. */
+  when?: (layer: L) => boolean
 }
 
 /** A number typed (or stepped with the arrow keys) in a NumberField. */
-export type NumberFieldSpec<L extends Layer = Layer> = FieldBase & {
+export type NumberFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'number'
   min?: number
   max?: number
@@ -48,19 +53,42 @@ export type NumberFieldSpec<L extends Layer = Layer> = FieldBase & {
 }
 
 /** An on/off switch. */
-export type ToggleFieldSpec<L extends Layer = Layer> = FieldBase & {
+export type ToggleFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'toggle'
   read: (layer: L) => boolean
   write: (layer: L, value: boolean) => L
 }
 
 /** A value shown but never edited (the Layer id). */
-export type ReadOnlyFieldSpec<L extends Layer = Layer> = FieldBase & {
+export type ReadOnlyFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'readonly'
   read: (layer: L) => string
 }
 
-export type FieldSpec<L extends Layer = Layer> = NumberFieldSpec<L> | ToggleFieldSpec<L> | ReadOnlyFieldSpec<L>
+/** One of a fixed set of options, picked from a Select. */
+export type SelectFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
+  control: 'select'
+  options: readonly SelectOption[]
+  read: (layer: L) => string
+  write: (layer: L, value: string) => L
+}
+
+/** A CSS colour, typed or picked in a ColorField; `null` is "none" (only when `nullable`). */
+export type ColorFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
+  control: 'color'
+  nullable?: boolean
+  /** Shown when `read` gives `undefined` (e.g. a gradient fill). */
+  placeholder?: string
+  read: (layer: L) => string | null | undefined
+  write: (layer: L, value: string | null) => L
+}
+
+export type FieldSpec<L extends Layer = Layer> =
+  | ColorFieldSpec<L>
+  | NumberFieldSpec<L>
+  | ToggleFieldSpec<L>
+  | ReadOnlyFieldSpec<L>
+  | SelectFieldSpec<L>
 
 /** A titled group of fields: one Section in the Inspector. */
 export type FieldGroup<L extends Layer = Layer> = { key: string; title: string; fields: FieldSpec<L>[] }
@@ -158,29 +186,122 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
         },
       ],
     },
+    shadowGroup<L>(),
+  ]
+}
+
+/** The shadow a Layer gets when its Shadow switch is turned on. */
+export const DEFAULT_SHADOW: Shadow = { color: 'rgba(0,0,0,0.5)', blur: 8, offsetX: 0, offsetY: 4 }
+
+const shadowShape = ShadowSchema.shape
+
+/** A number of the Layer's shadow, shown while the shadow is on. */
+function shadowNumber<L extends Layer>(
+  key: 'blur' | 'offsetX' | 'offsetY',
+  label: string,
+  name: string,
+  min?: number,
+): NumberFieldSpec<L> {
+  return {
+    control: 'number',
+    key: `shadow.${key}`,
+    label,
+    name,
+    min,
+    when: (l) => l.shadow !== undefined,
+    read: (l) => l.shadow?.[key],
+    write: (l, value) => (l.shadow ? { ...l, shadow: { ...l.shadow, [key]: value } } : l),
+  }
+}
+
+/** Every Layer's shadow: a switch (off removes the key) and, while on, its fields. */
+function shadowGroup<L extends Layer>(): FieldGroup<L> {
+  return {
+    key: 'shadow',
+    title: 'Shadow',
+    fields: [
+      {
+        control: 'toggle',
+        key: 'shadow',
+        label: 'Shadow',
+        read: (l) => l.shadow !== undefined,
+        write: (l, on) => {
+          const next = { ...l }
+          if (on) next.shadow = l.shadow ?? { ...DEFAULT_SHADOW }
+          else delete next.shadow
+          return next
+        },
+      },
+      {
+        control: 'color',
+        key: 'shadow.color',
+        label: 'Color',
+        name: 'Shadow color',
+        when: (l) => l.shadow !== undefined,
+        read: (l) => l.shadow?.color,
+        write: (l, color) => (l.shadow && color !== null ? { ...l, shadow: { ...l.shadow, color } } : l),
+      },
+      shadowNumber<L>('blur', 'Blur', 'Blur', shadowShape.blur.minValue ?? undefined),
+      shadowNumber<L>('offsetX', 'X', 'Offset X'),
+      shadowNumber<L>('offsetY', 'Y', 'Offset Y'),
+    ],
+  }
+}
+
+/** The fields of a rect Layer (a gradient `fill` gets its own editor later). */
+function rectGroups(): FieldGroup<RectLayer>[] {
+  return [
+    {
+      key: 'rect',
+      title: 'Rectangle',
+      fields: [
+        {
+          control: 'color',
+          key: 'fill',
+          label: 'Fill',
+          placeholder: 'Gradient',
+          read: (l) => (typeof l.fill === 'string' ? l.fill : undefined),
+          write: (l, fill) => (fill === null ? l : { ...l, fill }),
+        },
+        {
+          control: 'number',
+          key: 'cornerRadius',
+          label: 'Radius',
+          name: 'Corner radius',
+          min: shape.cornerRadius.unwrap().minValue ?? undefined,
+          read: (l) => l.cornerRadius ?? 0,
+          write: (l, cornerRadius) => setOptional(l, 'cornerRadius', cornerRadius, 0),
+        },
+      ],
+    },
+  ]
+}
+
+/** The fields of an image Layer (its `src` is edited in the JSON tab). */
+function imageGroups(): FieldGroup<ImageLayer>[] {
+  return [
+    {
+      key: 'image',
+      title: 'Image',
+      fields: [
+        {
+          control: 'select',
+          key: 'fit',
+          label: 'Fit',
+          options: FITS.map((fit) => ({ value: fit, label: fit[0]!.toUpperCase() + fit.slice(1) })),
+          read: (l) => l.fit,
+          write: (l, fit) => ({ ...l, fit: fit as Fit }),
+        },
+      ],
+    },
   ]
 }
 
 /** The Inspector's fields per Layer type, top to bottom. */
 export const LAYER_FIELDS: { [T in LayerType]: FieldGroup<LayerOf<T>>[] } = {
-  rect: commonGroups<RectLayer>(),
-  image: commonGroups<ImageLayer>(),
+  rect: [...commonGroups<RectLayer>(), ...rectGroups()],
+  image: [...commonGroups<ImageLayer>(), ...imageGroups()],
   text: commonGroups<TextLayer>(),
-}
-
-/** The field groups the Inspector shows for `layer`. */
-export function fieldsFor(layer: Layer): FieldGroup[] {
-  return LAYER_FIELDS[layer.type] as FieldGroup[]
-}
-
-/**
- * `document` with Layer `id` rewritten by `write`. When the result is not a valid
- * Document (a value outside the schema, a broken cross-field rule) `document` itself
- * comes back, so the edit changes nothing.
- */
-export function editLayer(document: Document, id: string, write: (layer: Layer) => Layer): Document {
-  const next = { ...document, layers: document.layers.map((l) => (l.id === id ? write(l) : l)) }
-  return validateDocument(next).ok ? next : document
 }
 
 /** Writes `value` into `field` of `layer`, rounded as the field rounds typed values. */
