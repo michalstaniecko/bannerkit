@@ -1,5 +1,5 @@
 // S3: the Layer list and the toolbar in the editor app, autosaved to disk.
-import type { Document } from '@bannerkit/core'
+import type { Document, Layer } from '@bannerkit/core'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
 
@@ -36,6 +36,21 @@ async function open(page: Page, url: string) {
 
 const rows = (page: Page) => page.locator('.layer-list li')
 const row = (page: Page, id: string) => page.locator(`.layer-list li[data-layer-id="${id}"]`)
+/** Drags the row of `from` onto the top, middle or bottom of the row of `to`. */
+async function drop(page: Page, from: string, to: string, part: 'top' | 'middle' | 'bottom') {
+  const target = row(page, to).locator('> .layer-row')
+  const { width, height } = (await target.boundingBox())!
+  const y = { top: 0.1, middle: 0.5, bottom: 0.9 }[part] * height
+  await row(page, from).locator('> .layer-row .layer-name').dragTo(target, { targetPosition: { x: width / 2, y } })
+}
+/** The shown rows top → bottom, indented two spaces per depth. */
+const tree = (page: Page) =>
+  page
+    .locator('.layer-list li')
+    .evaluateAll((lis) => lis.map((li) => '  '.repeat(Number((li as HTMLElement).dataset.depth)) + (li as HTMLElement).dataset.layerId))
+/** The Document's Layer tree, bottom → top: ids, a Group as `{ id: [...] }`. */
+const shape = (layers: readonly Layer[]): unknown[] =>
+  layers.map((l) => (l.type === 'group' ? { [l.id]: shape(l.layers) } : l.id))
 const idsOnDisk = async (read: () => Promise<Document>) => (await read()).layers.map((l) => l.id)
 
 test('the Layer list shows Layers top → bottom; dragging reorders and is autosaved', async ({ page, projects }) => {
@@ -45,7 +60,7 @@ test('the Layer list shows Layers top → bottom; dragging reorders and is autos
 
   await expect(rows(page)).toHaveText(['text-1', 'rect-2', 'rect-1'])
 
-  await row(page, 'rect-1').dragTo(row(page, 'text-1'))
+  await drop(page, 'rect-1', 'text-1', 'top')
 
   await expect(rows(page)).toHaveText(['rect-1', 'text-1', 'rect-2'])
   await expect.poll(() => idsOnDisk(read)).toEqual(['rect-2', 'text-1', 'rect-1'])
@@ -139,4 +154,65 @@ test('the top bar creates a Document from a Preset and duplicates one to another
   await expect(rows(page)).toHaveCount(0)
   expect((await projects.read('s3-docs', 'mrec')).canvas).toMatchObject({ width: 300, height: 250 })
   await expect(page.getByRole('combobox', { name: /^Document/ })).toHaveValue('mrec')
+})
+
+const grouped: Document = {
+  ...banner,
+  name: 'grouped',
+  layers: [
+    banner.layers[0]!,
+    {
+      id: 'group-1',
+      type: 'group',
+      name: 'Badge',
+      layers: [banner.layers[1]!, { id: 'group-2', type: 'group', layers: [banner.layers[2]!] }],
+    },
+  ],
+}
+
+test('dragging rows moves Layers into a Group, out of it and between levels; each drop is one undo step', async ({ page, projects }) => {
+  await projects.write('s3-tree', { documents: { grouped } })
+  await open(page, projects.appUrl('s3-tree', 'grouped'))
+  const read = async () => shape((await projects.read('s3-tree', 'grouped')).layers)
+
+  await expect.poll(() => tree(page)).toEqual(['group-1', '  group-2', '    text-1', '  rect-2', 'rect-1'])
+
+  // the middle of a Group row: on top of its Layers
+  await drop(page, 'rect-1', 'group-2', 'middle')
+  await expect.poll(() => tree(page)).toEqual(['group-1', '  group-2', '    rect-1', '    text-1', '  rect-2'])
+  await expect.poll(read).toEqual([{ 'group-1': ['rect-2', { 'group-2': ['text-1', 'rect-1'] }] }])
+
+  // out of a Group, below a row one level up
+  await drop(page, 'text-1', 'rect-2', 'bottom')
+  await expect.poll(() => tree(page)).toEqual(['group-1', '  group-2', '    rect-1', '  rect-2', '  text-1'])
+
+  // out to the root, above the top Group
+  await drop(page, 'rect-2', 'group-1', 'top')
+  await expect.poll(() => tree(page)).toEqual(['rect-2', 'group-1', '  group-2', '    rect-1', '  text-1'])
+  await expect.poll(read).toEqual([{ 'group-1': ['text-1', { 'group-2': ['rect-1'] }] }, 'rect-2'])
+
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(() => tree(page)).toEqual(['group-1', '  group-2', '    rect-1', '  rect-2', '  text-1'])
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(() => tree(page)).toEqual(['group-1', '  group-2', '    text-1', '  rect-2', 'rect-1'])
+})
+
+test('a Group cannot be dropped into its descendant; moving out its last Layer removes it', async ({ page, projects }) => {
+  await projects.write('s3-tree-rules', { documents: { grouped } })
+  await open(page, projects.appUrl('s3-tree-rules', 'grouped'))
+  const read = async () => shape((await projects.read('s3-tree-rules', 'grouped')).layers)
+  const initial = ['group-1', '  group-2', '    text-1', '  rect-2', 'rect-1']
+
+  await drop(page, 'group-1', 'group-2', 'middle')
+  await drop(page, 'group-1', 'text-1', 'top')
+  await expect.poll(() => tree(page)).toEqual(initial)
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled()
+
+  await drop(page, 'text-1', 'rect-1', 'bottom')
+  await expect.poll(() => tree(page)).toEqual(['group-1', '  rect-2', 'rect-1', 'text-1'])
+  await expect.poll(read).toEqual(['text-1', 'rect-1', { 'group-1': ['rect-2'] }])
+
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(() => tree(page)).toEqual(initial)
 })
