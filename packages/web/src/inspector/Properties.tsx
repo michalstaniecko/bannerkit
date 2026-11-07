@@ -115,7 +115,7 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
           label={field.label}
           name={field.name}
           value={value === MIXED ? undefined : value}
-          options={field.options}
+          options={inspected.options}
           placeholder={MIXED_LABEL}
           onChange={(value) => onWrite(inspected.write(value))}
         />

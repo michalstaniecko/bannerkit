@@ -1,8 +1,9 @@
 // inspect.ts on its own: which fields several Layers share, and Mixed toggles (hidden or
-// locked Layers, the only ones that differ there, are selected from the Layer list).
-import type { Layer } from '@bannerkit/core'
+// locked Layers, the only ones that differ there, are selected from the Layer list),
+// and font family/weight picked from a font manifest.
+import type { Layer, TextLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
-import type { FieldGroup } from '../src/inspector/fields.ts'
+import { layerFields, type FieldGroup } from '../src/inspector/fields.ts'
 import { inspectField, MIXED, sharedFields } from '../src/inspector/inspect.ts'
 import { doc, image, rect, text } from './editor-harness.ts'
 
@@ -31,6 +32,18 @@ describe('sharedFields', () => {
     expect(keys(sharedFields([rect(), text(), image()], table as never))).toEqual([['layout', ['x']]])
   })
 
+  it('a field key shared by types is shown even when the types keep it in different groups', () => {
+    const own = {
+      rect: groups(['layout', ['x']], ['rect', ['fill', 'cornerRadius']]),
+      text: groups(['layout', ['x']], ['text', ['fontSize', 'fill']]),
+      image: [],
+    }
+    expect(keys(sharedFields([rect(), text()], own as never))).toEqual([
+      ['layout', ['x']],
+      ['rect', ['fill']],
+    ])
+  })
+
   it('no Layers show no fields', () => {
     expect(sharedFields([], table as never)).toEqual([])
   })
@@ -47,5 +60,38 @@ describe('a toggle over several Layers', () => {
 
     expect(inspected.value).toBe(MIXED)
     expect(inspected.write(true)(doc(layers)).layers).toEqual([rect({ id: 'a' }), rect({ id: 'b' })])
+  })
+})
+
+describe('font family and weight from a font manifest', () => {
+  const face = (family: string, weight: TextLayer['fontWeight']) => ({ family, weight, style: 'normal' as const, file: `${family}-${weight}.ttf` })
+  const manifest = [face('Inter', 400), face('Inter', 700), face('Serif', 300), face('Serif', 500), face('Serif', 900), face('Mono', 400)]
+  const textHeight = () => 0
+  const inspect = (key: string, layers: Layer[]) => {
+    const field = sharedFields(layers, layerFields(manifest)).flatMap((g) => g.fields).find((f) => f.key === key)!
+    const inspected = inspectField(field, layers, { textHeight })
+    if (inspected.control !== 'select') throw new Error('not a select')
+    return inspected
+  }
+  const values = (inspected: { options: readonly { value: string }[] }) => inspected.options.map((o) => o.value)
+
+  it('offers the families of the manifest and the weights of the Layer’s family', () => {
+    expect(values(inspect('fontFamily', [text({ fontWeight: 400 })]))).toEqual(['Inter', 'Serif', 'Mono'])
+    expect(values(inspect('fontWeight', [text({ fontFamily: 'Serif', fontWeight: 500 })]))).toEqual(['300', '500', '900'])
+  })
+
+  it('a family without the Layer’s weight takes its nearest weight (a tie goes heavier)', () => {
+    const write = (from: TextLayer, family: string) => inspect('fontFamily', [from]).write(family)(doc([from])).layers[0]
+    expect(write(text({ fontWeight: 700 }), 'Serif')).toEqual(text({ fontFamily: 'Serif', fontWeight: 900 }))
+    expect(write(text({ fontWeight: 700, id: 'x' }), 'Inter')).toEqual(text({ fontWeight: 700, id: 'x' }))
+    expect(write(text({ fontWeight: 400 }), 'Serif')).toEqual(text({ fontFamily: 'Serif', fontWeight: 500 }))
+    expect(write(text({ fontFamily: 'Serif', fontWeight: 900 }), 'Inter')).toEqual(text({ fontFamily: 'Inter', fontWeight: 700 }))
+    expect(write(text({ fontFamily: 'Serif', fontWeight: 300 }), 'Mono')).toEqual(text({ fontFamily: 'Mono', fontWeight: 400 }))
+  })
+
+  it('several texts are offered only the weights all their families have', () => {
+    const layers = [text({ id: 'a', fontWeight: 400 }), text({ id: 'b', fontFamily: 'Mono', fontWeight: 400 })]
+    expect(values(inspect('fontWeight', layers))).toEqual(['400'])
+    expect(inspect('fontFamily', layers).value).toBe(MIXED)
   })
 })

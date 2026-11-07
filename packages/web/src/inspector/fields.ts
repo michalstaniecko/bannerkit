@@ -6,10 +6,13 @@
 // Ranges come from the Document schema. A write returns the next Layer; an optional
 // field written with its default value leaves the key out of the Document.
 import {
+  DEFAULT_LINE_HEIGHT,
   FITS,
   RectLayerSchema,
   ShadowSchema,
+  TextLayerSchema,
   type Fit,
+  type FontManifest,
   type Shadow,
   type ImageLayer,
   type Layer,
@@ -17,6 +20,7 @@ import {
   type RectLayer,
   type TextLayer,
 } from '@bannerkit/core'
+import { fontManifest } from '../editor/fonts.ts'
 import { roundAngle, roundPx } from '../editor/rounding.ts'
 import type { SelectOption } from '../ui/Select.tsx'
 
@@ -65,10 +69,11 @@ export type ReadOnlyFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   read: (layer: L) => string
 }
 
-/** One of a fixed set of options, picked from a Select. */
+/** One of a set of options, picked from a Select. */
 export type SelectFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'select'
-  options: readonly SelectOption[]
+  /** The options, or the options a Layer can take (e.g. the weights of its font family). */
+  options: readonly SelectOption[] | ((layer: L) => readonly SelectOption[])
   read: (layer: L) => string
   write: (layer: L, value: string) => L
 }
@@ -297,12 +302,144 @@ function imageGroups(): FieldGroup<ImageLayer>[] {
   ]
 }
 
-/** The Inspector's fields per Layer type, top to bottom. */
-export const LAYER_FIELDS: { [T in LayerType]: FieldGroup<LayerOf<T>>[] } = {
-  rect: [...commonGroups<RectLayer>(), ...rectGroups()],
-  image: [...commonGroups<ImageLayer>(), ...imageGroups()],
-  text: commonGroups<TextLayer>(),
+/** Select options for `values`, each labelled with its value capitalised. */
+const options = (values: readonly string[]): SelectOption[] =>
+  values.map((value) => ({ value, label: value[0]!.toUpperCase() + value.slice(1) }))
+
+type FontWeight = TextLayer['fontWeight']
+type Align = NonNullable<TextLayer['align']>
+type VerticalAlign = NonNullable<TextLayer['verticalAlign']>
+const textShape = TextLayerSchema.shape
+const ALIGNS = textShape.align.unwrap().options
+const VERTICAL_ALIGNS = textShape.verticalAlign.unwrap().options
+
+/** The common name of each font weight, shown beside the number. */
+const WEIGHT_NAMES: Record<FontWeight, string> = {
+  100: 'Thin',
+  200: 'Extra Light',
+  300: 'Light',
+  400: 'Regular',
+  500: 'Medium',
+  600: 'Semi Bold',
+  700: 'Bold',
+  800: 'Extra Bold',
+  900: 'Black',
 }
+
+/** The weights `manifest` has for `family`, lightest first. */
+function weightsOf(manifest: FontManifest, family: string): FontWeight[] {
+  const weights = manifest.filter((f) => f.family === family).map((f) => f.weight as FontWeight)
+  return [...new Set(weights)].sort((a, b) => a - b)
+}
+
+/** The weight of `family` closest to `weight` (on a tie the heavier), or `weight` when it has none. */
+export function nearestWeight(manifest: FontManifest, family: string, weight: FontWeight): FontWeight {
+  const weights = weightsOf(manifest, family)
+  if (weights.length === 0) return weight
+  return weights.reduce((best, w) => (Math.abs(w - weight) <= Math.abs(best - weight) ? w : best))
+}
+
+/**
+ * The typography of a text Layer (its text is edited on the Canvas). Font family and
+ * weight are picked only from the family/weight pairs of `manifest`; a family without
+ * the Layer's weight takes its nearest weight.
+ */
+function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
+  const families = [...new Set(manifest.map((f) => f.family))]
+  return [
+    {
+      key: 'text',
+      title: 'Text',
+      fields: [
+        {
+          control: 'select',
+          key: 'fontFamily',
+          label: 'Font',
+          name: 'Font family',
+          options: families.map((family) => ({ value: family, label: family })),
+          read: (l) => l.fontFamily,
+          write: (l, fontFamily) => ({ ...l, fontFamily, fontWeight: nearestWeight(manifest, fontFamily, l.fontWeight) }),
+        },
+        {
+          control: 'select',
+          key: 'fontWeight',
+          label: 'Weight',
+          name: 'Font weight',
+          options: (l) => weightsOf(manifest, l.fontFamily).map((w) => ({ value: String(w), label: `${w} ${WEIGHT_NAMES[w]}` })),
+          read: (l) => String(l.fontWeight),
+          write: (l, weight) => ({ ...l, fontWeight: Number(weight) as FontWeight }),
+        },
+        {
+          // The declared (largest) size; above 0, which the schema checks on write.
+          control: 'number',
+          key: 'fontSize',
+          label: 'Size',
+          name: 'Font size',
+          read: (l) => l.fontSize,
+          write: (l, fontSize) => ({ ...l, fontSize }),
+        },
+        {
+          control: 'number',
+          key: 'lineHeight',
+          label: 'Line',
+          name: 'Line height',
+          step: 0.01,
+          read: (l) => l.lineHeight ?? DEFAULT_LINE_HEIGHT,
+          write: (l, lineHeight) => setOptional(l, 'lineHeight', lineHeight, DEFAULT_LINE_HEIGHT),
+        },
+        {
+          control: 'number',
+          key: 'letterSpacing',
+          label: 'Spacing',
+          name: 'Letter spacing',
+          step: 0.1,
+          read: (l) => l.letterSpacing ?? 0,
+          write: (l, letterSpacing) => setOptional(l, 'letterSpacing', letterSpacing, 0),
+        },
+        {
+          // Same key as a rect's fill, so rects and texts together share one Fill field.
+          control: 'color',
+          key: 'fill',
+          label: 'Fill',
+          read: (l) => l.fill,
+          write: (l, fill) => (fill === null ? l : { ...l, fill }),
+        },
+        {
+          control: 'select',
+          key: 'align',
+          label: 'Align',
+          options: options(ALIGNS),
+          read: (l) => l.align ?? 'left',
+          write: (l, align) => setOptional(l, 'align', align as Align, 'left'),
+        },
+        {
+          control: 'select',
+          key: 'verticalAlign',
+          label: 'V align',
+          name: 'Vertical align',
+          options: options(VERTICAL_ALIGNS),
+          read: (l) => l.verticalAlign ?? 'top',
+          write: (l, verticalAlign) => setOptional(l, 'verticalAlign', verticalAlign as VerticalAlign, 'top'),
+        },
+      ],
+    },
+  ]
+}
+
+/** The Inspector's fields per Layer type, top to bottom. */
+export type FieldTable = { [T in LayerType]: FieldGroup<LayerOf<T>>[] }
+
+/** The Inspector's fields, with fonts picked from `manifest`. */
+export function layerFields(manifest: FontManifest): FieldTable {
+  return {
+    rect: [...commonGroups<RectLayer>(), ...rectGroups()],
+    image: [...commonGroups<ImageLayer>(), ...imageGroups()],
+    text: [...commonGroups<TextLayer>(), ...textGroups(manifest)],
+  }
+}
+
+/** The Inspector's fields, with fonts from the app's font manifest. */
+export const LAYER_FIELDS: FieldTable = layerFields(fontManifest)
 
 /** Writes `value` into `field` of `layer`, rounded as the field rounds typed values. */
 export function writeNumber(field: NumberFieldSpec, layer: Layer, value: number): Layer {

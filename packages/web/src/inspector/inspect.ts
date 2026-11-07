@@ -5,13 +5,15 @@
 // Group's Box): `x`/`y` move every Layer by the same delta, `width`/`height` are
 // disabled. Every write is a recipe for `editor.update`: all Layers change in one
 // step, or, when any result is not a valid Document, none does.
-import { boxExtent, validateDocument, type Document, type Layer, type LayerType, type Rect, type TextLayer } from '@bannerkit/core'
+import { boxExtent, validateDocument, type Document, type Layer, type Rect, type TextLayer } from '@bannerkit/core'
 import { roundPx } from '../editor/rounding.ts'
+import type { SelectOption } from '../ui/Select.tsx'
 import {
   LAYER_FIELDS,
   writeNumber,
   type ColorFieldSpec,
   type FieldGroup,
+  type FieldTable,
   type FieldSpec,
   type NumberFieldSpec,
   type SelectFieldSpec,
@@ -41,16 +43,22 @@ export type InspectedField =
   | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => Recipe }
   | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; write: (value: boolean) => Recipe }
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
-  | { control: 'select'; field: SelectFieldSpec; value: Shared<string>; write: (value: string) => Recipe }
+  | {
+      control: 'select'
+      field: SelectFieldSpec
+      /** The options every one of the Layers can take. */
+      options: readonly SelectOption[]
+      value: Shared<string>
+      write: (value: string) => Recipe
+    }
   | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => Recipe }
 
-type FieldTable = { [T in LayerType]: FieldGroup<Extract<Layer, { type: T }>>[] }
-
 /**
- * The field groups shown for `layers`: the groups and fields every Layer type in it
- * has, in the order of the first one, less a field whose `when` fails for any of the
- * Layers (e.g. shadow blur while some Layer has no shadow). A group left without
- * fields is dropped.
+ * The field groups shown for `layers`: the groups of the first Layer type, holding
+ * only the fields (by key, in whichever group) every other type has too, less a field
+ * whose `when` fails for any of the Layers (e.g. shadow blur while some Layer has no
+ * shadow). So a rect's and a text's `fill` show as one field although each sits in
+ * its type's own group. A group left without fields is dropped.
  */
 export function sharedFields(layers: readonly Layer[], table: FieldTable = LAYER_FIELDS): FieldGroup[] {
   const types = [...new Set(layers.map((l) => l.type))]
@@ -60,7 +68,7 @@ export function sharedFields(layers: readonly Layer[], table: FieldTable = LAYER
     .map((group) => ({
       ...group,
       fields: group.fields.filter((field) =>
-        rest.every((groups) => groups.find((g) => g.key === group.key)?.fields.some((f) => f.key === field.key)) &&
+        rest.every((groups) => groups.some((g) => g.fields.some((f) => f.key === field.key))) &&
         layers.every((layer) => field.when?.(layer) ?? true),
       ),
     }))
@@ -101,6 +109,14 @@ export function moveLayers(document: Document, ids: readonly string[], dx: numbe
   return editLayers(document, ids, (l) => ({ ...l, x: l.x + dx, y: l.y + dy }))
 }
 
+/** The options of `field` every one of `layers` can take, in the first Layer's order. */
+function sharedOptions(field: SelectFieldSpec, layers: readonly Layer[]): readonly SelectOption[] {
+  const { options } = field
+  if (typeof options !== 'function') return options
+  const [first, ...rest] = layers.map(options)
+  return (first ?? []).filter((o) => rest.every((more) => more.some((m) => m.value === o.value)))
+}
+
 /** What `field` shows for `layers` and how a value set on it changes the Document. */
 export function inspectField(field: FieldSpec, layers: readonly Layer[], options: InspectOptions): InspectedField {
   const ids = layers.map((l) => l.id)
@@ -113,7 +129,13 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
     case 'toggle':
       return { control: 'toggle', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
     case 'select':
-      return { control: 'select', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
+      return {
+        control: 'select',
+        field,
+        options: sharedOptions(field, layers),
+        value: sharedValue(layers, field.read),
+        write: (value) => each((l) => field.write(l, value)),
+      }
     case 'color':
       return { control: 'color', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
     case 'number': {
