@@ -27,6 +27,7 @@ import {
   linearGradientLine,
   type ImageLayer,
   type Layer,
+  type LeafLayer,
   type LinearGradient,
   type MeasureText,
   type RectLayer,
@@ -47,7 +48,7 @@ type LocalBox = { cx: number; cy: number; width: number; height: number }
 const localBoxes = new WeakMap<FabricObject, LocalBox>()
 
 /** Lays a Layer out as a Fabric object. An image whose Asset fails to load becomes a hatched placeholder. */
-export async function layerToObject(layer: Layer, env: MapperEnv): Promise<FabricObject> {
+export async function layerToObject(layer: LeafLayer, env: MapperEnv): Promise<FabricObject> {
   const object =
     layer.type === 'rect'
       ? new Rect()
@@ -64,7 +65,7 @@ export async function layerToObject(layer: Layer, env: MapperEnv): Promise<Fabri
  * is replaced by the Layer's: scale returns to the Fit's (1 for rects and text) and
  * the Box is in `width`/`height`.
  */
-export function applyLayer(object: FabricObject, layer: Layer, env: MapperEnv): void {
+export function applyLayer(object: FabricObject, layer: LeafLayer, env: MapperEnv): void {
   let box: LocalBox
   if (layer.type === 'text' && object instanceof Textbox) box = applyText(object, layer, env)
   else if (layer.type === 'image' && object instanceof FabricImage) box = applyImage(object, layer)
@@ -81,12 +82,12 @@ export function applyLayer(object: FabricObject, layer: Layer, env: MapperEnv): 
 }
 
 /** The Layer `object` now shows, with the fields Fabric does not own taken from `base`. */
-export function objectToLayer(object: FabricObject, base: Layer): Layer {
+export function objectToLayer(object: FabricObject, base: LeafLayer): LeafLayer {
   const box = localBoxes.get(object) ?? { cx: 0, cy: 0, width: object.width, height: object.height }
   const width = clean(box.width * object.scaleX)
   const height = clean(box.height * object.scaleY)
   const centre = new Point(box.cx, box.cy).transform(object.calcTransformMatrix())
-  const layer: Layer = { ...base, x: clean(centre.x - width / 2), y: clean(centre.y - height / 2), width }
+  const layer: LeafLayer = { ...base, x: clean(centre.x - width / 2), y: clean(centre.y - height / 2), width }
   if ('height' in base && base.height !== undefined) (layer as { height: number }).height = height
   setOptional(layer, 'rotation', normaliseAngle(object.angle), 0)
   setOptional(layer, 'opacity', object.opacity, 1)
@@ -284,7 +285,7 @@ export function isFrozen(layer: Layer): boolean {
   return layer.locked === true || layer.visible === false
 }
 
-function commonProps(layer: Layer) {
+function commonProps(layer: LeafLayer) {
   return {
     originX: 'center' as const,
     originY: 'center' as const,
@@ -331,10 +332,10 @@ function normaliseAngle(angle: number): number {
 }
 
 function setOptional<K extends 'rotation' | 'opacity' | 'visible'>(
-  layer: Layer,
+  layer: LeafLayer,
   key: K,
-  value: NonNullable<Layer[K]>,
-  fallback: NonNullable<Layer[K]>,
+  value: NonNullable<LeafLayer[K]>,
+  fallback: NonNullable<LeafLayer[K]>,
 ) {
   if (value === fallback && layer[key] === undefined) return
   layer[key] = value

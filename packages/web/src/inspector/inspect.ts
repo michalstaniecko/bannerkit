@@ -101,10 +101,12 @@ export function sharedValue<T>(layers: readonly Layer[], read: (layer: Layer) =>
   return values.every((v) => v === values[0]) ? values[0]! : MIXED
 }
 
-/** The axis-aligned union of the `boxExtent`s of `layers`: their Selection Box. */
+/** The axis-aligned union of the `boxExtent`s of `layers` (a Group's: of its children): their Selection Box. */
 export function sharedBox(layers: readonly Layer[], textHeight: TextHeight): Rect {
   const extents = layers.map((l) =>
-    boxExtent({ ...l, height: 'height' in l && l.height !== undefined ? l.height : textHeight(l as TextLayer) }),
+    l.type === 'group'
+      ? sharedBox(l.layers, textHeight)
+      : boxExtent({ ...l, height: 'height' in l && l.height !== undefined ? l.height : textHeight(l as TextLayer) }),
   )
   const x = Math.min(...extents.map((e) => e.x))
   const y = Math.min(...extents.map((e) => e.y))
@@ -130,10 +132,11 @@ export function selectedLayers(document: Document, ids: readonly string[]): Laye
     .filter((l) => ids.includes(l.id))
 }
 
-/** `document` with every Layer in `ids` moved by `dx`, `dy`. */
+/** `document` with every Layer in `ids` moved by `dx`, `dy` (a Group by moving everything in it). */
 export function moveLayers(document: Document, ids: readonly string[], dx: number, dy: number): Document {
   if (dx === 0 && dy === 0) return document
-  return editLayers(document, ids, (l) => ({ ...l, x: l.x + dx, y: l.y + dy }))
+  const move = (l: Layer): Layer => (l.type === 'group' ? { ...l, layers: l.layers.map(move) } : { ...l, x: l.x + dx, y: l.y + dy })
+  return editLayers(document, ids, move)
 }
 
 /** The options of `field` every one of `layers` can take, in the first Layer's order. */

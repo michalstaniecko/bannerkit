@@ -2,7 +2,7 @@
 // One call is one undo step and one `change`; the Selection stays and unchanged
 // images are not loaded again.
 import { describe, expect, it } from 'vitest'
-import { doc, image, openEditor, rect } from './editor-harness.ts'
+import { doc, image, leaves, openEditor, rect } from './editor-harness.ts'
 
 describe('update', () => {
   it('changes the Document as one undo step and one change with its cause', async () => {
@@ -11,7 +11,7 @@ describe('update', () => {
 
     await editor.update((d) => ({ ...d, layers: [{ ...d.layers[0]!, x: 120 }] }), { cause: 'inspector' })
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 120, y: 100 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 120, y: 100 })
     expect(changes.map((c) => [c.cause, c.layerIds])).toEqual([['inspector', ['rect-1']]])
     expect(changes[0]!.document).toEqual(editor.getDocument())
     await editor.undo()
@@ -32,7 +32,7 @@ describe('update', () => {
     expect(editor.getSelection()).toEqual(['rect-1', 'rect-2'])
     expect(selections).toEqual([])
     // Laid out in the scene, not relative to the selection that holds them.
-    expect(editor.getDocument().layers.map((l) => [l.x, l.y])).toEqual([[100, 20], [250, 20]])
+    expect(leaves(editor.getDocument()).map((l) => [l.x, l.y])).toEqual([[100, 20], [250, 20]])
   })
 
   it('lays an image out again on the object it has, without loading it again', async () => {
@@ -43,7 +43,7 @@ describe('update', () => {
 
     expect(editor.objectFor('image-1')).toBe(shown)
     expect(shown).toMatchObject({ opacity: 0.5 })
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 30, opacity: 0.5 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 30, opacity: 0.5 })
   })
 
   it('shows a changed image src (or any new Layer) afresh, still keeping the Selection', async () => {

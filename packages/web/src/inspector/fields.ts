@@ -19,6 +19,7 @@ import {
   type Shadow,
   type ImageLayer,
   type Layer,
+  type LeafLayer,
   type LayerType,
   type LinearGradient,
   type RectLayer,
@@ -141,7 +142,7 @@ const shape = RectLayerSchema.shape
 const opacityRange = shape.opacity.unwrap()
 
 /** The fields every Layer type has. */
-function commonGroups<L extends Layer>(): FieldGroup<L>[] {
+function commonGroups<L extends LeafLayer>(): FieldGroup<L>[] {
   return [
     {
       key: 'layer',
@@ -201,7 +202,7 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           step: 1,
           round: roundAngle,
           read: (l) => l.rotation ?? 0,
-          write: (l, rotation) => setOptional<Layer, 'rotation'>(l, 'rotation', rotation, 0) as L,
+          write: (l, rotation) => setOptional<LeafLayer, 'rotation'>(l, 'rotation', rotation, 0) as L,
         },
       ],
     },
@@ -245,7 +246,7 @@ export const DEFAULT_SHADOW: Shadow = { color: 'rgba(0,0,0,0.5)', blur: 8, offse
 const shadowShape = ShadowSchema.shape
 
 /** A number of the Layer's shadow, shown while the shadow is on. */
-function shadowNumber<L extends Layer>(
+function shadowNumber<L extends LeafLayer>(
   key: 'blur' | 'offsetX' | 'offsetY',
   label: string,
   name: string,
@@ -264,7 +265,7 @@ function shadowNumber<L extends Layer>(
 }
 
 /** Every Layer's shadow: a switch (off removes the key) and, while on, its fields. */
-function shadowGroup<L extends Layer>(): FieldGroup<L> {
+function shadowGroup<L extends LeafLayer>(): FieldGroup<L> {
   return {
     key: 'shadow',
     title: 'Shadow',
@@ -570,6 +571,8 @@ export function layerFields(manifest: FontManifest): FieldTable {
     rect: [...commonGroups<RectLayer>(), ...rectGroups()],
     image: [...commonGroups<ImageLayer>(), ...imageGroups()],
     text: [...commonGroups<TextLayer>(), ...textGroups(manifest), textFillGroup()],
+    // The editor does not show Groups yet, so none is ever selected; their fields come with the Group Inspector (#28).
+    group: [],
   }
 }
 

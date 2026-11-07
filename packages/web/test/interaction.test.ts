@@ -6,6 +6,7 @@ import type { Document, ImageLayer, Layer, TextLayer } from '@bannerkit/core'
 import { Textbox } from 'fabric'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createEditor, type ChangeEvent, type Editor } from '../src/editor/index.ts'
+import { leaves } from './editor-harness.ts'
 
 const doc = (layers: Layer[]): Document => ({
   version: 2,
@@ -86,7 +87,7 @@ describe('moving', () => {
 
     drag(upper, [150, 125], [180, 145])
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 130, y: 120, width: 100, height: 50 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 130, y: 120, width: 100, height: 50 })
     expect(changes).toHaveLength(1)
     expect(changes[0]!.document).toEqual(editor.getDocument())
   })
@@ -99,7 +100,7 @@ describe('resizing and rotating', () => {
 
     drag(upper, [200, 125], [250, 125]) // the right handle
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 100, y: 100, width: 150, height: 50 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 100, y: 100, width: 150, height: 50 })
     const object = editor.objectFor('rect-1')!
     expect([object.scaleX, object.scaleY, object.width, object.height]).toEqual([1, 1, 150, 50])
     expect(changes.map((c) => c.cause)).toEqual(['transform'])
@@ -113,7 +114,7 @@ describe('resizing and rotating', () => {
     drag(upper, [125, 125], [75, 125])
 
     // height 50 → 100, growing away from the top edge (x = 175): centre (125, 125)
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 75, y: 75, width: 100, height: 100, rotation: 90 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 75, y: 75, width: 100, height: 100, rotation: 90 })
     expect(editor.objectFor('rect-1')!.scaleY).toBe(1)
   })
 
@@ -124,7 +125,7 @@ describe('resizing and rotating', () => {
 
     drag(upper, [handle.x, handle.y], [150 + 200, 125]) // pointer due right of the centre
 
-    const layer = editor.getDocument().layers[0]!
+    const layer = leaves(editor.getDocument())[0]!
     expect(layer.rotation).toBeCloseTo(90, 5)
     expect(layer).toMatchObject({ width: 100, height: 50 })
     expect(layer.x).toBeCloseTo(100, 6)
@@ -136,14 +137,14 @@ describe('whole-pixel transforms', () => {
   it('a drag, resize or multi-select move writes whole-pixel x/y/width/height', async () => {
     const { editor, upper } = await open(two())
     drag(upper, [150, 125], [180.4, 145.6])
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 130, y: 121, width: 100, height: 50 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 130, y: 121, width: 100, height: 50 })
 
     drag(upper, [230, 146], [262.7, 146]) // the right handle (Box now at x 130..230)
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 130, y: 121, width: 133, height: 50 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 130, y: 121, width: 133, height: 50 })
 
     drag(upper, [5, 5], [395, 295]) // rubber-band both
     drag(upper, [190, 146], [193.3, 148.8])
-    const [a, b] = editor.getDocument().layers
+    const [a, b] = leaves(editor.getDocument())
     expect(a).toMatchObject({ x: 133, y: 124, width: 133, height: 50 })
     expect([b!.x, b!.y, b!.width, b!.height, b!.rotation]).toEqual([253, 203, 100, 50, 30])
   })
@@ -155,7 +156,7 @@ describe('whole-pixel transforms', () => {
 
     drag(upper, [handle.x, handle.y], [150 + 200, 125 + 37]) // ≈ 100.48°
 
-    const layer = editor.getDocument().layers[0]!
+    const layer = leaves(editor.getDocument())[0]!
     expect(layer.rotation).toBe(100.5)
     expect([layer.x, layer.y, layer.width, layer.height]).toEqual([100, 100, 100, 50])
   })
@@ -195,7 +196,7 @@ describe('text Layers', () => {
     mouse(upper, 'mouseup', [right.x + 50, right.y])
     drag(upper, [left.x, left.y], [left.x - 20, left.y])
 
-    const layer = editor.getDocument().layers[0]
+    const layer = leaves(editor.getDocument())[0]
     expect(layer).toMatchObject({ x: 30, y: 50, width: 270, fontSize: 20 })
     expect(layer).not.toHaveProperty('height')
     expect([object.scaleX, object.scaleY, (object as Textbox).fontSize]).toEqual([1, 1, 20])
@@ -208,7 +209,7 @@ describe('text Layers', () => {
 
     drag(upper, [bottom.x, bottom.y], [bottom.x + 30, 150])
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 50, y: 50, width: 200, height: 100, fontSize: 20 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 50, y: 50, width: 200, height: 100, fontSize: 20 })
     expect(editor.objectFor('text-1')!.scaleY).toBe(1)
   })
 
@@ -220,7 +221,7 @@ describe('text Layers', () => {
     box.set({ text: 'Winter sale' })
     box.exitEditing()
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ text: 'Winter sale' })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ text: 'Winter sale' })
     expect(changes.map((c) => [c.cause, c.layerIds])).toEqual([['text', ['text-1']]])
   })
 
@@ -277,7 +278,7 @@ describe('baking a modification', () => {
 
     drag(upper, [140, 120], [180, 120]) // the right handle: 40 → 80 wide
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 100, y: 100, width: 80, height: 40 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 100, y: 100, width: 80, height: 40 })
     // cover of 80×40 is the image ×2 in both directions, cropped to nothing
     expect([coverScale, object.scaleX, object.scaleY]).toEqual([2, 2, 2])
   })
@@ -303,7 +304,7 @@ describe('multi-select', () => {
 
     drag(upper, [150, 125], [160, 145])
 
-    const [a, b] = editor.getDocument().layers
+    const [a, b] = leaves(editor.getDocument())
     expect(a).toMatchObject({ x: 110, y: 120, width: 100, height: 50 })
     expect(b!.x).toBeCloseTo(260, 6)
     expect(b!.y).toBeCloseTo(220, 6)
@@ -323,7 +324,7 @@ describe('nudging', () => {
     key('ArrowLeft')
     key('ArrowUp')
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 100, y: 109 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 100, y: 109 })
     expect(changes.map((c) => c.cause)).toEqual(['nudge', 'nudge', 'nudge', 'nudge'])
   })
 
@@ -333,7 +334,7 @@ describe('nudging', () => {
 
     key('ArrowLeft', { shiftKey: true })
 
-    const [a, b] = editor.getDocument().layers
+    const [a, b] = leaves(editor.getDocument())
     expect(a).toMatchObject({ x: 90, y: 100 })
     expect(b!.x).toBeCloseTo(240, 6)
   })
@@ -352,7 +353,7 @@ describe('nudging', () => {
     box.exitEditing()
 
     expect(changes).toEqual([])
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 100 })
-    expect(editor.getDocument().layers[1]).toMatchObject({ x: 10 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 100 })
+    expect(leaves(editor.getDocument())[1]).toMatchObject({ x: 10 })
   })
 })

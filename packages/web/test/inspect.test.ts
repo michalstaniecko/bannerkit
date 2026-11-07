@@ -4,7 +4,7 @@
 import type { Layer, TextLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
 import { layerFields, type FieldGroup } from '../src/inspector/fields.ts'
-import { inspectField, MIXED, sharedFields } from '../src/inspector/inspect.ts'
+import { inspectField, MIXED, moveLayers, sharedBox, sharedFields } from '../src/inspector/inspect.ts'
 import { doc, image, rect, text } from './editor-harness.ts'
 
 const toggle = (key: string) => ({ control: 'toggle' as const, key, label: key, read: () => true, write: (l: Layer) => l })
@@ -81,5 +81,15 @@ describe('font family and weight from a font manifest', () => {
     const layers = [text({ id: 'a', fontWeight: 400 }), text({ id: 'b', fontFamily: 'Mono', fontWeight: 400 })]
     expect(values(inspect('fontWeight', layers))).toEqual(['400'])
     expect(inspect('fontFamily', layers).value).toBe(MIXED)
+  })
+})
+
+describe('moveLayers and sharedBox with a Group', () => {
+  it('move every Layer inside a selected Group and bound its children', () => {
+    const group: Layer = { id: 'g', type: 'group', layers: [rect({ id: 'a', x: 0, y: 0 }), { id: 'h', type: 'group', layers: [rect({ id: 'b', x: 200, y: 50 })] }] }
+
+    const moved = moveLayers(doc([group]), ['g'], 5, 7)
+
+    expect(sharedBox(moved.layers, () => 0)).toEqual({ x: 5, y: 7, width: 300, height: 100 })
   })
 })

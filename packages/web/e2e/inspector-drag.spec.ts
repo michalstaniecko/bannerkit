@@ -1,6 +1,6 @@
 // M1 #8: dragging a number field's label in the Inspector previews the value on the
 // Canvas; only the release is saved.
-import type { Document } from '@bannerkit/core'
+import type { Document, LeafLayer } from '@bannerkit/core'
 import { expect, test } from './fixtures.ts'
 
 const banner: Document = {
@@ -31,7 +31,7 @@ test('dragging the X label previews without saving and saves once on release', a
   expect((await projects.read('m1-label-drag', 'banner')).layers[0]).toMatchObject({ x: 40 })
 
   await page.mouse.up()
-  await expect.poll(async () => (await projects.read('m1-label-drag', 'banner')).layers[0]!.x).toBe(70)
+  await expect.poll(async () => ((await projects.read('m1-label-drag', 'banner')).layers[0] as LeafLayer).x).toBe(70)
   await expect(page.locator('.save')).toHaveText('Saved')
   await expect(x).not.toBeFocused()
 })

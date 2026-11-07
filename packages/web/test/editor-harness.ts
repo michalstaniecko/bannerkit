@@ -1,7 +1,7 @@
 // Shared by editor and Inspector tests (jsdom + node-canvas): Document fixtures and
 // `openEditor`, a real editor mounted in the page with its `change` and `selection`
 // events recorded. Destroyed after each test.
-import type { Document, ImageLayer, Layer, MeasureText, RectLayer, TextLayer } from '@bannerkit/core'
+import type { Document, ImageLayer, Layer, LeafLayer, MeasureText, RectLayer, TextLayer } from '@bannerkit/core'
 import { afterEach } from 'vitest'
 import { createEditor, type ChangeEvent, type Editor } from '../src/editor/index.ts'
 
@@ -13,7 +13,10 @@ export const doc = (layers: Layer[], over: Partial<Document> = {}): Document => 
   ...over,
 })
 
-export const rect = (over: Partial<RectLayer> = {}): RectLayer => ({
+/** The root Layers of a Document without Groups, typed as such (they all have a Box). */
+export const leaves = (document_: Document): LeafLayer[] => document_.layers as LeafLayer[]
+
+export const rect =(over: Partial<RectLayer> = {}): RectLayer => ({
   id: 'rect-1',
   type: 'rect',
   x: 100,
