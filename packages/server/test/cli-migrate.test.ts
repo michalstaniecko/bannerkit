@@ -7,7 +7,7 @@ import { seededRoot, tempRoot } from './harness.ts'
 const docPath = (root: string, name: string) => join(root, 'demo', 'documents', `${name}.json`)
 const readDoc = async (root: string, name: string) => JSON.parse(await readFile(docPath(root, name), 'utf8'))
 
-/** The demo Project with one v1 Document (hero), one already v2 (square) and one invalid v1 (broken). */
+/** The demo Project with one v1 Document (hero), v2 ones (story, and square made v2 here) and an invalid v1 (broken). */
 async function mixedProject(): Promise<string> {
   const root = await seededRoot()
   const square = await readDoc(root, 'square')
@@ -34,7 +34,10 @@ describe('bannerkit migrate', () => {
           { name: 'hero', path: docPath(root, 'hero') },
           { name: 'rectangle', path: docPath(root, 'rectangle') },
         ],
-        unchanged: [{ name: 'square', path: docPath(root, 'square') }],
+        unchanged: [
+          { name: 'square', path: docPath(root, 'square') },
+          { name: 'story', path: docPath(root, 'story') },
+        ],
         invalid: [
           {
             name: 'broken',
@@ -80,7 +83,7 @@ describe('bannerkit migrate', () => {
     expect(run.stdout).toContain(`migrated ${docPath(root, 'hero')}`)
     expect(run.stdout).toContain(`invalid ${docPath(root, 'broken')}`)
     expect(run.stdout).toContain('guides: "guides" requires version: 2')
-    expect(run.stdout).toContain('2 migrated, 1 unchanged, 1 invalid')
+    expect(run.stdout).toContain('2 migrated, 2 unchanged, 1 invalid')
   })
 
   it('fails with NOT_FOUND for a missing Project', async () => {

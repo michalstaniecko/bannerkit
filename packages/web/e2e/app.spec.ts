@@ -50,7 +50,7 @@ test('shows Assets with their Fit, a hatched placeholder for a missing one, and 
 
 type Checked = { id: string; image: boolean } | { id: string; lines: string[]; core: string[] }
 
-for (const name of ['hero', 'rectangle', 'square']) {
+for (const name of ['hero', 'rectangle', 'square', 'story']) {
   test(`the demo ${name} banner shows every Asset and breaks text like core`, async ({ harness }) => {
     const result = await harness.evaluate(async (name) => {
       const { createEditor, core, fonts, host } = window.bannerkit
