@@ -1,6 +1,6 @@
 # Research: Bannerkit jako aplikacja desktopowa (Electron)
 
-Status: needs-research
+Status: moved to GitHub — https://github.com/michalstaniecko/bannerkit/issues/1 (the issue is the source of truth; this file is an archive)
 
 Pytanie: czy Bannerkit (spec: `.scratch/bannerkit-v1/spec.md`) da się dostarczyć jako aplikację Electron, która uruchamia się jak zwykła aplikacja na Windows, macOS i Ubuntu, a lokalnie udostępnia sterowanie agentowi AI: teraz przez pliki JSON, w przyszłości przez lokalny serwer MCP.
 
