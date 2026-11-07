@@ -23,18 +23,39 @@ A named standard Canvas size (1200×628, 1080×1080, 1080×1920, 300×250, 728×
 _Avoid_: format, template
 
 **Layer**:
-One visual element of a Document (`rect`, `image` or `text`), positioned by its unrotated box. Its position in the list is its stacking order, from bottom to top.
+One visual element of a Document (`rect`, `image`, `text` or `group`), positioned by its unrotated box. Its position in the list is its stacking order, from bottom to top.
 _Avoid_: object, element, shape, node
+
+**Group**:
+A Layer that holds an ordered list of child Layers and is selected, moved and hidden as one unit. It has no position of its own: its Box is the bounds of its children, which keep Canvas coordinates.
+_Avoid_: folder, container, frame
 
 **Box**:
 A Layer's top-left `x`/`y` plus `width`/`height` before rotation, in Canvas pixels.
 _Avoid_: bounds, frame
+
+**Guide**:
+A horizontal or vertical line at a fixed Canvas coordinate, stored in the Document for layout and Snapping and never drawn in a Render.
+_Avoid_: ruler line, safe line
 
 **Asset**:
 An image file stored once in a Project, already normalised on ingest, and referenced by Layers through a project-relative `src`.
 _Avoid_: upload, media, resource
 
 ### Behaviour
+
+**Anchor**:
+The point of the Canvas (one of nine) that stays put when the Canvas is resized; Layers keep their pixel offsets from it and are never scaled.
+
+**Align**:
+Moving Layers so one of their edges or centres lines up with the same edge or centre of the others or of the Canvas.
+
+**Distribute**:
+Moving Layers once so the spaces between neighbours along one axis are equal, or equal to a given gap. Nothing is stored, so later changes do not re-space them.
+
+**Snapping**:
+Pulling a Layer being moved or resized onto a nearby edge, centre or guide of another Layer or the Canvas, or onto an equal spacing. Only the editor snaps; nothing about it is stored.
+_Avoid_: sticking, magnet
 
 **Fit**:
 How an image fills its Box: `contain`, `cover` or `stretch`.
@@ -45,6 +66,10 @@ _Avoid_: auto-size, shrink-to-fit
 
 **Text Layout**:
 The resolved line breaks and font size of a text Layer. Both renderers compute it the same way and draw it, never deriving it on their own.
+
+**Inspector**:
+The editor panel showing and editing the properties of the Selection, or of the Document when nothing is selected.
+_Avoid_: properties panel, sidebar
 
 **Selection**:
 The Layers currently selected in the browser editor, recorded so an agent can refer to "what's selected".
