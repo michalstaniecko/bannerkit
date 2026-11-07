@@ -16,6 +16,7 @@ import type { Document, MeasureText, Rect } from '@bannerkit/core'
 import { ActiveSelection, Group, type Canvas, type FabricObject, type TPointerEvent, type Transform, type TransformActionHandler } from 'fabric'
 import type { Mark } from './snapping/marks.ts'
 import { snapResize, startResize, type ResizeHandle, type ResizeStart } from './snapping/resize.ts'
+import { createSnapSession } from './snap-session.ts'
 
 export type ResizeSnapEnv = {
   /** The Document as shown now. */
@@ -51,20 +52,13 @@ type Session = { target: FabricObject; start: ResizeStart; corner: string; marks
 const SCALE_ACTIONS = new Set(['scale', 'scaleX', 'scaleY', 'resizing'])
 
 export function attachResizeSnap(canvas: Canvas, env: ResizeSnapEnv): ResizeSnap {
-  let enabled = true
-  let session: Session | undefined
-
-  const end = () => {
-    if (!session) return
-    const hadMarks = session.marks.length > 0
-    session = undefined
-    if (hadMarks) canvas.requestRenderAll()
-  }
+  const sessions = createSnapSession<Session>(canvas)
 
   /** Snaps `box` of the session's target for a move with the pointer event `e`. */
   const snap = (transform: Transform | undefined, box: Rect, e: TPointerEvent): Rect => {
+    const session = sessions.current()
     if (!session) return box
-    if (!enabled || e.metaKey || e.ctrlKey) {
+    if (!sessions.enabled() || e.metaKey || e.ctrlKey) {
       session.marks = []
       return box
     }
@@ -75,16 +69,17 @@ export function attachResizeSnap(canvas: Canvas, env: ResizeSnapEnv): ResizeSnap
 
   const offs = [
     canvas.on('before:transform', ({ transform }) => {
-      session = undefined
+      sessions.start(undefined)
       if (transform.action === 'rotate') transform.actionHandler = stepWithShift(transform.actionHandler)
       if (!SCALE_ACTIONS.has(transform.action ?? '')) return
       const target = transform.target
       if (target instanceof ActiveSelection || target instanceof Group) return
       const ids = env.idsOf([target])
       const start = ids.length === 1 ? startResize(env.document(), ids[0]!, env.measure()) : undefined
-      if (start) session = { target, start, corner: transform.corner, marks: [] }
+      if (start) sessions.start({ target, start, corner: transform.corner, marks: [] })
     }),
     canvas.on('object:scaling', ({ target, e, transform }) => {
+      const session = sessions.current()
       if (!session || session.target !== target) return
       const raw = env.boxOf(target)
       if (!raw) return
@@ -99,22 +94,14 @@ export function attachResizeSnap(canvas: Canvas, env: ResizeSnapEnv): ResizeSnap
       target.set({ left: target.left + box.x - scaled.x, top: target.top + box.y - scaled.y })
       target.setCoords()
     }),
-    canvas.on('mouse:up', end),
   ]
 
   return {
-    marks: () => session?.marks ?? [],
-    setEnabled(on) {
-      enabled = on
-    },
+    ...sessions.controls(offs),
     snapText(target, box, e) {
+      const session = sessions.current()
       if (!session || session.target !== target) return box
       return snap(undefined, box, e)
-    },
-    end,
-    detach() {
-      for (const off of offs) off()
-      session = undefined
     },
   }
 }

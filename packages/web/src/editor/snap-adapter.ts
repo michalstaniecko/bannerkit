@@ -15,6 +15,7 @@ import type { Document, MeasureText } from '@bannerkit/core'
 import { ActiveSelection, type Canvas, type FabricObject } from 'fabric'
 import type { Mark } from './snapping/marks.ts'
 import { freeMove, snapMove, startMove, type MoveStart } from './snapping/move.ts'
+import { createSnapSession } from './snap-session.ts'
 
 export type SnapAdapterEnv = {
   /** The Document as shown now. */
@@ -38,29 +39,22 @@ export type SnapAdapter = {
 type Session = { target: FabricObject; left: number; top: number; start: MoveStart; marks: readonly Mark[] }
 
 export function attachSnapAdapter(canvas: Canvas, env: SnapAdapterEnv): SnapAdapter {
-  let enabled = true
-  let session: Session | undefined
-
-  const end = () => {
-    if (!session) return
-    const hadMarks = session.marks.length > 0
-    session = undefined
-    if (hadMarks) canvas.requestRenderAll()
-  }
+  const sessions = createSnapSession<Session>(canvas)
 
   const offs = [
     canvas.on('before:transform', ({ transform }) => {
-      session = undefined
+      sessions.start(undefined)
       if (transform.action !== 'drag') return
       const target = transform.target
       const ids = env.idsOf(target instanceof ActiveSelection ? target.getObjects() : [target])
       const start = ids.length > 0 ? startMove(env.document(), ids, env.measure()) : undefined
-      if (start) session = { target, left: target.left, top: target.top, start, marks: [] }
+      if (start) sessions.start({ target, left: target.left, top: target.top, start, marks: [] })
     }),
     canvas.on('object:moving', ({ target, e }) => {
+      const session = sessions.current()
       if (!session || session.target !== target) return
       const raw = { x: target.left - session.left, y: target.top - session.top }
-      const free = !enabled || e.metaKey || e.ctrlKey
+      const free = !sessions.enabled() || e.metaKey || e.ctrlKey
       const { offset, marks } = free ? freeMove(raw) : snapMove(session.start, raw, env.zoom())
       // An axis Fabric keeps still stays still.
       const still = { x: target.lockMovementX, y: target.lockMovementY }
@@ -68,18 +62,7 @@ export function attachSnapAdapter(canvas: Canvas, env: SnapAdapterEnv): SnapAdap
       target.set({ left: session.left + (still.x ? 0 : offset.x), top: session.top + (still.y ? 0 : offset.y) })
       target.setCoords()
     }),
-    canvas.on('mouse:up', end),
   ]
 
-  return {
-    marks: () => session?.marks ?? [],
-    setEnabled(on) {
-      enabled = on
-    },
-    end,
-    detach() {
-      for (const off of offs) off()
-      session = undefined
-    },
-  }
+  return sessions.controls(offs)
 }
