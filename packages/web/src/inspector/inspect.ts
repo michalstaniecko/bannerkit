@@ -14,6 +14,7 @@ import {
   type Rect,
   type TextLayer,
 } from '@bannerkit/core'
+import type { DocumentRecipe } from '../editor/index.ts'
 import { roundPx } from '../editor/rounding.ts'
 import type { SelectOption } from '../ui/Select.tsx'
 import {
@@ -37,9 +38,6 @@ export type Mixed = typeof MIXED
 /** The value every Layer shares, or MIXED. */
 export type Shared<T> = T | Mixed
 
-/** A change to the Document, run by `editor.update`. */
-export type Recipe = (document: Document) => Document
-
 /** The height of a text Layer's Box when it has none (its Text Layout height). */
 export type TextHeight = (layer: TextLayer) => number
 
@@ -50,8 +48,8 @@ export type InspectOptions = FieldContext & {
 
 /** What one field shows, and the Document change for a value set on it. */
 export type InspectedField =
-  | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => Recipe }
-  | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; disabled: boolean; write: (value: boolean) => Recipe }
+  | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => DocumentRecipe }
+  | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; disabled: boolean; write: (value: boolean) => DocumentRecipe }
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
   | {
       control: 'select'
@@ -59,9 +57,9 @@ export type InspectedField =
       /** The options every one of the Layers can take. */
       options: readonly SelectOption[]
       value: Shared<string>
-      write: (value: string) => Recipe
+      write: (value: string) => DocumentRecipe
     }
-  | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => Recipe }
+  | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => DocumentRecipe }
   | {
       control: 'gradient'
       field: GradientFieldSpec
@@ -69,7 +67,7 @@ export type InspectedField =
       /** The stops, when every Layer's are the same (colours and offsets, in order). */
       stops: Shared<GradientStop[]>
       /** `change` applied to each Layer's own gradient. */
-      write: (change: GradientChange) => Recipe
+      write: (change: GradientChange) => DocumentRecipe
     }
 
 type GradientStop = LinearGradient['stops'][number]
@@ -141,7 +139,7 @@ function sharedOptions(field: SelectFieldSpec, layers: readonly Layer[]): readon
 export function inspectField(field: FieldSpec, layers: readonly Layer[], options: InspectOptions): InspectedField {
   const ids = layers.map((l) => l.id)
   const shared = options.sharedBox ?? layers.length > 1
-  const each = (write: (layer: Layer) => Layer): Recipe => (document) => editLayers(document, ids, write)
+  const each = (write: (layer: Layer) => Layer): DocumentRecipe => (document) => editLayers(document, ids, write)
   const context: FieldContext = { textLayout: options.textLayout }
   const textHeight: TextHeight = (layer) => options.textLayout(layer).height
 
@@ -195,7 +193,7 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
         const box = sharedBox(layers, textHeight)
         if (side === 'width' || side === 'height') return { control: 'number', field, value: roundPx(box[side]), disabled: true, write: () => (d) => d }
         // The Box's side shows on whole px; the typed value moves every Layer by one whole-px delta.
-        const write = (value: number): Recipe => (document) => {
+        const write = (value: number): DocumentRecipe => (document) => {
           const now = sharedBox(document.layers.filter((l) => ids.includes(l.id)), textHeight)
           const delta = roundPx(value - now[side])
           return side === 'x' ? moveLayers(document, ids, delta, 0) : moveLayers(document, ids, 0, delta)
