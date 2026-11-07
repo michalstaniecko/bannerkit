@@ -7,7 +7,8 @@
 // moves the Selection Box (a single Group's x/y: its Box). A Layer that a Group around
 // it locks or hides shows its own flags plus a note naming that Group. With an empty
 // Selection it shows the Document (DocumentFields); the Anchor it resizes from is held
-// by the caller for the session.
+// by the caller for the session. A non-empty Selection gets the Align section on top
+// (AlignSection), whose Gap this tab holds for the session.
 import { inheritedFlags, type Anchor, type Document, type GroupLayer, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { useState, type RefObject } from 'react'
 import type { DocumentRecipe, Editor } from '../editor/index.ts'
