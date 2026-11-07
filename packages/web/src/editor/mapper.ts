@@ -24,9 +24,11 @@ import {
   boxTransform,
   fitImage,
   fontStyleOf,
+  layerExtent,
   layoutText,
   linearGradientLine,
   transformedText,
+  type GroupLayer,
   type ImageLayer,
   type Layer,
   type LeafLayer,
@@ -36,6 +38,7 @@ import {
   type TextLayer,
 } from '@bannerkit/core'
 import { FabricImage, Gradient, Pattern, Point, Rect, Shadow, Textbox, util, type FabricObject } from 'fabric'
+import { DocumentGroup } from './group.ts'
 
 export type MapperEnv = {
   /** The URL an image Layer's project-relative `src` loads from. */
@@ -49,14 +52,20 @@ type LocalBox = { cx: number; cy: number; width: number; height: number }
 
 const localBoxes = new WeakMap<FabricObject, LocalBox>()
 
-/** Lays a Layer out as a Fabric object. An image whose Asset fails to load becomes a hatched placeholder. */
-export async function layerToObject(layer: LeafLayer, env: MapperEnv): Promise<FabricObject> {
+/**
+ * Lays a Layer out as a Fabric object: a Group as a `DocumentGroup` holding its
+ * children's objects (in draw order). An image whose Asset fails to load becomes a
+ * hatched placeholder.
+ */
+export async function layerToObject(layer: Layer, env: MapperEnv): Promise<FabricObject> {
   const object =
-    layer.type === 'rect'
-      ? new Rect()
-      : layer.type === 'text'
-        ? new DocumentTextbox(layer.text)
-        : ((await loadImage(env.assetUrl(layer.src))) ?? new Rect())
+    layer.type === 'group'
+      ? new DocumentGroup(await Promise.all(layer.layers.map((child) => layerToObject(child, env))))
+      : layer.type === 'rect'
+        ? new Rect()
+        : layer.type === 'text'
+          ? new DocumentTextbox(layer.text)
+          : ((await loadImage(env.assetUrl(layer.src))) ?? new Rect())
   applyLayer(object, layer, env)
   return object
 }
@@ -67,7 +76,11 @@ export async function layerToObject(layer: LeafLayer, env: MapperEnv): Promise<F
  * is replaced by the Layer's: scale returns to the Fit's (1 for rects and text) and
  * the Box is in `width`/`height`.
  */
-export function applyLayer(object: FabricObject, layer: LeafLayer, env: MapperEnv): void {
+export function applyLayer(object: FabricObject, layer: Layer, env: MapperEnv): void {
+  if (layer.type === 'group') {
+    if (!(object instanceof DocumentGroup)) throw new Error(`Layer "${layer.id}" (group) cannot be applied to a ${object.type}`)
+    return applyGroup(object, layer, env)
+  }
   let box: LocalBox
   if (layer.type === 'text' && object instanceof Textbox) box = applyText(object, layer, env)
   else if (layer.type === 'image' && object instanceof FabricImage) box = applyImage(object, layer)
@@ -79,19 +92,63 @@ export function applyLayer(object: FabricObject, layer: LeafLayer, env: MapperEn
   // Put the local Box centre on the Box centre: centre = boxCentre − R(angle)·(cx·scaleX, cy·scaleY).
   // R is core's rotation (boxTransform of a zero-size Box at the origin), the one the server draws with.
   const offset = applyMatrix(boxTransform({ x: 0, y: 0, width: 0, height: 0, rotation: object.angle }), box.cx * object.scaleX, box.cy * object.scaleY)
-  object.set({ left: layer.x + box.width * object.scaleX / 2 - offset.x, top: layer.y + box.height * object.scaleY / 2 - offset.y })
+  place(object, new Point(layer.x + box.width * object.scaleX / 2 - offset.x, layer.y + box.height * object.scaleY / 2 - offset.y))
+}
+
+/**
+ * A Group: its object gets the Group's Box (core `layerExtent`, ADR 0007) with an
+ * identity transform centred on it, then each child is placed through it (see group.ts).
+ */
+function applyGroup(object: DocumentGroup, layer: GroupLayer, env: MapperEnv): void {
+  const children = object.getObjects()
+  if (children.length !== layer.layers.length) throw new Error(`Group "${layer.id}" is not laid out on this object`)
+  const extent = layerExtent(layer, env.measure)
+  const frozen = isFrozen(layer)
+  object.set({
+    originX: 'center',
+    originY: 'center',
+    width: extent.width,
+    height: extent.height,
+    scaleX: 1,
+    scaleY: 1,
+    angle: 0,
+    opacity: layer.opacity ?? 1,
+    visible: layer.visible ?? true,
+    selectable: !layer.locked,
+    evented: !layer.locked,
+    // Scaling and rotating a Group come later (#27): for now it only moves.
+    hasControls: false,
+    lockMovementX: frozen,
+    lockMovementY: frozen,
+    lockRotation: true,
+    lockScalingX: true,
+    lockScalingY: true,
+    lockSkewingX: true,
+    lockSkewingY: true,
+  })
+  place(object, new Point(extent.x + extent.width / 2, extent.y + extent.height / 2))
+  layer.layers.forEach((child, i) => applyLayer(children[i]!, child, env))
+  object.set('dirty', true)
+}
+
+/** Puts `object`'s centre on `centre` (Canvas px), through the transform of the Group holding it. */
+function place(object: FabricObject, centre: Point): void {
+  const parent = object.parent
+  const at = parent ? centre.transform(util.invertTransform(parent.calcTransformMatrix())) : centre
+  object.set({ left: at.x, top: at.y })
   object.setCoords()
 }
 
 /** The Layer `object` now shows, with the fields Fabric does not own taken from `base`. */
 export function objectToLayer(object: FabricObject, base: LeafLayer): LeafLayer {
+  // Read in Canvas px: `calcTransformMatrix` includes the transform of any Group holding the object.
   const box = localBoxes.get(object) ?? { cx: 0, cy: 0, width: object.width, height: object.height }
   const width = clean(box.width * object.scaleX)
   const height = clean(box.height * object.scaleY)
   const centre = new Point(box.cx, box.cy).transform(object.calcTransformMatrix())
   const layer: LeafLayer = { ...base, x: clean(centre.x - width / 2), y: clean(centre.y - height / 2), width }
   if ('height' in base && base.height !== undefined) (layer as { height: number }).height = height
-  setOptional(layer, 'rotation', normaliseAngle(object.angle), 0)
+  setOptional(layer, 'rotation', normaliseAngle(object.getTotalAngle()), 0)
   setOptional(layer, 'opacity', object.opacity, 1)
   setOptional(layer, 'visible', object.visible, true)
   return layer

@@ -50,8 +50,7 @@ test('shows Assets with their Fit, a hatched placeholder for a missing one, and 
 
 type Checked = { id: string; image: boolean } | { id: string; lines: string[]; core: string[] }
 
-// story has a Group, which the editor cannot show yet (#23 adds it back here and to parity.spec.ts).
-for (const name of ['hero', 'rectangle', 'square']) {
+for (const name of ['hero', 'rectangle', 'square', 'story']) {
   test(`the demo ${name} banner shows every Asset and breaks text like core`, async ({ harness }) => {
     const result = await harness.evaluate(async (name) => {
       const { createEditor, core, fonts, host } = window.bannerkit
@@ -59,7 +58,7 @@ for (const name of ['hero', 'rectangle', 'square']) {
       const editor = createEditor()
       editor.mount(host())
       await editor.load(document, { assetUrl: (src) => `/api/projects/demo/${src}` })
-      return document.layers.flatMap((layer): Checked[] => {
+      return core.walkLayers(document).flatMap(({ layer }): Checked[] => {
         const object = editor.objectFor(layer.id)!
         if (layer.type === 'image') return [{ id: layer.id, image: object.isType('image') }]
         if (layer.type !== 'text') return []
@@ -76,9 +75,3 @@ for (const name of ['hero', 'rectangle', 'square']) {
     }
   })
 }
-
-test('a Document with a Group opens with a readable message, not a Fabric error', async ({ page }) => {
-  await page.goto('/?project=demo&doc=story')
-
-  await expect(page.locator('.error')).toHaveText(/Group "group-1".*cannot show Groups yet/)
-})
