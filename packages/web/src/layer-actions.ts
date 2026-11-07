@@ -16,16 +16,25 @@ export function moveLayer(document: Document, id: string, targetId: string): Doc
   return next
 }
 
-const FLAG_DEFAULT = { visible: true, locked: false } as const
-export type LayerFlag = keyof typeof FLAG_DEFAULT
+/** What a Layer's `visible` and `locked` are when the key is left out. */
+export const LAYER_FLAG_DEFAULTS = { visible: true, locked: false } as const
+export type LayerFlag = keyof typeof LAYER_FLAG_DEFAULTS
 
-/** Sets a Layer's `visible` or `locked`; the default value is written by leaving the field out. */
+/** A Layer's `visible` or `locked`, its default when left out. */
+export const layerFlag = (layer: Layer, flag: LayerFlag): boolean => layer[flag] ?? LAYER_FLAG_DEFAULTS[flag]
+
+/** `layer` with `visible` or `locked` set to `value`; the default value is written by leaving the key out. */
+export function withLayerFlag<L extends Layer>(layer: L, flag: LayerFlag, value: boolean): L {
+  const next = { ...layer }
+  if (value === LAYER_FLAG_DEFAULTS[flag]) delete next[flag]
+  else next[flag] = value
+  return next
+}
+
+/** Sets a Layer's `visible` or `locked` (see `withLayerFlag`). */
 export function setLayerFlag(document: Document, id: string, flag: LayerFlag, value: boolean): Document {
   const next = copy(document)
-  const layer = next.layers.find((l) => l.id === id)
-  if (!layer) return next
-  if (value === FLAG_DEFAULT[flag]) delete layer[flag]
-  else layer[flag] = value
+  next.layers = next.layers.map((l) => (l.id === id ? withLayerFlag(l, flag, value) : l))
   return next
 }
 

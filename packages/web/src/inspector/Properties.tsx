@@ -8,7 +8,7 @@
 // (DocumentFields); the Anchor it resizes from is held by the caller for the session.
 import type { Anchor, TextLayer, TextLayout } from '@bannerkit/core'
 import type { RefObject } from 'react'
-import type { Editor } from '../editor/index.ts'
+import type { DocumentRecipe, Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
 import { ColorField } from '../ui/ColorField.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
@@ -16,7 +16,7 @@ import { Section } from '../ui/Panel.tsx'
 import { Select } from '../ui/Select.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
-import { inspectField, MIXED, sharedFields, type InspectedField, type Recipe } from './inspect.ts'
+import { inspectField, MIXED, sharedFields, type InspectedField } from './inspect.ts'
 import { useEdits } from './useEdits.ts'
 import { useInspected } from './useInspected.ts'
 
@@ -75,8 +75,8 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
 type FieldProps = {
   inspected: InspectedField
   resetKey: unknown
-  onWrite: (recipe: Recipe) => void
-  onPreview: (recipe: Recipe) => void
+  onWrite: (recipe: DocumentRecipe) => void
+  onPreview: (recipe: DocumentRecipe) => void
   onCancel: () => void
 }
 
@@ -153,6 +153,9 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
       )
     case 'readonly':
       return <ReadOnly label={field.label} name={field.name} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
+    default:
+      // Every control is handled above: a new one fails to compile here.
+      return inspected satisfies never
   }
 }
 

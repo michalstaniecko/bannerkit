@@ -1,7 +1,10 @@
 // The Inspector's fields, described as data: for each Layer type, titled groups of
 // fields, each with its control, range and how it reads and writes the Layer. The
-// Properties tab only renders these, so a new field (a later ticket, M2's Group,
-// `textTransform`, `fontStyle`) is a new entry here, not a change to the Inspector.
+// Properties tab only renders these, so a new field of an existing control (a later
+// ticket, M2's Group, `textTransform`, `fontStyle`) is a new entry here, not a change
+// to the Inspector. A new kind of control is a new FieldSpec member plus a case in
+// `inspectField` (inspect.ts) and in Properties' `Field`; both switches are exhaustive,
+// so the compiler points at each.
 //
 // Ranges come from the Document schema. A write returns the next Layer; an optional
 // field written with its default value leaves the key out of the Document.
@@ -23,6 +26,7 @@ import {
   type TextLayout,
 } from '@bannerkit/core'
 import { fontManifest } from '../editor/fonts.ts'
+import { layerFlag, withLayerFlag } from '../layer-actions.ts'
 import { roundAngle, roundPx } from '../editor/rounding.ts'
 import type { SelectOption } from '../ui/Select.tsx'
 
@@ -115,13 +119,23 @@ export type FieldGroup<L extends Layer = Layer> = { key: string; title: string; 
 
 type LayerOf<T extends LayerType> = Extract<Layer, { type: T }>
 
-/** `layer` with optional `key` set to `value`, or left out when `value` is its default `fallback`. */
-export function setOptional<L extends Layer, K extends keyof L>(layer: L, key: K, value: L[K], fallback: L[K]): L {
+/** `layer` without its optional `key`. */
+export function omit<L extends Layer, K extends keyof L>(layer: L, key: K): L {
   const next = { ...layer }
-  if (value === fallback) delete next[key]
-  else next[key] = value
+  delete next[key]
   return next
 }
+
+/** `layer` with optional `key` set to `value`, or left out when `value` is its default `fallback`. */
+export function setOptional<L extends Layer, K extends keyof L>(layer: L, key: K, value: L[K], fallback: L[K]): L {
+  return value === fallback ? omit(layer, key) : { ...layer, [key]: value }
+}
+
+/**
+ * The lowest value of a whole-step field the schema wants above 0 (font sizes): its
+ * smallest step, so arrows and label drags stop there instead of being dropped.
+ */
+const POSITIVE_MIN = 1
 
 const shape = RectLayerSchema.shape
 const opacityRange = shape.opacity.unwrap()
@@ -176,10 +190,7 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           write: (l, auto, { textLayout }) => {
             if (l.type !== 'text') return l
             if (!auto) return l.height === undefined ? { ...l, height: Math.ceil(textLayout(l).height) } : l
-            if (l.autoFit) return l
-            const next = { ...l }
-            delete next.height
-            return next
+            return l.autoFit ? l : omit(l, 'height')
           },
         },
         {
@@ -212,15 +223,15 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           control: 'toggle',
           key: 'visible',
           label: 'Visible',
-          read: (l) => l.visible ?? true,
-          write: (l, visible) => setOptional<Layer, 'visible'>(l, 'visible', visible, true) as L,
+          read: (l) => layerFlag(l, 'visible'),
+          write: (l, visible) => withLayerFlag(l, 'visible', visible),
         },
         {
           control: 'toggle',
           key: 'locked',
           label: 'Locked',
-          read: (l) => l.locked ?? false,
-          write: (l, locked) => setOptional<Layer, 'locked'>(l, 'locked', locked, false) as L,
+          read: (l) => layerFlag(l, 'locked'),
+          write: (l, locked) => withLayerFlag(l, 'locked', locked),
         },
       ],
     },
@@ -263,12 +274,7 @@ function shadowGroup<L extends Layer>(): FieldGroup<L> {
         key: 'shadow',
         label: 'Shadow',
         read: (l) => l.shadow !== undefined,
-        write: (l, on) => {
-          const next = { ...l }
-          if (on) next.shadow = l.shadow ?? { ...DEFAULT_SHADOW }
-          else delete next.shadow
-          return next
-        },
+        write: (l, on) => (on ? { ...l, shadow: l.shadow ?? { ...DEFAULT_SHADOW } } : omit(l, 'shadow')),
       },
       {
         control: 'color',
@@ -368,6 +374,10 @@ function rectGroups(): FieldGroup<RectLayer>[] {
   ]
 }
 
+/** Select options for `values`, each labelled with its value capitalised. */
+const options = (values: readonly string[]): SelectOption[] =>
+  values.map((value) => ({ value, label: value[0]!.toUpperCase() + value.slice(1) }))
+
 /** The fields of an image Layer (its `src` is edited in the JSON tab). */
 function imageGroups(): FieldGroup<ImageLayer>[] {
   return [
@@ -379,7 +389,7 @@ function imageGroups(): FieldGroup<ImageLayer>[] {
           control: 'select',
           key: 'fit',
           label: 'Fit',
-          options: FITS.map((fit) => ({ value: fit, label: fit[0]!.toUpperCase() + fit.slice(1) })),
+          options: options(FITS),
           read: (l) => l.fit,
           write: (l, fit) => ({ ...l, fit: fit as Fit }),
         },
@@ -387,10 +397,6 @@ function imageGroups(): FieldGroup<ImageLayer>[] {
     },
   ]
 }
-
-/** Select options for `values`, each labelled with its value capitalised. */
-const options = (values: readonly string[]): SelectOption[] =>
-  values.map((value) => ({ value, label: value[0]!.toUpperCase() + value.slice(1) }))
 
 type FontWeight = TextLayer['fontWeight']
 type Align = NonNullable<TextLayer['align']>
@@ -456,11 +462,12 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           write: (l, weight) => ({ ...l, fontWeight: Number(weight) as FontWeight }),
         },
         {
-          // The declared (largest) size; above 0, which the schema checks on write.
+          // The declared (largest) size.
           control: 'number',
           key: 'fontSize',
           label: 'Size',
           name: 'Font size',
+          min: POSITIVE_MIN,
           read: (l) => l.fontSize,
           write: (l, fontSize) => ({ ...l, fontSize }),
         },
@@ -479,6 +486,7 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           label: 'Line',
           name: 'Line height',
           step: 0.01,
+          min: 0.01, // above 0 (schema), the smallest step
           read: (l) => l.lineHeight ?? DEFAULT_LINE_HEIGHT,
           write: (l, lineHeight) => setOptional(l, 'lineHeight', lineHeight, DEFAULT_LINE_HEIGHT),
         },
@@ -530,11 +538,7 @@ function autoFitGroup(): FieldGroup<TextLayer> {
         label: 'AutoFit',
         read: (l) => l.autoFit !== undefined,
         write: (l, on, { textLayout }) => {
-          if (!on) {
-            const next = { ...l }
-            delete next.autoFit
-            return next
-          }
+          if (!on) return omit(l, 'autoFit')
           if (l.autoFit) return l
           return {
             ...l,
@@ -544,11 +548,11 @@ function autoFitGroup(): FieldGroup<TextLayer> {
         },
       },
       {
-        // Above 0, which the schema checks on write.
         control: 'number',
         key: 'autoFit.minFontSize',
         label: 'Min',
         name: 'Min font size',
+        min: POSITIVE_MIN,
         when: (l) => l.autoFit !== undefined,
         read: (l) => l.autoFit?.minFontSize,
         write: (l, minFontSize) => (l.autoFit ? { ...l, autoFit: { ...l.autoFit, minFontSize } } : l),

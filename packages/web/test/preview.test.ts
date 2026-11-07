@@ -109,4 +109,17 @@ describe('preview', () => {
     expect(editor.getDocument().layers[0]).toMatchObject({ x: 100, y: 20 })
     expect(changes).toHaveLength(1)
   })
+  it('a new preview starts from the Document before a dropped one that changed the Layers', async () => {
+    const original = doc([rect(), rect({ id: 'rect-2', x: 250 })])
+    const { editor, changes } = await openEditor(original)
+    const first = editor.preview()
+    await first.show((d) => ({ ...d, layers: [d.layers[0]!] }))
+
+    const second = editor.preview()
+    await second.show(moveTo(150))
+    await second.cancel()
+
+    expect(editor.getDocument()).toEqual(original)
+    expect(changes).toEqual([])
+  })
 })

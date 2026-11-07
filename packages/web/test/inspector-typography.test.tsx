@@ -90,6 +90,22 @@ describe('font family and weight', () => {
     await act(() => editor.undo())
     expect(editor.getDocument()).toEqual(original)
   })
+
+  it('a family not in the manifest shows as itself, marked and not pickable', async () => {
+    const original = doc([text({ fontFamily: 'Comic Sans' })])
+    const { editor, user, changes } = await openInspector(original, { select: ['text-1'] })
+
+    const family = select('Font family')
+    expect(family.value).toBe('Comic Sans')
+    expect(family.selectedOptions[0]!.textContent).toBe('Comic Sans (not available)')
+    expect(family.selectedOptions[0]!.disabled).toBe(true)
+    expect(select('Font weight').value).toBe('700')
+    await user.selectOptions(family, 'Inter')
+    await settle()
+
+    expect(editor.getDocument().layers[0]).toEqual(text({ fontFamily: 'Inter' }))
+    expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+  })
 })
 
 describe('a rect and a text together', () => {
@@ -129,6 +145,19 @@ describe('font size and line height', () => {
 
     expect(editor.getDocument().layers[0]).toEqual(text({ fontSize: 24.5 }))
     expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+  })
+
+  it('arrows below the smallest size stop there instead of being dropped', async () => {
+    const original = text({ fontSize: 5, lineHeight: 0.05, height: 40, autoFit: { minFontSize: 3 } })
+    const { editor, user, field } = await openInspector(doc([original]), { select: ['text-1'] })
+
+    for (const name of ['Font size', 'Line height', 'Min font size']) {
+      await user.click(field(name))
+      await user.keyboard('{Shift>}{ArrowDown}{/Shift}')
+      await settle()
+    }
+
+    expect(editor.getDocument().layers[0]).toEqual({ ...original, fontSize: 1, lineHeight: 0.01, autoFit: { minFontSize: 1 } })
   })
 
   it('line height is a multiplier, 1.16 by default; the default leaves the key out', async () => {

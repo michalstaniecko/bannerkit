@@ -47,7 +47,8 @@ export function resizeCanvas(document: Document, size: Size, anchor: Anchor = 't
   return {
     ...document,
     canvas: { ...document.canvas, width, height },
-    // v2 Groups (ADR 0007) hold Canvas coordinates: the shift must then reach every descendant.
+    // Only top-level Layers move: v1 has no Groups. v2 Groups (ADR 0007) hold Canvas
+    // coordinates, so once they exist this must recurse into every descendant too.
     layers: document.layers.map((layer) => ({ ...layer, x: layer.x + dx, y: layer.y + dy })),
   }
 }

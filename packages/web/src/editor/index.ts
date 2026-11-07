@@ -30,9 +30,7 @@
 // A different Canvas size left by a step, an undo/redo, a reload or a `load` is also
 // reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
 //
-// Later tickets extend this file: Layer list actions (14), JSON apply (15),
-// reload from disk (16) and Selection sent to the server (17); `export` (18)
-// renders the shown Canvas offscreen (export.ts).
+// `export` renders the shown Canvas offscreen (export.ts).
 import { layoutText, type Document, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
 import { textControls } from './controls.ts'
@@ -88,7 +86,7 @@ export type ApplyOptions = { cause: ApplyCause }
 export type DocumentRecipe = (document: Document) => Document
 
 /**
- * A transient change of the shown Document while a gesture runs (dragging a field's
+ * A Gesture preview (not a Preview Render): a transient change of the shown Document while a gesture runs (dragging a field's
  * label, a Canvas resize handle): shown on the Canvas with the Selection kept, but no
  * undo step, no `change` and so no autosave. It ends with exactly one of `commit`,
  * `cancel`, or being dropped by any other step (an edit, undo/redo, a reload from
@@ -202,6 +200,9 @@ const ARROWS: Record<string, [number, number]> = {
 /** Keys typed into these go to the field, not the editor. */
 const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
 
+/** Whether two Documents are the same (as JSON: same keys, in the same order). */
+const sameDocument = (a: Document, b: Document): boolean => JSON.stringify(a) === JSON.stringify(b)
+
 /** Ids of the Layers that differ between two Documents, in `after` order then removed ones. */
 function changedLayerIds(before: Document, after: Document): string[] {
   const old = new Map(before.layers.map((l) => [l.id, JSON.stringify(l)]))
@@ -223,7 +224,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   let holdSelection = false
   const history = createHistory()
   /** The preview running, if any; `drop` ends it and shows the Document from before it again. */
-  let previewing: { drop: () => Promise<void>; end: () => void } | undefined
+  let previewing: { base: Document; drop: () => Promise<void>; end: () => void } | undefined
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
@@ -392,11 +393,14 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     await previewing?.drop()
   }
 
-  const startPreview = (): Preview => {
-    const base = documentNow()
+  /**
+   * Starts a preview of `base` once `ready` (a dropped preview's restore) settles:
+   * its shows queue behind `ready`, so they never race that restore.
+   */
+  const startPreview = (base: Document, ready: Promise<unknown>): Preview => {
     let ended = false
     let shows = 0
-    let pending: Promise<unknown> = Promise.resolve()
+    let pending: Promise<unknown> = ready
     const end = () => {
       ended = true
       if (previewing === state) previewing = undefined
@@ -405,9 +409,9 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       if (ended) return
       end()
       // Synchronous when laid out in place, so a step right after starts from `base`.
-      if (current && JSON.stringify(documentNow()) !== JSON.stringify(base)) await relayout(base)
+      if (current && !sameDocument(documentNow(), base)) await relayout(base)
     }
-    const state = { drop: restore, end }
+    const state = { base, drop: restore, end }
     previewing = state
 
     const showNow = async (recipe: DocumentRecipe, token: number) => {
@@ -433,7 +437,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         await pending
         if (!current) return
         const after = documentNow()
-        if (JSON.stringify(after) === JSON.stringify(base)) return
+        if (sameDocument(after, base)) return
         history.record(after)
         emit('change', { document: after, cause, layerIds: changedLayerIds(base, after) })
         settleSize()
@@ -567,7 +571,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       if (!current) throw new Error('No Document loaded')
       finishTextEdit()
       await dropPreview()
-      if (JSON.stringify(document) === JSON.stringify(documentNow())) return
+      if (sameDocument(document, documentNow())) return
       await showStep(document, cause)
     },
 
@@ -578,15 +582,14 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       let before = documentNow()
       let next = recipe(structuredClone(before))
       // A font not shown yet loads first; the recipe then runs on whatever shows by then.
-      const shown = new Set(facesUsed(before).map((f) => `${f.family} ${f.weight}`))
-      if (facesUsed(next).some((f) => !shown.has(`${f.family} ${f.weight}`))) {
+      if (!sameFaces(before, next)) {
         const token = loads
         await loadFonts(facesUsed(next))
         if (token !== loads || !current) return
         before = documentNow()
         next = recipe(structuredClone(before))
       }
-      if (JSON.stringify(next) === JSON.stringify(before)) return
+      if (sameDocument(next, before)) return
       if (!(await relayout(next))) return
       const after = documentNow()
       history.record(after)
@@ -597,8 +600,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     preview() {
       if (!current) throw new Error('No Document loaded')
       finishTextEdit()
-      void dropPreview()
-      return startPreview()
+      // A dropped preview that changed the Layers restores asynchronously, so what
+      // shows now is not yet the Document from before it: start from that one instead.
+      const base = previewing?.base ?? documentNow()
+      return startPreview(base, dropPreview())
     },
 
     undo: () => travel('undo'),
