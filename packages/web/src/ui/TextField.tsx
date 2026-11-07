@@ -14,6 +14,8 @@ export type TextFieldProps = {
   onCommit: (value: string) => void
   /** Whether a committed draft may become the value. Default: not blank. */
   valid?: (value: string) => boolean
+  /** Shown while the input is empty. */
+  placeholder?: string
   disabled?: boolean
   /** A new value drops the uncommitted draft. */
   resetKey?: unknown
@@ -22,7 +24,7 @@ export type TextFieldProps = {
 
 const notBlank = (value: string) => value.trim() !== ''
 
-export function TextField({ label, name, value, onCommit, valid = notBlank, disabled, resetKey, className }: TextFieldProps) {
+export function TextField({ label, name, value, onCommit, valid = notBlank, placeholder, disabled, resetKey, className }: TextFieldProps) {
   const id = useId()
   const [draft, setDraft] = useState<string | null>(null)
   useEffect(() => setDraft(null), [resetKey])
@@ -56,6 +58,7 @@ export function TextField({ label, name, value, onCommit, valid = notBlank, disa
         spellCheck={false}
         aria-label={name}
         value={draft ?? value}
+        placeholder={placeholder}
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
