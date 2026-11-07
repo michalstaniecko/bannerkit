@@ -23,6 +23,10 @@
 // `undo` / `redo` show a snapshot again and emit `change` like any other edit, so
 // autosave follows them. `load` starts a fresh history.
 //
+// A gesture that changes a value continuously (dragging a field's label, a Canvas
+// resize handle) runs as a transient `preview()`: shown in place, no step, no
+// `change`; its `commit` is the one step. Any other step drops it first.
+//
 // Later tickets extend this file: Layer list actions (14), JSON apply (15),
 // reload from disk (16) and Selection sent to the server (17); `export` (18)
 // renders the shown Canvas offscreen (export.ts).
@@ -72,6 +76,28 @@ export type ApplyOptions = { cause: ApplyCause }
 /** A pure edit of the Document: gets a copy of the shown one, returns the next one (already valid). */
 export type DocumentRecipe = (document: Document) => Document
 
+/**
+ * A transient change of the shown Document while a gesture runs (dragging a field's
+ * label, a Canvas resize handle): shown on the Canvas with the Selection kept, but no
+ * undo step, no `change` and so no autosave. It ends with exactly one of `commit`,
+ * `cancel`, or being dropped by any other step (an edit, undo/redo, a reload from
+ * disk, `load`, another preview), which shows the Document from before it again.
+ * Once ended, every method does nothing.
+ */
+export type Preview = {
+  /**
+   * Shows `recipe` applied to the Document from before the gesture (not to the
+   * previous preview). Resolves once it shows.
+   */
+  show(recipe: DocumentRecipe): Promise<void>
+  /** Makes what is shown one undo step and one `change` with `cause` (nothing when it equals the start). */
+  commit(options: ApplyOptions): Promise<void>
+  /** Shows the Document from before the gesture again, without a step. */
+  cancel(): Promise<void>
+  /** Whether it ended (committed, cancelled or dropped). */
+  ended(): boolean
+}
+
 /** The selected Layers changed. Ids are bottom → top; empty when nothing is selected. */
 export type SelectionEvent = { layerIds: string[] }
 
@@ -101,6 +127,11 @@ export type Editor = {
    * Resolves once it shows; does nothing when the recipe changes nothing.
    */
   update(recipe: DocumentRecipe, options: ApplyOptions): Promise<void>
+  /**
+   * Starts a transient preview (see `Preview`) of the Document as shown now, ending a
+   * text edit and dropping any preview already running.
+   */
+  preview(): Preview
   /** Steps back one undo step (ending a text edit first). Resolves false when there is none. */
   undo(): Promise<boolean>
   /** Steps forward one undone step. Resolves false when there is none. */
@@ -167,6 +198,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
   /** While true, Fabric's selection events are not reported (the editor reselects what it dissolved). */
   let holdSelection = false
   const history = createHistory()
+  /** The preview running, if any; `drop` ends it and shows the Document from before it again. */
+  let previewing: { drop: () => Promise<void>; end: () => void } | undefined
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
@@ -317,9 +350,65 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     if (active instanceof Textbox && active.isEditing) active.exitEditing()
   }
 
+  /** Drops a preview in progress, so any other step starts from the Document before it. */
+  const dropPreview = async () => {
+    await previewing?.drop()
+  }
+
+  const startPreview = (): Preview => {
+    const base = documentNow()
+    let ended = false
+    let shows = 0
+    let pending: Promise<unknown> = Promise.resolve()
+    const end = () => {
+      ended = true
+      if (previewing === state) previewing = undefined
+    }
+    const restore = async () => {
+      if (ended) return
+      end()
+      // Synchronous when laid out in place, so a step right after starts from `base`.
+      if (current && JSON.stringify(documentNow()) !== JSON.stringify(base)) await relayout(base)
+    }
+    const state = { drop: restore, end }
+    previewing = state
+
+    const showNow = async (recipe: DocumentRecipe, token: number) => {
+      const next = recipe(structuredClone(base))
+      if (!sameFaces(base, next)) {
+        await loadFonts(facesUsed(next))
+        if (ended || token !== shows || !current) return
+      }
+      await relayout(next)
+    }
+
+    return {
+      show(recipe) {
+        if (ended) return Promise.resolve()
+        const token = ++shows
+        const shown = pending.then(() => (ended || token !== shows ? undefined : showNow(recipe, token)))
+        pending = shown
+        return shown
+      },
+      async commit({ cause }) {
+        if (ended) return
+        end()
+        await pending
+        if (!current) return
+        const after = documentNow()
+        if (JSON.stringify(after) === JSON.stringify(base)) return
+        history.record(after)
+        emit('change', { document: after, cause, layerIds: changedLayerIds(base, after) })
+      },
+      cancel: restore,
+      ended: () => ended,
+    }
+  }
+
   const travel = async (direction: 'undo' | 'redo'): Promise<boolean> => {
     if (!current) return false
     finishTextEdit()
+    await dropPreview()
     const snapshot = direction === 'undo' ? history.undo() : history.redo()
     if (!snapshot) return false
     return showStep(snapshot, direction)
@@ -370,6 +459,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     if (!canvas || !current) return
     const target = event.target as HTMLElement | null
     if (target?.closest?.(FIELD)) return
+    // A gesture is previewing; its owner handles keys (Escape cancels it).
+    if (previewing) return
     if (undoKeys(event)) return
     nudge(event)
   }
@@ -426,6 +517,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     },
 
     async load(document, { assetUrl = (src: string) => src } = {}) {
+      previewing?.end()
       if (await show(document, { assetUrl, measure: measureText })) history.reset(document)
     },
 
@@ -434,6 +526,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     async apply(document, { cause }) {
       if (!current) throw new Error('No Document loaded')
       finishTextEdit()
+      await dropPreview()
       if (JSON.stringify(document) === JSON.stringify(documentNow())) return
       await showStep(document, cause)
     },
@@ -441,6 +534,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     async update(recipe, { cause }) {
       if (!current) throw new Error('No Document loaded')
       finishTextEdit()
+      await dropPreview()
       let before = documentNow()
       let next = recipe(structuredClone(before))
       // A font not shown yet loads first; the recipe then runs on whatever shows by then.
@@ -457,6 +551,13 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       const after = documentNow()
       history.record(after)
       emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
+    },
+
+    preview() {
+      if (!current) throw new Error('No Document loaded')
+      finishTextEdit()
+      void dropPreview()
+      return startPreview()
     },
 
     undo: () => travel('undo'),
@@ -508,6 +609,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       const c = canvas
       const mounted = unmount()
       unmount = () => undefined
+      previewing?.end()
       canvas = undefined
       current = undefined
       entries = []
@@ -523,6 +625,12 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 
 export type { Size } from './zoom.ts'
 export type { ExportOptions, ExportResult } from './export.ts'
+
+/** Whether `next` uses no font face that `before` does not (so nothing has to load first). */
+function sameFaces(before: Document, next: Document): boolean {
+  const shown = new Set(facesUsed(before).map((f) => `${f.family} ${f.weight}`))
+  return facesUsed(next).every((f) => shown.has(`${f.family} ${f.weight}`))
+}
 
 /** Whether `next` can be laid out on the object made for `base`: same id and type, and same image `src`. */
 function sameObject(base: Layer, next: Layer): boolean {

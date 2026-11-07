@@ -4,7 +4,12 @@
 // again). ArrowUp/ArrowDown commit value ± step at once (Shift: ± 10 steps), clamped
 // to min/max. Changing `resetKey` drops a draft in progress (e.g. the Document was
 // reloaded from disk under it).
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
+//
+// With `onPreview`, dragging the label left/right changes the value by one step per px
+// (Shift: 10 steps), clamped to min/max: each new value goes to `onPreview`, the release
+// to `onCommit` (or `onCancel` when it ends where it started). Escape cancels the drag;
+// a new `resetKey` ends it without a word (whoever changed the key dropped the preview).
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 
 export type NumberFieldProps = {
   /** Shown beside the input. */
@@ -21,7 +26,11 @@ export type NumberFieldProps = {
   step?: number
   placeholder?: string
   disabled?: boolean
-  /** A new value drops the uncommitted draft. */
+  /** A value while the label is dragged; enables the drag. The release goes to `onCommit`. */
+  onPreview?: (value: number) => void
+  /** A drag ended without a new value (Escape, or released where it started). */
+  onCancel?: () => void
+  /** A new value drops the uncommitted draft and ends a drag. */
   resetKey?: unknown
   className?: string
 }
@@ -44,12 +53,24 @@ export function NumberField({
   step = 1,
   placeholder,
   disabled,
+  onPreview,
+  onCancel,
   resetKey,
   className,
 }: NumberFieldProps) {
   const id = useId()
   const [draft, setDraft] = useState<string | null>(null)
-  useEffect(() => setDraft(null), [resetKey])
+  /** The value shown while the label is dragged. */
+  const [dragged, setDragged] = useState<number | null>(null)
+  /** Ends the drag in progress (removes its listeners), if any. */
+  const endDrag = useRef<(() => void) | null>(null)
+  /** Whether the last press on the label moved it, so its click does not focus the input. */
+  const moved = useRef(false)
+  useEffect(() => {
+    setDraft(null)
+    endDrag.current?.()
+  }, [resetKey])
+  useEffect(() => () => endDrag.current?.(), [])
 
   const inRange = (n: number) => (min === undefined || n >= min) && (max === undefined || n <= max)
   const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n))
@@ -77,6 +98,57 @@ export function NumberField({
     if (next !== value) onCommit(next)
   }
 
+  const onLabelMouseDown = (e: MouseEvent<HTMLLabelElement>) => {
+    if (!onPreview || disabled || value === undefined || e.button !== 0) return
+    e.preventDefault()
+    endDrag.current?.()
+    const start = value
+    const startX = e.clientX
+    const decimals = decimalsOf(step)
+    let current = start
+    moved.current = false
+    const view = e.currentTarget.ownerDocument
+
+    const move = (event: globalThis.MouseEvent) => {
+      const steps = (event.clientX - startX) * (event.shiftKey ? SHIFT_STEPS : 1)
+      const next = clamp(Number((start + steps * step).toFixed(decimals)))
+      if (event.clientX !== startX) moved.current = true
+      if (next === current) return
+      current = next
+      setDragged(next)
+      onPreview(next)
+    }
+    const up = () => {
+      stop()
+      if (current !== start) onCommit(current)
+      else onCancel?.()
+    }
+    const key = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      stop()
+      onCancel?.()
+    }
+    const stop = () => {
+      view.removeEventListener('mousemove', move)
+      view.removeEventListener('mouseup', up)
+      view.removeEventListener('keydown', key, true)
+      endDrag.current = null
+      setDragged(null)
+    }
+    view.addEventListener('mousemove', move)
+    view.addEventListener('mouseup', up)
+    view.addEventListener('keydown', key, true)
+    endDrag.current = stop
+    setDraft(null)
+  }
+
+  const onLabelClick = (e: MouseEvent<HTMLLabelElement>) => {
+    if (moved.current) e.preventDefault()
+    moved.current = false
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
@@ -92,7 +164,13 @@ export function NumberField({
 
   return (
     <div className={className ? `number-field ${className}` : 'number-field'}>
-      <label className="number-field-label" htmlFor={id} title={name}>
+      <label
+        className={onPreview && !disabled ? 'number-field-label number-field-label-drag' : 'number-field-label'}
+        htmlFor={id}
+        title={name}
+        onMouseDown={onLabelMouseDown}
+        onClick={onLabelClick}
+      >
         {label}
       </label>
       <input
@@ -103,7 +181,7 @@ export function NumberField({
         autoComplete="off"
         spellCheck={false}
         aria-label={name}
-        value={draft ?? (value === undefined ? '' : format(value))}
+        value={dragged !== null ? format(dragged) : (draft ?? (value === undefined ? '' : format(value)))}
         placeholder={placeholder}
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
