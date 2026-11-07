@@ -48,7 +48,7 @@ import { DocumentGroup } from './group.ts'
 import { applyLayer, isFrozen, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
 import { allEntries, buildEntries, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
 import { fitZoom, type Size } from './zoom.ts'
-import { clickTarget, doubleClickTarget } from './picking.ts'
+import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
 export type EditorOptions = {
   /**
@@ -291,6 +291,24 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     if (target) selectIds([target.base.id])
   }
 
+  /** Shift+click on `object`: adds it to the Selection or takes it out (picking.ts). */
+  const toggle = (object: FabricObject): boolean => {
+    const entry = entryOf(object)
+    if (!entry) return false
+    selectIds(toggleSelection(selectedEntries(), entry).map((e) => e.base.id))
+    return true
+  }
+
+  /** Escape with a Layer in a Group selected selects its Group instead. */
+  const escapeKey = (event: KeyboardEvent): boolean => {
+    if (event.key !== 'Escape' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false
+    const next = escapeSelection(selectedEntries())
+    if (!next) return false
+    event.preventDefault()
+    selectIds(next.map((e) => e.base.id))
+    return true
+  }
+
   const documentNow = (): Document => {
     if (!current) throw new Error('No Document loaded')
     return { ...structuredClone(current), layers: roots.map(layerOf) }
@@ -421,10 +439,13 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     }
   }
 
-  /** Selects the Layers `ids`, locked and hidden ones too, skipping unknown ones. */
+  /**
+   * Selects the Layers `ids`, locked and hidden ones too, skipping unknown ones. A Layer
+   * whose ancestor is among them is left out (the Selection never holds both).
+   */
   const selectIds = (ids: readonly string[]) => {
     const c = requireCanvas()
-    const objects = allEntries(roots).filter((e) => ids.includes(e.base.id)).map((e) => e.object)
+    const objects = withoutDescendants(allEntries(roots).filter((e) => ids.includes(e.base.id))).map((e) => e.object)
     const held = holdSelection
     holdSelection = true // one report for the whole swap, not a `[]` in between
     try {
@@ -560,7 +581,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     if (target?.closest?.(FIELD)) return
     // A gesture is previewing; its owner handles keys (Escape cancels it).
     if (previewing) return
-    if (undoKeys(event)) return
+    if (undoKeys(event) || escapeKey(event)) return
     nudge(event)
   }
 
@@ -611,6 +632,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         commit([target], 'text')
       })
       c.pick = pick
+      c.toggleSelected = toggle
       c.on('mouse:dblclick', ({ e }) => onDoubleClick(e))
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
@@ -755,6 +777,8 @@ function sameFaces(before: Document, next: Document): boolean {
 class DocumentCanvas extends Canvas {
   /** The object a pointer event `e` on `path` (see `hitPath`) targets. */
   pick: (path: FabricObject[], e: TPointerEvent) => FabricObject = (path) => path[0]!
+  /** Shift+click on `target`: adds it to the Selection or takes it out; false when not handled. */
+  toggleSelected: (target: FabricObject) => boolean = () => false
   /** The event `findTarget` runs for, so `searchPossibleTargets` can pick by its modifier keys. */
   private finding: TPointerEvent | undefined
 
@@ -777,6 +801,20 @@ class DocumentCanvas extends Canvas {
     const info = super.searchPossibleTargets(objects, pointer)
     if (objects !== this._objects || !info.container || !this.finding) return info
     return { ...info, target: this.pick(this.pathOf(info.container, info.subTargets), this.finding) }
+  }
+
+  /** Shift+click is the editor's `toggleSelected`, on the Layer `pick` targets (never a Layer with its ancestor). */
+  protected override handleMultiSelection(e: TPointerEvent, target?: FabricObject): boolean {
+    const active = this._activeObject
+    if (!active || !target || !this.selection || !this._isSelectionKeyPressed(e) || active.getActiveControl()) return false
+    if (target === active) {
+      // On a multiple Selection: the selected Layer under the pointer, else what a click picks.
+      if (!(active instanceof ActiveSelection)) return false
+      const path = this.hitPath(e)
+      target = this._searchPossibleTargets(active.getObjects(), this.getScenePoint(e), []).target ?? (path.length > 0 ? this.pick(path, e) : undefined)
+    }
+    if (!target?.selectable) return false
+    return this.toggleSelected(target)
   }
 
   /** The objects under the pointer of `e`: the top-level one, then one per Group level down to the deepest hit. */

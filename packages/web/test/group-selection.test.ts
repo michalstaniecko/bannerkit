@@ -18,6 +18,11 @@ const dblclick = (upper: HTMLCanvasElement, at: At) => {
   click(upper, at, { detail: 2 })
   mouse(upper, 'dblclick', at, { detail: 2 })
 }
+function drag(upper: HTMLCanvasElement, from: At, to: At, init: MouseEventInit = {}) {
+  mouse(upper, 'mousedown', from, init)
+  for (const t of [0.25, 0.5, 0.75, 1]) mouse(upper, 'mousemove', [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t], init)
+  mouse(upper, 'mouseup', to, init)
+}
 const key = (key: string, init: KeyboardEventInit = {}) =>
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }))
 
@@ -90,5 +95,83 @@ describe('Cmd+click', () => {
     click(upper, RECT_3, { metaKey: true })
 
     expect(editor.getSelection()).toEqual(['rect-3'])
+  })
+})
+
+describe('Shift+click', () => {
+  it('adds a Layer of the same Group to the Selection', async () => {
+    const { editor, upper } = await openEditor(nested())
+    editor.select(['rect-2'])
+
+    click(upper, RECT_4, { shiftKey: true })
+
+    expect(editor.getSelection()).toEqual(['rect-2', 'rect-4'])
+  })
+
+  it('adds a top-level Layer outside the Group, keeping the child', async () => {
+    const { editor, upper } = await openEditor(nested())
+    editor.select(['rect-2'])
+
+    click(upper, RECT_1, { shiftKey: true })
+
+    expect(editor.getSelection()).toEqual(['rect-1', 'rect-2'])
+  })
+
+  it('takes a selected Layer out again', async () => {
+    const { editor, upper } = await openEditor(nested())
+    editor.select(['rect-2', 'rect-4'])
+
+    click(upper, RECT_4, { shiftKey: true })
+
+    expect(editor.getSelection()).toEqual(['rect-2'])
+  })
+
+  it('selecting an ancestor of a selected Layer drops that Layer', async () => {
+    const { editor, upper } = await openEditor(nested())
+    editor.select(['rect-1', 'rect-3'])
+
+    click(upper, RECT_2, { shiftKey: true }) // outside group-2: the top-level group-1
+
+    expect(editor.getSelection()).toEqual(['rect-1', 'group-1'])
+  })
+})
+
+describe('Escape', () => {
+  it('selects the Group of the selected Layer, a level at a time', async () => {
+    const { editor } = await openEditor(nested())
+    editor.select(['rect-3'])
+
+    expect(key('Escape')).toBe(false) // handled: default prevented
+    expect(editor.getSelection()).toEqual(['group-2'])
+
+    key('Escape')
+    expect(editor.getSelection()).toEqual(['group-1'])
+  })
+
+  it('does nothing with only top-level Layers selected', async () => {
+    const { editor } = await openEditor(nested())
+    editor.select(['rect-1'])
+
+    expect(key('Escape')).toBe(true)
+    expect(editor.getSelection()).toEqual(['rect-1'])
+  })
+})
+
+describe('the Selection shape', () => {
+  it('select() never keeps a Layer together with its ancestor: the ancestor wins', async () => {
+    const { editor } = await openEditor(nested())
+
+    editor.select(['group-1', 'rect-3', 'rect-1'])
+
+    expect(editor.getSelection()).toEqual(['rect-1', 'group-1'])
+  })
+
+  it('a rubber band takes top-level Layers only', async () => {
+    const { editor, upper } = await openEditor(nested())
+    editor.select(['rect-2'])
+
+    drag(upper, [5, 5], [395, 295])
+
+    expect(editor.getSelection()).toEqual(['rect-1', 'group-1'])
   })
 })
