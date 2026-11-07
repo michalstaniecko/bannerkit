@@ -48,6 +48,8 @@
 // the snap lines on Fabric's top context, never in a Render or an Export. Cmd/Ctrl
 // held, or `setSnapping(false)`, moves freely. `marks()` gives what is drawn. A reload
 // from disk during a gesture abandons it (no step), dropping the active object.
+// Resizing one unrotated leaf Layer snaps the dragged edge of its Box the same way
+// (snap-resize-adapter.ts); with Shift the rotation handle turns by 15°, Snapping on or off.
 //
 // `export` renders the shown Canvas offscreen (export.ts).
 import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, selectionBox, translateLayer, walkLayers, type Document, type GroupLayer, type Layer, type LeafLayer, type MeasureText, type Rect, type TextLayer, type TextLayout } from '@bannerkit/core'
@@ -64,6 +66,7 @@ import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesO
 import { fitZoom, type Size } from './zoom.ts'
 import { attachOverlay, readOverlayColors } from './overlay.ts'
 import { attachSnapAdapter, type SnapAdapter } from './snap-adapter.ts'
+import { attachResizeSnap, type ResizeSnap } from './snap-resize-adapter.ts'
 import type { Mark } from './snapping/marks.ts'
 import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
@@ -277,6 +280,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   let snapping = true
   /** The Snapping adapter, from `mount`. */
   let snap: SnapAdapter | undefined
+  /** The adapter snapping resizes (and stepping rotations), from `mount`. */
+  let resizeSnap: ResizeSnap | undefined
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
@@ -569,6 +574,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     c._currentTransform.target.isMoving = false
     c._currentTransform = null
     snap?.end()
+    resizeSnap?.end()
     c.discardActiveObject()
     c.requestRenderAll()
   }
@@ -607,6 +613,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
     const showNow = async (recipe: DocumentRecipe, token: number) => {
       snap?.end()
+      resizeSnap?.end()
       const next = recipe(structuredClone(base))
       if (!sameFaces(base, next)) {
         await loadFonts(facesUsed(next))
@@ -680,15 +687,29 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   }
 
   /** Moves one edge of a text Layer's Box while its handle is dragged; committed on release. */
-  const resizeText = (object: FabricObject, edge: TextEdge, point: Point) => {
+  const resizeText = (object: FabricObject, edge: TextEdge, point: Point, event: TPointerEvent) => {
     const entry = entryOf(object)
     if (!entry || entry.base.type !== 'text') return false
     const before = entry.base
-    entry.base = resizeTextLayer(object, entry.base, edge, point)
+    entry.base = resizeTextLayer(object, before, edge, snapTextPoint(object, before, edge, point, event))
     applyLayer(object, entry.base, env)
     if (entry.parent) applyLayer(rootOf(entry).object, syncBase(rootOf(entry)), env)
     reportBox()
     return entry.base.width !== before.width || entry.base.height !== before.height
+  }
+
+  /**
+   * `point` for a text resize, moved so the dragged edge of the Box lands where
+   * Snapping puts it (an unrotated text Layer, so the edge is the point's x or y).
+   */
+  const snapTextPoint = (object: FabricObject, base: TextLayer, edge: TextEdge, point: Point, event: TPointerEvent): Point => {
+    if (!resizeSnap) return point
+    const raw = layerExtent(resizeTextLayer(object, base, edge, point), env.measure)
+    const box = resizeSnap.snapText(object, raw, event)
+    if (box === raw) return point
+    if (edge === 'left') return new Point(box.x, point.y)
+    if (edge === 'right') return new Point(box.x + box.width, point.y)
+    return new Point(point.x, box.y + box.height)
   }
 
   /** Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z and Ctrl+Y redo. */
@@ -791,7 +812,19 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       })
       adapter.setEnabled(snapping)
       snap = adapter
-      const detachOverlay = attachOverlay(c, () => adapter.marks(), () => zoom, readOverlayColors(container))
+      const resizing = attachResizeSnap(c, {
+        document: documentNow,
+        idsOf: (objects) => allEntries(roots).filter((e) => objects.includes(e.object)).map((e) => e.base.id),
+        boxOf: (object) => {
+          const entry = entryOf(object)
+          return entry && !isGroupEntry(entry) ? layerExtent(objectToLayer(object, entry.base), env.measure) : undefined
+        },
+        measure: () => env.measure,
+        zoom: () => zoom,
+      })
+      resizing.setEnabled(snapping)
+      resizeSnap = resizing
+      const detachOverlay = attachOverlay(c, () => [...adapter.marks(), ...resizing.marks()], () => zoom, readOverlayColors(container))
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
       c.on('selection:created', groupSelectionControls)
@@ -810,6 +843,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         detachOverlay()
         adapter.detach()
         snap = undefined
+        resizing.detach()
+        resizeSnap = undefined
         return element
       }
     },
@@ -902,9 +937,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     setSnapping(on) {
       snapping = on
       snap?.setEnabled(on)
+      resizeSnap?.setEnabled(on)
     },
 
-    marks: () => [...(snap?.marks() ?? [])],
+    marks: () => [...(snap?.marks() ?? []), ...(resizeSnap?.marks() ?? [])],
 
     zoomToFit(viewport) {
       if (!current) throw new Error('No Document loaded')
