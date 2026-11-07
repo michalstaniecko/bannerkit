@@ -4,11 +4,16 @@
 import { isAbsolute, resolve } from 'node:path'
 import { parseArgs, type ParseArgsConfig } from 'node:util'
 import {
+  ALIGN_EDGES,
+  ALIGN_TARGETS,
   ANCHORS,
+  DISTRIBUTE_AXES,
   EXPORT_FORMATS,
   closest,
+  edgeAxis,
   EXPORT_SCALES,
   findLayer,
+  type AlignEdge,
   isExportFormat,
   isExportScale,
   parseSize,
@@ -22,8 +27,10 @@ import {
 import {
   OpError,
   addAssets,
+  alignLayers,
   createDocument,
   createProject,
+  distributeLayers,
   duplicateDocument,
   groupLayers,
   inspect,
@@ -39,6 +46,7 @@ import {
   type InspectResult,
   type LayerInspection,
   type MigrateResult,
+  type MoveLayersResult,
   type ValidateResult,
 } from '../ops/index.ts'
 
@@ -112,14 +120,30 @@ function sizeChoice(values: Values): { preset?: PresetId; size?: Size } {
   return { size: parseSizeFlag(sizes[0]!) }
 }
 
+/** `text` given to `--<flag>` as one of `choices`; anything else is a usage error with the closest one. */
+function choice<T extends string>(flag: string, text: string, choices: readonly T[]): T {
+  if ((choices as readonly string[]).includes(text)) return text as T
+  const suggestion = closest(text, choices)
+  throw new UsageError(
+    `--${flag} must be one of ${choices.join(', ')}, got "${text}"${suggestion ? ` (did you mean "${suggestion}"?)` : ''}`,
+  )
+}
+
 /** `--anchor`, when given; anything but one of the nine Anchors is a usage error with the closest one. */
 function anchorFlag(values: Values): Anchor | undefined {
   const text = values.anchor as string | undefined
-  if (text === undefined || (ANCHORS as readonly string[]).includes(text)) return text as Anchor | undefined
-  const suggestion = closest(text, ANCHORS)
-  throw new UsageError(
-    `--anchor must be one of ${ANCHORS.join(', ')}, got "${text}"${suggestion ? ` (did you mean "${suggestion}"?)` : ''}`,
-  )
+  return text === undefined ? undefined : choice('anchor', text, ANCHORS)
+}
+
+/** The `--edge`s: at least one, at most one per axis, each one of the six edges. */
+function edgeFlags(values: Values): AlignEdge[] {
+  const edges = ((values.edge as string[] | undefined) ?? []).map((text) => choice('edge', text, ALIGN_EDGES))
+  if (edges.length === 0) throw new UsageError(`give --edge (${ALIGN_EDGES.join('|')})`)
+  for (const axis of ['x', 'y'] as const) {
+    const onAxis = edges.filter((edge) => edgeAxis(edge) === axis)
+    if (onAxis.length > 1) throw new UsageError(`give --edge once per axis, got ${onAxis.join(' and ')}`)
+  }
+  return edges
 }
 
 /** A numeric flag; range and allowed values are checked by the op. */
@@ -183,6 +207,9 @@ function migrateReport(r: MigrateResult): string {
   lines.push(`${r.migrated.length} migrated, ${r.unchanged.length} unchanged, ${r.invalid.length} invalid`)
   return lines.join('\n')
 }
+
+const movedReport = (r: MoveLayersResult) =>
+  `${r.moved.length === 0 ? 'Nothing moved' : `Moved ${r.moved.join(', ')}`} in Document ${r.name} at ${r.path}`
 
 const px = (n: number) => `${Math.round(n * 100) / 100}`
 
@@ -278,6 +305,33 @@ const COMMANDS: Record<string, Command> = {
     options: {},
     run: ({ root, args: [project, name, id] }) => ungroupLayer({ root, project: project!, name: name!, id: id! }),
     human: (r) => `Ungrouped into ${r.ids.join(', ')} in Document ${r.name} at ${r.path}`,
+  },
+  'layer align': {
+    usage: `bannerkit layer align <project> <doc> <ids...> --edge ${ALIGN_EDGES.join('|')} [--edge ...] [--to ${ALIGN_TARGETS.join('|')}]`,
+    summary:
+      'Line up an edge or centre of the Layers (one --edge per axis) with the Canvas (default for one Layer) or their Selection Box (default for several); prints the moved ids',
+    positionals: [3, Infinity],
+    options: { edge: { type: 'string', multiple: true }, to: { type: 'string' } },
+    run: ({ root, args: [project, name, ...ids], values }) => {
+      const edges = edgeFlags(values)
+      const to = values.to === undefined ? undefined : choice('to', values.to as string, ALIGN_TARGETS)
+      return alignLayers({ root, project: project!, name: name!, ids, edges, ...(to ? { to } : {}) })
+    },
+    human: movedReport,
+  },
+  'layer distribute': {
+    usage: `bannerkit layer distribute <project> <doc> <ids...> --axis ${DISTRIBUTE_AXES.join('|')} [--gap N]`,
+    summary:
+      'Space the Layers along an axis: evenly between the first and the last (three or more), or N px apart from the first (two or more); prints the moved ids',
+    positionals: [3, Infinity],
+    options: { axis: { type: 'string' }, gap: { type: 'string' } },
+    run: ({ root, args: [project, name, ...ids], values }) => {
+      if (values.axis === undefined) throw new UsageError(`give --axis (${DISTRIBUTE_AXES.join('|')})`)
+      const axis = choice('axis', values.axis as string, DISTRIBUTE_AXES)
+      const gap = intFlag(values, 'gap')
+      return distributeLayers({ root, project: project!, name: name!, ids, axis, ...(gap === undefined ? {} : { gap }) })
+    },
+    human: movedReport,
   },
   'asset add': {
     usage: 'bannerkit asset add <project> <files...>',
