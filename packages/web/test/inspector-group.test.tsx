@@ -120,7 +120,8 @@ describe('Properties of several Layers with a Group among them', () => {
     const { view, field, toggle } = await openInspector(mixed(), { select: ['group-1', 'rect-3'] })
 
     const shown = view.getAllByRole('textbox').map((input) => input.getAttribute('aria-label') ?? (input as HTMLInputElement).labels?.[0]?.textContent)
-    expect(shown).toEqual(['X', 'Y', 'Width', 'Height', 'Opacity'])
+    // Gap belongs to the Align section on top, not to the Layers' fields.
+    expect(shown).toEqual(['Gap', 'X', 'Y', 'Width', 'Height', 'Opacity'])
     expect(view.getByLabelText('ID').textContent).toBe('Mixed')
     expect(field('Opacity').placeholder).toBe('Mixed')
     expect([field('X').value, field('Y').value, field('Width').value, field('Height').value]).toEqual(['10', '20', '340', '250'])

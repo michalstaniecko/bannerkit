@@ -7,9 +7,10 @@
 // moves the Selection Box (a single Group's x/y: its Box). A Layer that a Group around
 // it locks or hides shows its own flags plus a note naming that Group. With an empty
 // Selection it shows the Document (DocumentFields); the Anchor it resizes from is held
-// by the caller for the session.
+// by the caller for the session. A non-empty Selection gets the Align section on top
+// (AlignSection), whose Gap this tab holds for the session.
 import { inheritedFlags, type Anchor, type Document, type GroupLayer, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
-import type { RefObject } from 'react'
+import { useState, type RefObject } from 'react'
 import type { DocumentRecipe, Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
 import { ColorField } from '../ui/ColorField.tsx'
@@ -18,6 +19,7 @@ import { Section } from '../ui/Panel.tsx'
 import { Segmented } from '../ui/Segmented.tsx'
 import { Select } from '../ui/Select.tsx'
 import { TextField } from '../ui/TextField.tsx'
+import { AlignSection } from './AlignSection.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
 import { inspectField, MIXED, selectedLayers, sharedFields, type InspectedField } from './inspect.ts'
@@ -39,6 +41,8 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
   const { document, selection, reloads } = useInspected(editor, loaded)
   const layers = document ? selectedLayers(document, selection) : []
   const edits = useEdits(editor)
+  // The Align section's Gap: UI state for the session (Properties stays mounted).
+  const [gap, setGap] = useState<number | undefined>(undefined)
   // Text Layout (used font size, Auto height) as the editor lays it out: core
   // `layoutText` with the Canvas's measure, never read back from Fabric.
   const textLayout = (layer: TextLayer): TextLayout => {
@@ -60,6 +64,9 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
 
   return (
     <div className="inspector-properties">
+      {document && (
+        <AlignSection document={document} selection={selection} measure={measure} gap={gap} onGapChange={setGap} onWrite={edits.commit} />
+      )}
       {sharedFields(layers).map((group) => (
         <Section key={group.key} title={group.title}>
           {group.key === 'appearance' && <InheritedFlags document={document!} layers={layers} />}

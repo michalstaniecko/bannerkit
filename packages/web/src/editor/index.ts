@@ -50,7 +50,7 @@
 // from disk during a gesture abandons it (no step), dropping the active object.
 //
 // `export` renders the shown Canvas offscreen (export.ts).
-import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, walkLayers, type Document, type GroupLayer, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, selectionBox, translateLayer, walkLayers, type Document, type GroupLayer, type Layer, type LeafLayer, type MeasureText, type Rect, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject, type TPointerEvent } from 'fabric'
 import { groupControls, textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
@@ -143,7 +143,15 @@ export type SelectionEvent = { layerIds: string[] }
  */
 export type CanvasEvent = Size
 
-export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent; canvas: CanvasEvent }
+/**
+ * The Selection Box (core `selectionBox`: the union of the selected Layers' `layerExtent`,
+ * never a Fabric outline, ADR 0008), in Canvas px; null with nothing selected. Sent when
+ * it changes: with the Selection, after a step or a preview's show, and in every frame of
+ * a move, resize or rotation (the Ruler follows it).
+ */
+export type SelectionBoxEvent = { box: Rect | null }
+
+export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent; canvas: CanvasEvent; selectionBox: SelectionBoxEvent }
 
 export type Editor = {
   /** Creates the Fabric canvas inside `container`. Call once, before `load`. */
@@ -275,7 +283,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     change: new Set(),
     selection: new Set(),
     canvas: new Set(),
+    selectionBox: new Set(),
   }
+  /** The last `selectionBox` sent (as JSON), so an unchanged Box is not sent again. */
+  let sentBox: string | undefined
   /** The Canvas size last reported by a `canvas` event. */
   let settledSize: Size | undefined
 
@@ -350,19 +361,18 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   }
 
   /**
-   * Bakes what a gesture did to a Group's object into its Layers. Before it the
-   * object had the identity transform around the Group's Box (centre `c`), so now it
-   * maps every point p to t + R·s·(p − c): a scale `s` (corner handles, always
-   * proportional), a rotation R (the rotation handle) and a move to `t`.
-   * - A move alone: every leaf moves by t − c (whole px for a drag, like any
+   * The Group a gesture made of a Group's object, from its Layers as last laid out.
+   * Before the gesture the object had the identity transform around the Group's Box
+   * (centre `c`), so now it maps every point p to t + R·s·(p − c): a scale `s` (corner
+   * handles, always proportional), a rotation R (the rotation handle) and a move to `t`.
+   * - A move alone: every leaf moves by t − c (whole px when `whole`, like any
    *   transform), so they all move alike.
    * - A scale alone: core `scaleGroup` around the point the gesture kept fixed (the
    *   opposite corner, or the centre with Alt).
    * - Otherwise (a rotation, or a whole Selection turned): core `scaleGroup` and
    *   `rotateGroup` around `c`, then the move.
-   * The Group is laid out again by the caller.
    */
-  const bakeGroup = (entry: GroupEntry, cause: ChangeCause) => {
+  const transformedGroup = (entry: GroupEntry, whole: boolean): GroupLayer => {
     const before = syncBase(entry) as GroupLayer
     const box = layerExtent(before, env.measure)
     const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
@@ -374,15 +384,47 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     const scaled = Math.abs(scale - 1) > 1e-9
     if (scaled && turn === 0) {
       const fixed = { x: c.x + (translateX - c.x) / (1 - scale), y: c.y + (translateY - c.y) / (1 - scale) }
-      return rebase(entry, scaleGroup(before, scale, fixed))
+      return scaleGroup(before, scale, fixed)
     }
-    if (scaled) rebase(entry, scaleGroup(syncBase(entry) as GroupLayer, scale, c))
-    if (turn !== 0) rebase(entry, rotateGroup(syncBase(entry) as GroupLayer, turn, env.measure, c))
+    let layer = before
+    if (scaled) layer = scaleGroup(layer, scale, c)
+    if (turn !== 0) layer = rotateGroup(layer, turn, env.measure, c)
     let dx = translateX - c.x
     let dy = translateY - c.y
-    if (cause === 'transform') [dx, dy] = [roundPx(dx), roundPx(dy)]
-    if (dx === 0 && dy === 0) return
-    for (const leaf of leavesOf(entry)) leaf.base = { ...leaf.base, x: leaf.base.x + dx, y: leaf.base.y + dy }
+    if (whole) [dx, dy] = [roundPx(dx), roundPx(dy)]
+    return dx === 0 && dy === 0 ? layer : translateLayer(layer, dx, dy)
+  }
+
+  /** Bakes what a gesture did to a Group's object into its Layers; the caller lays the Group out again. */
+  const bakeGroup = (entry: GroupEntry, cause: ChangeCause) => rebase(entry, transformedGroup(entry, cause === 'transform'))
+
+  /**
+   * The Layer `entry` shows right now, also in the middle of a gesture: a Group as
+   * `transformedGroup`, a leaf read back from its object (inside an ActiveSelection
+   * being scaled, its size scaled with it).
+   */
+  const liveLayer = (entry: Entry): Layer => {
+    if (isGroupEntry(entry)) return transformedGroup(entry, false)
+    const layer = objectToLayer(entry.object, entry.base)
+    const holder = entry.object.group
+    if (!(holder instanceof ActiveSelection) || (holder.scaleX === 1 && holder.scaleY === 1)) return layer
+    const scaled = { ...layer, width: layer.width * holder.scaleX }
+    scaled.x = layer.x + (layer.width - scaled.width) / 2
+    if ('height' in layer && layer.height !== undefined) {
+      const height = layer.height * holder.scaleY
+      Object.assign(scaled, { height, y: layer.y + (layer.height - height) / 2 })
+    }
+    return scaled
+  }
+
+  /** Sends the Selection Box as shown now when it differs from the one last sent (see `SelectionBoxEvent`). */
+  const reportBox = () => {
+    if (holdSelection) return
+    const box = current ? (selectionBox(selectedEntries().map(liveLayer), env.measure) ?? null) : null
+    const key = JSON.stringify(box)
+    if (key === sentBox) return
+    sentBox = key
+    emit('selectionBox', { box })
   }
 
   /** Ends a logical modification of `objects`: bakes each into its Layer and emits one `change`. */
@@ -414,6 +456,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     history.record(document)
     const ids = new Set(touched.flatMap((e) => allEntries([e]).map((d) => d.base.id)))
     emit('change', { document, cause, layerIds: [...ids] })
+    reportBox()
   }
 
   /**
@@ -455,6 +498,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     if (cause !== 'undo' && cause !== 'redo') history.record(after)
     emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
     settleSize()
+    reportBox()
     return true
   }
 
@@ -628,9 +672,11 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     if (holdSelection) return
     const c = requireCanvas()
     const ids = allEntries(roots).filter((e) => c.getActiveObjects().includes(e.object)).map((e) => e.base.id)
-    if (ids.length === selected.length && ids.every((id, i) => id === selected[i])) return
-    selected = ids
-    emit('selection', { layerIds: [...ids] })
+    if (ids.length !== selected.length || ids.some((id, i) => id !== selected[i])) {
+      selected = ids
+      emit('selection', { layerIds: [...ids] })
+    }
+    reportBox()
   }
 
   /** Moves one edge of a text Layer's Box while its handle is dragged; committed on release. */
@@ -641,6 +687,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     entry.base = resizeTextLayer(object, entry.base, edge, point)
     applyLayer(object, entry.base, env)
     if (entry.parent) applyLayer(rootOf(entry).object, syncBase(rootOf(entry)), env)
+    reportBox()
     return entry.base.width !== before.width || entry.base.height !== before.height
   }
 
@@ -750,6 +797,12 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       c.on('selection:created', groupSelectionControls)
       c.on('selection:updated', groupSelectionControls)
       c.on('selection:cleared', reportSelection)
+      // Every frame of a move, resize or rotation sends the Selection Box as it is then.
+      // Registered after the Snapping adapter (above): Fabric calls listeners in order, so
+      // a move frame's Box is the snapped one.
+      c.on('object:moving', reportBox)
+      c.on('object:scaling', reportBox)
+      c.on('object:rotating', reportBox)
       const keyTarget = container.ownerDocument
       keyTarget.addEventListener('keydown', onKeyDown)
       unmount = () => {
@@ -879,6 +932,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       listeners.change.clear()
       listeners.selection.clear()
       listeners.canvas.clear()
+      listeners.selectionBox.clear()
+      sentBox = undefined
       settledSize = undefined
       await c?.dispose()
       // Fabric's dispose puts the bare <canvas> back into the container; take it out too.

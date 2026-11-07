@@ -117,8 +117,13 @@
   --control-size: 28px;
   --layer-list-width: 220px;
   --inspector-width: 320px;
-  /* Ruler gutters around the Canvas viewport; 0 until the rulers arrive (M3). */
-  --ruler-size: 0px;
+  /* Rulers (Ruler.tsx): gutters around the Canvas viewport, drawn on <canvas>. */
+  --ruler-size: 20px;
+  --ruler-surface: var(--color-white);
+  --ruler-tick: var(--color-gray-500);
+  --ruler-text: var(--color-gray-600);
+  --ruler-highlight: var(--color-blue-100);
+  --ruler-text-size: 10px;
   /* Canvas resize handles: a fixed screen size, whatever the zoom. */
   --canvas-handle-size: 8px;
 }
