@@ -6,15 +6,19 @@ export { createProject, listProjects, type CreateProjectInput, type ProjectRef }
 export {
   createDocument,
   duplicateDocument,
+  groupLayers,
   listDocuments,
   readDocument,
   resizeDocument,
+  ungroupLayer,
   writeDocument,
   type CreateDocumentInput,
   type DocumentRef,
   type DocumentResult,
   type DuplicateDocumentInput,
+  type GroupLayersInput,
   type ResizeDocumentInput,
+  type UngroupLayerInput,
 } from './documents.ts'
 export {
   SERVER_DOCUMENT_RULES,
@@ -25,12 +29,15 @@ export {
   type ServerRule,
   type ValidateResult,
 } from './validation.ts'
+export { migrate, type MigrateResult, type MigratedDocument } from './migrate.ts'
 export { preview, type PreviewResult } from './preview.ts'
 export { exportDocument, render, type ExportDocumentInput, type ExportFile, type RenderInput, type RenderResult } from './render.ts'
 export {
   inspect,
+  type GroupInspection,
   type InspectResult,
   type LayerInspection,
+  type LeafInspection,
   type TextInspection,
 } from './inspect.ts'
 export { readSelection, writeSelection, type Selection } from './selection.ts'

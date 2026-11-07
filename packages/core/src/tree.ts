@@ -1,0 +1,137 @@
+// The Layer tree: walking, finding and replacing Layers. Every place that goes
+// over all Layers of a Document goes through here, so Groups (Document v2,
+// ADR 0007) only need teaching to these functions. Pure, no DOM or Node APIs.
+import type { Document, GroupLayer, Layer, LeafLayer } from './document.ts'
+
+/** Anything that holds Layers bottom to top: the Document or a Group. */
+export type LayerParent = { readonly layers: readonly Layer[] }
+
+/** One Layer as met in the tree. */
+export type LayerVisit = {
+  layer: Layer
+  /** The Document or Group whose `layers` hold `layer`. */
+  parent: LayerParent
+  /** Position in `parent.layers` (0 = bottom). */
+  index: number
+  /** Issue path of the Layer: `layers[1]`, `layers[1].layers[0]` in a Group. */
+  path: string
+}
+
+/** The Issue path of the Layer reached by `indices`, one per level from the root: `[1, 0]` → `layers[1].layers[0]`. */
+export function layerPath(indices: readonly number[]): string {
+  return indices.map((i) => `layers[${i}]`).join('.')
+}
+
+/** Every Layer under `root` in draw order (bottom to top, a Group before its children). */
+export function walkLayers(root: LayerParent): LayerVisit[] {
+  const visits: LayerVisit[] = []
+  const visit = (parent: LayerParent, indices: readonly number[]) =>
+    parent.layers.forEach((layer, index) => {
+      const at = [...indices, index]
+      visits.push({ layer, parent, index, path: layerPath(at) })
+      if (layer.type === 'group') visit(layer, at)
+    })
+  visit(root, [])
+  return visits
+}
+
+/** The Layer with `id` anywhere under `root`, with its parent, position and path. */
+export function findLayer(root: LayerParent, id: string): LayerVisit | undefined {
+  return walkLayers(root).find((v) => v.layer.id === id)
+}
+
+/**
+ * `root` (the Document or a Group) with every Layer under it replaced by
+ * `replace(layer, visit)`, without touching the input. A Group's children are
+ * replaced first, so `replace` gets the Group holding its new children (`visit`
+ * still describes where the original sits). Layers `replace` returns as is are
+ * kept by reference; when nothing changes `root` (and every Group) itself is
+ * returned.
+ */
+export function mapLayers<P extends LayerParent>(root: P, replace: (layer: Layer, visit: LayerVisit) => Layer): P {
+  return flatMapLayers(root, (layer, visit) => [replace(layer, visit)])
+}
+
+/**
+ * Like `mapLayers`, but each Layer is replaced by any number of Layers in its
+ * place: none removes it, several go there bottom to top. A Group left without
+ * children stays (see `withoutEmptyGroups`).
+ */
+export function flatMapLayers<P extends LayerParent>(root: P, replace: (layer: Layer, visit: LayerVisit) => Layer[]): P {
+  const visits = walkLayers(root)
+  let next = 0
+  const mapAll = (layers: readonly Layer[]): readonly Layer[] => {
+    let changed = false
+    const mapped = layers.flatMap((layer) => {
+      const visit = visits[next++]!
+      let input = layer
+      if (layer.type === 'group') {
+        const children = mapAll(layer.layers)
+        if (children !== layer.layers) input = { ...layer, layers: [...children] }
+      }
+      const output = replace(input, visit)
+      if (output.length !== 1 || output[0] !== layer) changed = true
+      return output
+    })
+    return changed ? mapped : layers
+  }
+  const layers = mapAll(root.layers)
+  return layers === root.layers ? root : { ...root, layers: [...layers] }
+}
+
+/** `root` without Groups that have no children, nor Groups left empty by dropping them. */
+export function withoutEmptyGroups<P extends LayerParent>(root: P): P {
+  return flatMapLayers(root, (layer) => (layer.type === 'group' && layer.layers.length === 0 ? [] : [layer]))
+}
+
+/**
+ * The Document without the Layers `ids`, wherever they sit, without touching
+ * the input. A Group left without children goes too, since an empty Group is
+ * invalid. Unknown ids are ignored.
+ */
+export function removeLayers(document: Document, ids: readonly string[]): Document {
+  return withoutEmptyGroups(flatMapLayers(document, (layer) => (ids.includes(layer.id) ? [] : [layer])))
+}
+
+/** `layer` with every leaf in it (itself, for a leaf) replaced by `replace(leaf)`, at any depth. */
+export function mapLeaves<L extends Layer>(layer: L, replace: (leaf: LeafLayer) => LeafLayer): L {
+  return mapLayers({ layers: [layer] }, (l) => (l.type === 'group' ? l : replace(l))).layers[0] as L
+}
+
+/** `layer` moved by `dx`, `dy` Canvas px: a leaf's Box, or every Layer in a Group. */
+export function translateLayer<L extends Layer>(layer: L, dx: number, dy: number): L {
+  return mapLeaves(layer, (leaf) => ({ ...leaf, x: leaf.x + dx, y: leaf.y + dy }))
+}
+
+/** The Document with the Layer `id` replaced by `replace(layer)`, without touching the input. Unknown ids change nothing. */
+export function replaceLayer(document: Document, id: string, replace: (layer: Layer) => Layer): Document {
+  return mapLayers(document, (layer) => (layer.id === id ? replace(layer) : layer))
+}
+
+/**
+ * Whether the Layer `id` is effectively locked or hidden (spec Q14): it or any Group
+ * holding it is. `lockedBy` / `hiddenBy` name the nearest Group that locks or hides
+ * it (absent when only its own flag does, or nothing). Undefined for an unknown id.
+ */
+export type InheritedFlags = { locked: boolean; hidden: boolean; lockedBy?: GroupLayer; hiddenBy?: GroupLayer }
+
+export function inheritedFlags(root: LayerParent, id: string): InheritedFlags | undefined {
+  const layer = findLayer(root, id)?.layer
+  if (!layer) return undefined
+  const groups = ancestorsOf(root, id)
+  const lockedBy = groups.find((g) => g.locked === true)
+  const hiddenBy = groups.find((g) => g.visible === false)
+  const flags: InheritedFlags = { locked: layer.locked === true || lockedBy !== undefined, hidden: layer.visible === false || hiddenBy !== undefined }
+  if (lockedBy) flags.lockedBy = lockedBy
+  if (hiddenBy) flags.hiddenBy = hiddenBy
+  return flags
+}
+
+/** The Groups under `root` holding the Layer `id`, innermost first (none for a top-level Layer or an unknown id). */
+export function ancestorsOf(root: LayerParent, id: string): GroupLayer[] {
+  const parents = new Map<string, GroupLayer>()
+  for (const { layer, parent } of walkLayers(root)) if (parent !== root) parents.set(layer.id, parent as GroupLayer)
+  const ancestors: GroupLayer[] = []
+  for (let group = parents.get(id); group; group = parents.get(group.id)) ancestors.push(group)
+  return ancestors
+}

@@ -23,16 +23,22 @@ import {
   applyMatrix,
   boxTransform,
   fitImage,
+  fontStyleOf,
+  layerExtent,
   layoutText,
   linearGradientLine,
+  transformedText,
+  type GroupLayer,
   type ImageLayer,
   type Layer,
+  type LeafLayer,
   type LinearGradient,
   type MeasureText,
   type RectLayer,
   type TextLayer,
 } from '@bannerkit/core'
 import { FabricImage, Gradient, Pattern, Point, Rect, Shadow, Textbox, util, type FabricObject } from 'fabric'
+import { DocumentGroup } from './group.ts'
 
 export type MapperEnv = {
   /** The URL an image Layer's project-relative `src` loads from. */
@@ -46,14 +52,20 @@ type LocalBox = { cx: number; cy: number; width: number; height: number }
 
 const localBoxes = new WeakMap<FabricObject, LocalBox>()
 
-/** Lays a Layer out as a Fabric object. An image whose Asset fails to load becomes a hatched placeholder. */
+/**
+ * Lays a Layer out as a Fabric object: a Group as a `DocumentGroup` holding its
+ * children's objects (in draw order). An image whose Asset fails to load becomes a
+ * hatched placeholder.
+ */
 export async function layerToObject(layer: Layer, env: MapperEnv): Promise<FabricObject> {
   const object =
-    layer.type === 'rect'
-      ? new Rect()
-      : layer.type === 'text'
-        ? new DocumentTextbox(layer.text)
-        : ((await loadImage(env.assetUrl(layer.src))) ?? new Rect())
+    layer.type === 'group'
+      ? new DocumentGroup(await Promise.all(layer.layers.map((child) => layerToObject(child, env))))
+      : layer.type === 'rect'
+        ? new Rect()
+        : layer.type === 'text'
+          ? new DocumentTextbox(layer.text)
+          : ((await loadImage(env.assetUrl(layer.src))) ?? new Rect())
   applyLayer(object, layer, env)
   return object
 }
@@ -65,30 +77,81 @@ export async function layerToObject(layer: Layer, env: MapperEnv): Promise<Fabri
  * the Box is in `width`/`height`.
  */
 export function applyLayer(object: FabricObject, layer: Layer, env: MapperEnv): void {
+  if (layer.type === 'group') {
+    if (!(object instanceof DocumentGroup)) throw new Error(`Layer "${layer.id}" (group) cannot be applied to a ${object.type}`)
+    return applyGroup(object, layer, env)
+  }
   let box: LocalBox
   if (layer.type === 'text' && object instanceof Textbox) box = applyText(object, layer, env)
   else if (layer.type === 'image' && object instanceof FabricImage) box = applyImage(object, layer)
   else if (layer.type === 'image' && object instanceof Rect) box = applyPlaceholder(object, layer)
   else if (layer.type === 'rect' && object instanceof Rect) box = applyRect(object, layer)
   else throw new Error(`Layer "${layer.id}" (${layer.type}) cannot be applied to a ${object.type}`)
-  object.set(commonProps(layer))
+  object.set(commonProps(layer, frozenByGroup(object)))
   localBoxes.set(object, box)
   // Put the local Box centre on the Box centre: centre = boxCentre − R(angle)·(cx·scaleX, cy·scaleY).
   // R is core's rotation (boxTransform of a zero-size Box at the origin), the one the server draws with.
   const offset = applyMatrix(boxTransform({ x: 0, y: 0, width: 0, height: 0, rotation: object.angle }), box.cx * object.scaleX, box.cy * object.scaleY)
-  object.set({ left: layer.x + box.width * object.scaleX / 2 - offset.x, top: layer.y + box.height * object.scaleY / 2 - offset.y })
+  place(object, new Point(layer.x + box.width * object.scaleX / 2 - offset.x, layer.y + box.height * object.scaleY / 2 - offset.y))
+}
+
+/**
+ * A Group: its object gets the Group's Box (core `layerExtent`, ADR 0007) with an
+ * identity transform centred on it, then each child is placed through it (see group.ts).
+ */
+function applyGroup(object: DocumentGroup, layer: GroupLayer, env: MapperEnv): void {
+  const children = object.getObjects()
+  if (children.length !== layer.layers.length) throw new Error(`Group "${layer.id}" is not laid out on this object`)
+  const extent = layerExtent(layer, env.measure)
+  const frozen = isFrozen(layer) || frozenByGroup(object)
+  if (frozen) frozenGroups.add(object)
+  else frozenGroups.delete(object)
+  object.set({
+    originX: 'center',
+    originY: 'center',
+    width: extent.width,
+    height: extent.height,
+    scaleX: 1,
+    scaleY: 1,
+    angle: 0,
+    opacity: layer.opacity ?? 1,
+    visible: layer.visible ?? true,
+    selectable: !layer.locked,
+    evented: !layer.locked,
+    // Scaled (always proportionally) and rotated by its handles; the editor bakes either into its Layers.
+    hasControls: !frozen,
+    lockMovementX: frozen,
+    lockMovementY: frozen,
+    lockRotation: frozen,
+    lockScalingX: frozen,
+    lockScalingY: frozen,
+    lockScalingFlip: true,
+    lockSkewingX: true,
+    lockSkewingY: true,
+  })
+  place(object, new Point(extent.x + extent.width / 2, extent.y + extent.height / 2))
+  layer.layers.forEach((child, i) => applyLayer(children[i]!, child, env))
+  object.set('dirty', true)
+}
+
+/** Puts `object`'s centre on `centre` (Canvas px), through the transform of the Group holding it. */
+function place(object: FabricObject, centre: Point): void {
+  const parent = object.parent
+  const at = parent ? centre.transform(util.invertTransform(parent.calcTransformMatrix())) : centre
+  object.set({ left: at.x, top: at.y })
   object.setCoords()
 }
 
 /** The Layer `object` now shows, with the fields Fabric does not own taken from `base`. */
-export function objectToLayer(object: FabricObject, base: Layer): Layer {
+export function objectToLayer(object: FabricObject, base: LeafLayer): LeafLayer {
+  // Read in Canvas px: `calcTransformMatrix` includes the transform of any Group holding the object.
   const box = localBoxes.get(object) ?? { cx: 0, cy: 0, width: object.width, height: object.height }
   const width = clean(box.width * object.scaleX)
   const height = clean(box.height * object.scaleY)
   const centre = new Point(box.cx, box.cy).transform(object.calcTransformMatrix())
-  const layer: Layer = { ...base, x: clean(centre.x - width / 2), y: clean(centre.y - height / 2), width }
+  const layer: LeafLayer = { ...base, x: clean(centre.x - width / 2), y: clean(centre.y - height / 2), width }
   if ('height' in base && base.height !== undefined) (layer as { height: number }).height = height
-  setOptional(layer, 'rotation', normaliseAngle(object.angle), 0)
+  setOptional(layer, 'rotation', normaliseAngle(object.getTotalAngle()), 0)
   setOptional(layer, 'opacity', object.opacity, 1)
   setOptional(layer, 'visible', object.visible, true)
   return layer
@@ -180,13 +243,16 @@ function applyImage(image: FabricImage, layer: ImageLayer): LocalBox {
  */
 function applyText(textbox: Textbox, layer: TextLayer, env: MapperEnv): LocalBox {
   const layout = layoutText(layer, env.measure)
+  if (textbox instanceof DocumentTextbox) textbox.typedText = layer.text
   textbox.set({
-    text: layer.text,
+    // `textTransform` is shown, except while editing: the user edits what they typed.
+    text: textbox.isEditing ? layer.text : transformedText(layer),
     width: layer.width,
     scaleX: 1,
     scaleY: 1,
     fontFamily: layer.fontFamily,
     fontWeight: layer.fontWeight,
+    fontStyle: fontStyleOf(layer),
     fontSize: layout.fontSize,
     lineHeight: layer.lineHeight ?? DEFAULT_LINE_HEIGHT,
     // Fabric's charSpacing is in 1/1000 em; letterSpacing is in px.
@@ -212,8 +278,25 @@ function applyText(textbox: Textbox, layer: TextLayer, env: MapperEnv): LocalBox
  * (`textRendering: 'geometricPrecision'`), like the server's skia-canvas. Chrome's
  * default hints and snaps glyphs, which drifts letter-spaced lines and thickens every
  * glyph edge, enough to fail browser-vs-server parity on text-heavy banners.
+ *
+ * It shows the Layer's transformed text (`textTransform`) but swaps in the typed
+ * text when editing starts; the editor re-applies the Layer when editing ends.
  */
 class DocumentTextbox extends Textbox {
+  /** The Layer's `text` as typed, before `textTransform`. */
+  typedText?: string
+
+  override enterEditingImpl() {
+    if (this.typedText !== undefined && this.text !== this.typedText) {
+      this.set({ text: this.typedText })
+      this.initDimensions()
+      const end = this.text.length
+      this.selectionStart = Math.min(this.selectionStart, end)
+      this.selectionEnd = Math.min(this.selectionEnd, end)
+    }
+    super.enterEditingImpl()
+  }
+
   override _setTextStyles(ctx: CanvasRenderingContext2D, charStyle?: any, forMeasuring?: boolean) {
     super._setTextStyles(ctx, charStyle, forMeasuring)
     ctx.textRendering = 'geometricPrecision'
@@ -284,7 +367,20 @@ export function isFrozen(layer: Layer): boolean {
   return layer.locked === true || layer.visible === false
 }
 
-function commonProps(layer: Layer) {
+/**
+ * The DocumentGroups frozen by their own flag or a Group holding them (spec Q14),
+ * as last applied. `applyGroup` sets a Group's entry before applying its children.
+ */
+const frozenGroups = new WeakSet<FabricObject>()
+
+/** Whether a Group holding `object` is locked or hidden, so it is as well. */
+function frozenByGroup(object: FabricObject): boolean {
+  return object.parent !== undefined && frozenGroups.has(object.parent)
+}
+
+/** `inherited`: a Group holding the Layer is locked or hidden. */
+function commonProps(layer: LeafLayer, inherited: boolean) {
+  const frozen = inherited || isFrozen(layer)
   return {
     originX: 'center' as const,
     originY: 'center' as const,
@@ -296,10 +392,10 @@ function commonProps(layer: Layer) {
     visible: layer.visible ?? true,
     selectable: !layer.locked,
     evented: !layer.locked,
-    // Selected from the Layer list, a locked or hidden Layer shows no handles and does not move.
-    hasControls: !isFrozen(layer),
-    lockMovementX: isFrozen(layer),
-    lockMovementY: isFrozen(layer),
+    // Selected from the Layer list, a locked or hidden Layer (or one in such a Group) shows no handles and does not move.
+    hasControls: !frozen,
+    lockMovementX: frozen,
+    lockMovementY: frozen,
     // A Layer never flips or skews: the Document has no field for either.
     lockScalingFlip: true,
     lockSkewingX: true,
@@ -331,10 +427,10 @@ function normaliseAngle(angle: number): number {
 }
 
 function setOptional<K extends 'rotation' | 'opacity' | 'visible'>(
-  layer: Layer,
+  layer: LeafLayer,
   key: K,
-  value: NonNullable<Layer[K]>,
-  fallback: NonNullable<Layer[K]>,
+  value: NonNullable<LeafLayer[K]>,
+  fallback: NonNullable<LeafLayer[K]>,
 ) {
   if (value === fallback && layer[key] === undefined) return
   layer[key] = value

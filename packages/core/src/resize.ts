@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { CanvasSchema, type Document } from './document.ts'
 import type { Size } from './presets.ts'
+import { mapLayers, translateLayer } from './tree.ts'
 
 /** A new Canvas size is checked by the same rules as the Document's own `canvas`. */
 const CanvasSizeSchema = CanvasSchema.pick({ width: true, height: true })
@@ -31,7 +32,7 @@ function anchorFractions(anchor: Anchor): { fx: number; fy: number } {
 
 /**
  * The Document with its Canvas resized to `size`, keeping the `anchor` point put.
- * Layers are never scaled: every Layer moves by the same whole-pixel delta
+ * Layers are never scaled: every Layer (and every Guide) moves by the same whole-pixel delta
  * `floor(f · (new − old))` per axis (so at a centre Anchor an odd extra pixel
  * goes to the right or bottom edge), and may end up partly or fully off the Canvas.
  * The same size returns the Document as is. Throws when `size` is outside the
@@ -44,11 +45,10 @@ export function resizeCanvas(document: Document, size: Size, anchor: Anchor = 't
   // `+ 0` turns a -0 from floor(-0) into 0.
   const dx = Math.floor(fx * (width - document.canvas.width)) + 0
   const dy = Math.floor(fy * (height - document.canvas.height)) + 0
-  return {
-    ...document,
-    canvas: { ...document.canvas, width, height },
-    // Only top-level Layers move: v1 has no Groups. v2 Groups (ADR 0007) hold Canvas
-    // coordinates, so once they exist this must recurse into every descendant too.
-    layers: document.layers.map((layer) => ({ ...layer, x: layer.x + dx, y: layer.y + dy })),
-  }
+  // Every leaf in the tree moves: Layers hold Canvas coordinates at every depth,
+  // and a Group has no position of its own (its Box follows its children).
+  const moved = mapLayers(document, (layer) => (layer.type === 'group' ? layer : translateLayer(layer, dx, dy)))
+  // Guides stay where they were relative to the Layers.
+  const guides = document.guides && { x: document.guides.x.map((x) => x + dx), y: document.guides.y.map((y) => y + dy) }
+  return { ...moved, canvas: { ...document.canvas, width, height }, ...(guides && { guides }) }
 }

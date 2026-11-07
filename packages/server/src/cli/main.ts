@@ -8,6 +8,7 @@ import {
   EXPORT_FORMATS,
   closest,
   EXPORT_SCALES,
+  findLayer,
   isExportFormat,
   isExportScale,
   parseSize,
@@ -24,15 +25,20 @@ import {
   createDocument,
   createProject,
   duplicateDocument,
+  groupLayers,
   inspect,
+  migrate,
   preview,
   render,
   resizeDocument,
   resolveProjectsRoot,
+  ungroupLayer,
   type RenderResult,
   validate,
   type AddAssetsResult,
   type InspectResult,
+  type LayerInspection,
+  type MigrateResult,
   type ValidateResult,
 } from '../ops/index.ts'
 
@@ -169,24 +175,41 @@ function validateReport(report: ValidateResult): string {
   return lines.join('\n')
 }
 
+function migrateReport(r: MigrateResult): string {
+  const lines = [
+    ...r.migrated.map((d) => `migrated ${d.path}`),
+    ...r.invalid.flatMap((d) => [`invalid ${d.path}`, ...d.errors.map((issue) => `  error ${issueLine(issue)}`)]),
+  ]
+  lines.push(`${r.migrated.length} migrated, ${r.unchanged.length} unchanged, ${r.invalid.length} invalid`)
+  return lines.join('\n')
+}
+
 const px = (n: number) => `${Math.round(n * 100) / 100}`
 
 function inspectReport(r: InspectResult): string {
   const lines = [`${r.name} ${r.canvas.width}x${r.canvas.height} (${r.path})`]
   lines.push(r.selection ? `Selection: ${r.selection.selectedLayerIds.join(', ') || '(none)'}` : 'Selection: not recorded')
-  for (const l of r.layers) {
+  // Group children are indented two spaces per level.
+  const add = (l: LayerInspection, depth: number) => {
     const b = l.extent
+    const indent = '  '.repeat(depth)
+    const name = l.type === 'group' && l.name !== undefined ? ` ${JSON.stringify(l.name)}` : ''
     lines.push(
-      `${l.selected ? '*' : ' '} [${l.index}] ${l.type} ${l.id} at ${px(b.x)},${px(b.y)} ${px(b.width)}x${px(b.height)} ${l.placement}`,
+      `${l.selected ? '*' : ' '} ${indent}[${l.index}] ${l.type} ${l.id}${name} at ${px(b.x)},${px(b.y)} ${px(b.width)}x${px(b.height)} ${l.placement}`,
     )
+    if (l.type === 'group') {
+      for (const child of l.layers) add(child, depth + 1)
+      return
+    }
     if (l.text) {
       const t = l.text
       const size = t.fontSize === t.requestedFontSize ? `${t.fontSize}px` : `${t.fontSize}px (AutoFit from ${t.requestedFontSize}px)`
       const text = t.lines.map((line) => JSON.stringify(line.text)).join(' / ')
-      lines.push(`      ${size}, ${t.lines.length} line(s): ${text}${t.overflow ? ' OVERFLOW' : ''}`)
+      lines.push(`      ${indent}${size}, ${t.lines.length} line(s): ${text}${t.overflow ? ' OVERFLOW' : ''}`)
     }
-    if (l.asset) lines.push(`      asset ${l.asset.src} ${l.asset.width}x${l.asset.height}`)
+    if (l.asset) lines.push(`      ${indent}asset ${l.asset.src} ${l.asset.width}x${l.asset.height}`)
   }
+  for (const l of r.layers) add(l, 0)
   for (const issue of r.warnings) lines.push(`warning ${issueLine(issue)}`)
   return lines.join('\n')
 }
@@ -229,6 +252,33 @@ const COMMANDS: Record<string, Command> = {
     },
     human: (r) => `Resized Document ${r.name} to ${r.document.canvas.width}x${r.document.canvas.height} at ${r.path}`,
   },
+  'layer group': {
+    usage: 'bannerkit layer group <project> <doc> <ids...> [--name N]',
+    summary: 'Wrap Layers sharing a parent in a new Group where the topmost of them was; prints its id',
+    positionals: [3, Infinity],
+    options: { name: { type: 'string' } },
+    run: ({ root, args: [project, name, ...ids], values }) =>
+      groupLayers({
+        root,
+        project: project!,
+        name: name!,
+        ids,
+        ...(values.name !== undefined ? { groupName: values.name as string } : {}),
+      }),
+    human: (r) => {
+      const found = findLayer(r.document, r.id)?.layer
+      const children = found?.type === 'group' ? found.layers.map((l) => l.id).join(', ') : ''
+      return `Grouped ${children} as ${r.id} in Document ${r.name} at ${r.path}`
+    },
+  },
+  'layer ungroup': {
+    usage: 'bannerkit layer ungroup <project> <doc> <id>',
+    summary: "Put a Group's children where the Group was, coordinates unchanged; prints their ids",
+    positionals: [3, 3],
+    options: {},
+    run: ({ root, args: [project, name, id] }) => ungroupLayer({ root, project: project!, name: name!, id: id! }),
+    human: (r) => `Ungrouped into ${r.ids.join(', ')} in Document ${r.name} at ${r.path}`,
+  },
   'asset add': {
     usage: 'bannerkit asset add <project> <files...>',
     summary: 'Ingest PNG, JPEG, WebP or SVG files into assets/ and print each src and size',
@@ -249,6 +299,16 @@ const COMMANDS: Record<string, Command> = {
         : validate({ root, project: target! }),
     human: validateReport,
     failed: (r: ValidateResult) => !r.ok,
+  },
+  migrate: {
+    usage: 'bannerkit migrate <project>',
+    summary:
+      'Rewrite older-version Documents as the current version (only `version` changes); invalid ones are reported, not written, and exit 1',
+    positionals: [1, 1],
+    options: {},
+    run: ({ root, args: [project] }) => migrate({ root, project: project! }),
+    human: migrateReport,
+    failed: (r: MigrateResult) => r.invalid.length > 0,
   },
   inspect: {
     usage: 'bannerkit inspect <project> [<doc>]',
@@ -299,7 +359,7 @@ function helpText(): string {
     'Global options:',
     '  --root <dir>   Projects root (default: $BANNERKIT_ROOT, then ./projects)',
     '  --json         Print { ok, result } or { ok: false, error } as JSON on stdout',
-    '                 (validate prints { ok: false, result } when Documents are invalid)',
+    '                 (validate and migrate print { ok: false, result } when Documents are invalid)',
     '  -h, --help     Show this help',
     '',
     'Exit codes: 0 success, 1 operation error, 2 usage error.',

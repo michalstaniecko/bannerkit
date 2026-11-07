@@ -18,7 +18,7 @@ function presetDocument(width: number, height: number): Document {
   const u = Math.min(width, height)
   const tall = height > width
   return {
-    version: 1,
+    version: 2,
     name: `preset-${width}x${height}`,
     canvas: { width, height, background: '#ffffff' },
     layers: [
@@ -85,11 +85,84 @@ function presetDocument(width: number, height: number): Document {
   }
 }
 
+/** Italic text at every weight, drawn from the italic font files (ADR 0003), wrapped, spaced and rotated. */
+function italicDocument(): Document {
+  const weights = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const
+  return {
+    version: 2,
+    name: 'italic',
+    canvas: { width: 800, height: 600, background: '#ffffff' },
+    layers: weights.map((fontWeight, i) => ({
+      id: `text-${i + 1}`,
+      type: 'text',
+      x: 20 + (i % 3) * 260,
+      y: 20 + Math.floor(i / 3) * 190,
+      width: 240,
+      text: `Italic ${fontWeight}: the quick brown fox jumps`,
+      fontFamily: 'Inter',
+      fontWeight,
+      fontStyle: 'italic',
+      fontSize: 30,
+      letterSpacing: i % 2 === 0 ? 0 : 1.5,
+      rotation: i === 4 ? -8 : 0,
+      fill: '#13315c',
+    })),
+  }
+}
+
+/**
+ * Groups with opacity < 1 whose Layers overlap (drawn like CSS: flattened first), one
+ * nested in another so the opacities multiply, over a Layer outside them; the Layers
+ * include a shadowed, rotated image and text.
+ */
+function groupDocument(): Document {
+  return {
+    version: 2,
+    name: 'group',
+    canvas: { width: 600, height: 400, background: '#f4efe6' },
+    layers: [
+      { id: 'rect-1', type: 'rect', x: 40, y: 40, width: 520, height: 120, fill: '#13315c' },
+      {
+        id: 'group-1',
+        type: 'group',
+        name: 'Badge',
+        opacity: 0.6,
+        layers: [
+          { id: 'rect-2', type: 'rect', x: 80, y: 80, width: 260, height: 200, fill: '#e4572e', cornerRadius: 24 },
+          {
+            id: 'image-1',
+            type: 'image',
+            x: 220,
+            y: 60,
+            width: 140,
+            height: 280,
+            src: 'assets/bottle.png',
+            fit: 'contain',
+            rotation: 8,
+            shadow: { color: 'rgba(0,0,0,0.5)', blur: 12, offsetX: 6, offsetY: 8 },
+          },
+          {
+            id: 'group-2',
+            type: 'group',
+            opacity: 0.7,
+            layers: [
+              { id: 'rect-3', type: 'rect', x: 300, y: 200, width: 220, height: 120, fill: '#29335c', cornerRadius: 60 },
+              { id: 'text-1', type: 'text', x: 310, y: 230, width: 200, text: 'SALE −40%', fontFamily: 'Inter', fontWeight: 800, fontSize: 40, fill: '#ffffff', align: 'center' },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+}
+
 const demoAssets = join(repoRoot, 'examples/demo/assets')
 
 /** The demo Documents as committed, then one Document per Preset, each in its own Project. */
 const cases: { project: string; doc: string; document?: Document }[] = [
-  ...['hero', 'rectangle', 'square'].map((doc) => ({ project: 'demo', doc })),
+  ...['hero', 'rectangle', 'square', 'story'].map((doc) => ({ project: 'demo', doc })),
+  { project: 's3-parity-italic', doc: 'italic', document: italicDocument() },
+  { project: 's3-parity-group', doc: 'group', document: groupDocument() },
   ...Object.values(PRESETS).map(({ width, height }) => ({
     project: `s3-parity-${width}x${height}`,
     doc: 'banner',

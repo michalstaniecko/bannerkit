@@ -3,7 +3,7 @@
 // undo step, one `change` (so one autosave). Escape and a reload from disk end it.
 import { act } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { doc, rect } from './editor-harness.ts'
+import { doc, leaves, rect } from './editor-harness.ts'
 import { openInspector, settle } from './inspector-harness.tsx'
 
 type Mouse = { clientX: number; shiftKey?: boolean }
@@ -51,7 +51,7 @@ describe('dragging a number field label', () => {
     await mouse(document.body, 'mousemove', { clientX: 60 })
     await mouse(document.body, 'mousemove', { clientX: 80 })
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 130, y: 100 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 130, y: 100 })
     expect(field('X').value).toBe('130')
     expect(changes).toEqual([])
     expect(editor.canUndo()).toBe(false)
@@ -79,7 +79,7 @@ describe('dragging a number field label', () => {
     expect(field('Opacity').value).toBe('1')
     await mouse(document.body, 'mouseup', { clientX: 60 })
 
-    expect(editor.getDocument().layers[0]!.opacity).toBeUndefined() // 1 is the default
+    expect(leaves(editor.getDocument())[0]!.opacity).toBeUndefined() // 1 is the default
   })
 
   it('Escape during the drag shows the value from before it again, without a step', async () => {
@@ -120,7 +120,7 @@ describe('dragging a number field label', () => {
     await mouse(document.body, 'mousemove', { clientX: 90 })
     await mouse(document.body, 'mouseup', { clientX: 90 })
 
-    expect(editor.getDocument().layers[0]).toMatchObject({ x: 100, y: 40 })
+    expect(leaves(editor.getDocument())[0]).toMatchObject({ x: 100, y: 40 })
     expect(field('X').value).toBe('100')
     expect(changes.map((c) => c.cause)).toEqual(['reload'])
   })
@@ -138,7 +138,7 @@ describe('dragging a number field label with several Layers', () => {
     await mouse(document.body, 'mousemove', { clientX: 60 })
     await mouse(document.body, 'mousemove', { clientX: 75 })
 
-    expect(editor.getDocument().layers.map((l) => l.x)).toEqual([35, 225, 100])
+    expect(leaves(editor.getDocument()).map((l) => l.x)).toEqual([35, 225, 100])
     expect(field('X').value).toBe('35')
     expect(changes).toEqual([])
     expect(editor.canUndo()).toBe(false)
@@ -146,7 +146,7 @@ describe('dragging a number field label with several Layers', () => {
     await mouse(document.body, 'mouseup', { clientX: 75 })
 
     expect(changes.map((c) => c.cause)).toEqual(['inspector'])
-    expect(editor.getDocument().layers.map((l) => [l.x, l.y])).toEqual([
+    expect(leaves(editor.getDocument()).map((l) => [l.x, l.y])).toEqual([
       [35, 20],
       [225, 120],
       [100, 100],
@@ -163,7 +163,7 @@ describe('dragging a number field label with several Layers', () => {
 
     await mouse(labelOf(field('Opacity')), 'mousedown', { clientX: 50 })
     await mouse(document.body, 'mousemove', { clientX: 60 })
-    expect(editor.getDocument().layers.map((l) => l.opacity)).toEqual([0.6, 0.6])
+    expect(leaves(editor.getDocument()).map((l) => l.opacity)).toEqual([0.6, 0.6])
     await key('Escape')
     await mouse(document.body, 'mouseup', { clientX: 60 })
 

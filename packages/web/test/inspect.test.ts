@@ -4,7 +4,7 @@
 import type { Layer, TextLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
 import { layerFields, type FieldGroup } from '../src/inspector/fields.ts'
-import { inspectField, MIXED, sharedFields } from '../src/inspector/inspect.ts'
+import { inspectField, MIXED, moveLayers, sharedBox, sharedFields } from '../src/inspector/inspect.ts'
 import { doc, image, rect, text } from './editor-harness.ts'
 
 const toggle = (key: string) => ({ control: 'toggle' as const, key, label: key, read: () => true, write: (l: Layer) => l })
@@ -81,5 +81,70 @@ describe('font family and weight from a font manifest', () => {
     const layers = [text({ id: 'a', fontWeight: 400 }), text({ id: 'b', fontFamily: 'Mono', fontWeight: 400 })]
     expect(values(inspect('fontWeight', layers))).toEqual(['400'])
     expect(inspect('fontFamily', layers).value).toBe(MIXED)
+  })
+})
+
+describe('moveLayers and sharedBox with a Group', () => {
+  it('move every Layer inside a selected Group and bound its children', () => {
+    const group: Layer = { id: 'g', type: 'group', layers: [rect({ id: 'a', x: 0, y: 0 }), { id: 'h', type: 'group', layers: [rect({ id: 'b', x: 200, y: 50 })] }] }
+
+    const moved = moveLayers(doc([group]), ['g'], 5, 7)
+
+    expect(sharedBox(moved.layers, () => 0)).toEqual({ x: 5, y: 7, width: 300, height: 100 })
+  })
+})
+
+describe('italic from a font manifest', () => {
+  const face = (weight: TextLayer['fontWeight'], style: 'normal' | 'italic', family = 'Inter') => ({
+    family,
+    weight,
+    style,
+    file: `${family}-${weight}-${style}.ttf`,
+  })
+  const manifest = [face(400, 'normal'), face(400, 'italic'), face(600, 'italic'), face(700, 'normal'), face(600, 'normal'), face(500, 'normal', 'Mono')]
+  const textLayout = () => ({ fontSize: 0, lines: [], height: 0, overflow: false })
+  const field = (key: string, layers: Layer[]) => sharedFields(layers, layerFields(manifest)).flatMap((g) => g.fields).find((f) => f.key === key)!
+  const italic = (layers: Layer[]) => {
+    const inspected = inspectField(field('fontStyle', layers), layers, { textLayout })
+    if (inspected.control !== 'toggle') throw new Error('not a toggle')
+    return inspected
+  }
+  const select = (key: string, layers: Layer[]) => {
+    const inspected = inspectField(field(key, layers), layers, { textLayout })
+    if (inspected.control !== 'select') throw new Error('not a select')
+    return inspected
+  }
+
+  it('turns italic on, and off by leaving the key out', () => {
+    const upright = text({ fontWeight: 400 })
+    expect(italic([upright])).toMatchObject({ value: false, disabled: false })
+    expect(italic([upright]).write(true)(doc([upright])).layers[0]).toEqual(text({ fontWeight: 400, fontStyle: 'italic' }))
+
+    const slanted = text({ fontWeight: 400, fontStyle: 'italic' })
+    expect(italic([slanted]).value).toBe(true)
+    expect(italic([slanted]).write(false)(doc([slanted])).layers[0]).toEqual(text({ fontWeight: 400 }))
+  })
+
+  it('is disabled when the family has no italic file for the weight', () => {
+    expect(italic([text({ fontWeight: 700 })]).disabled).toBe(true)
+    expect(italic([text({ id: 'a', fontWeight: 400 }), text({ id: 'b', fontWeight: 700 })]).disabled).toBe(true)
+  })
+
+  it('is Mixed over upright and italic texts', () => {
+    const layers = [text({ id: 'a', fontWeight: 400 }), text({ id: 'b', fontWeight: 400, fontStyle: 'italic' })]
+    expect(italic(layers).value).toBe(MIXED)
+  })
+
+  it('an italic text is offered only the weights that have an italic file', () => {
+    const values = (layers: Layer[]) => select('fontWeight', layers).options.map((o) => o.value)
+    expect(values([text({ fontWeight: 400, fontStyle: 'italic' })])).toEqual(['400', '600'])
+    expect(values([text({ fontWeight: 400 })])).toEqual(['400', '600', '700'])
+  })
+
+  it('an italic text moved to a family without italics becomes upright', () => {
+    const from = text({ fontWeight: 600, fontStyle: 'italic' })
+    expect(select('fontFamily', [from]).write('Mono')(doc([from])).layers[0]).toEqual(text({ fontFamily: 'Mono', fontWeight: 500 }))
+    const upright = text({ fontWeight: 700 })
+    expect(select('fontFamily', [upright]).write('Inter')(doc([upright])).layers[0]).toEqual(upright)
   })
 })

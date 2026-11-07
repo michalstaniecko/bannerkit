@@ -4,19 +4,23 @@
 // one `change`, the Selection kept. A reload from disk drops a value being typed and
 // shows the reloaded one. Dragging a number field's label previews each value on the
 // Canvas (useEdits) and commits one step on release; with several Layers, dragging X/Y
-// moves the Selection Box. With an empty Selection it shows the Document
-// (DocumentFields); the Anchor it resizes from is held by the caller for the session.
-import type { Anchor, TextLayer, TextLayout } from '@bannerkit/core'
+// moves the Selection Box (a single Group's x/y: its Box). A Layer that a Group around
+// it locks or hides shows its own flags plus a note naming that Group. With an empty
+// Selection it shows the Document (DocumentFields); the Anchor it resizes from is held
+// by the caller for the session.
+import { inheritedFlags, type Anchor, type Document, type GroupLayer, type Layer, type TextLayer, type TextLayout } from '@bannerkit/core'
 import type { RefObject } from 'react'
 import type { DocumentRecipe, Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
 import { ColorField } from '../ui/ColorField.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
+import { Segmented } from '../ui/Segmented.tsx'
 import { Select } from '../ui/Select.tsx'
+import { TextField } from '../ui/TextField.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
-import { inspectField, MIXED, sharedFields, type InspectedField } from './inspect.ts'
+import { inspectField, MIXED, selectedLayers, sharedFields, type InspectedField } from './inspect.ts'
 import { useEdits } from './useEdits.ts'
 import { useInspected } from './useInspected.ts'
 
@@ -33,7 +37,7 @@ const MIXED_LABEL = 'Mixed'
 
 export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
   const { document, selection, reloads } = useInspected(editor, loaded)
-  const layers = document ? document.layers.filter((l) => selection.includes(l.id)) : []
+  const layers = document ? selectedLayers(document, selection) : []
   const edits = useEdits(editor)
   // Text Layout (used font size, Auto height) as the editor lays it out: core
   // `layoutText` with the Canvas's measure, never read back from Fabric.
@@ -54,6 +58,7 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
     <div className="inspector-properties">
       {sharedFields(layers).map((group) => (
         <Section key={group.key} title={group.title}>
+          {group.key === 'appearance' && <InheritedFlags document={document!} layers={layers} />}
           <div className="field-grid">
             {group.fields.map((field) => (
               <Field
@@ -139,6 +144,19 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
         />
       )
     }
+    case 'segmented': {
+      const { field, value } = inspected
+      return (
+        <Segmented
+          label={field.label}
+          name={field.name}
+          value={value === MIXED ? undefined : value}
+          options={field.options}
+          placeholder={MIXED_LABEL}
+          onChange={(value) => onWrite(inspected.write(value))}
+        />
+      )
+    }
     case 'gradient':
       return (
         <GradientField
@@ -151,12 +169,45 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
           onCancel={onCancel}
         />
       )
+    case 'text': {
+      const { field, value } = inspected
+      return (
+        <TextField
+          label={field.label}
+          name={field.name ?? field.label}
+          value={value === MIXED ? '' : value}
+          placeholder={value === MIXED ? MIXED_LABEL : undefined}
+          valid={() => true}
+          resetKey={resetKey}
+          onCommit={(value) => onWrite(inspected.write(value))}
+        />
+      )
+    }
     case 'readonly':
       return <ReadOnly label={field.label} name={field.name} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
     default:
       // Every control is handled above: a new one fails to compile here.
       return inspected satisfies never
   }
+}
+
+/**
+ * What a Group around the Layers does to them that their own flags do not show: a line
+ * per Group that locks or hides any of them (the nearest such Group of each Layer).
+ */
+function InheritedFlags({ document, layers }: { document: Document; layers: readonly Layer[] }) {
+  const lines = new Set<string>()
+  const by = (verb: string, group: GroupLayer | undefined) => group && lines.add(`${verb} by Group \u201c${group.name ?? group.id}\u201d`)
+  for (const layer of layers) {
+    const flags = inheritedFlags(document, layer.id)
+    by('Locked', flags?.lockedBy)
+    by('Hidden', flags?.hiddenBy)
+  }
+  return [...lines].map((line) => (
+    <p key={line} role="note" className="inherited-flag">
+      {line}
+    </p>
+  ))
 }
 
 function ReadOnly({ label, name = label, value }: { label: string; name?: string; value: string }) {

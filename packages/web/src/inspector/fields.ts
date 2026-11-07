@@ -1,10 +1,10 @@
 // The Inspector's fields, described as data: for each Layer type, titled groups of
 // fields, each with its control, range and how it reads and writes the Layer. The
-// Properties tab only renders these, so a new field of an existing control (a later
-// ticket, M2's Group, `textTransform`, `fontStyle`) is a new entry here, not a change
-// to the Inspector. A new kind of control is a new FieldSpec member plus a case in
-// `inspectField` (inspect.ts) and in Properties' `Field`; both switches are exhaustive,
-// so the compiler points at each.
+// Properties tab only renders these, so a new field of an existing control (`fontStyle`)
+// is a new entry here, not a change to the Inspector. A new kind of control (`segmented`
+// for `textTransform`, `text` for a Group's name) is a new FieldSpec member plus a case
+// in `inspectField` (inspect.ts) and in Properties' `Field`; both switches are
+// exhaustive, so the compiler points at each.
 //
 // Ranges come from the Document schema. A write returns the next Layer; an optional
 // field written with its default value leaves the key out of the Document.
@@ -16,18 +16,24 @@ import {
   TextLayerSchema,
   type Fit,
   type FontManifest,
+  type FontStyle,
+  type GroupLayer,
+  fontStyleOf,
   type Shadow,
   type ImageLayer,
   type Layer,
+  type LeafLayer,
   type LayerType,
   type LinearGradient,
   type RectLayer,
   type TextLayer,
   type TextLayout,
+  type TextTransform,
 } from '@bannerkit/core'
 import { fontManifest } from '../editor/fonts.ts'
 import { layerFlag, withLayerFlag } from '../layer-actions.ts'
 import { roundAngle, roundPx } from '../editor/rounding.ts'
+import type { SegmentedOption } from '../ui/Segmented.tsx'
 import type { SelectOption } from '../ui/Select.tsx'
 
 /** What a field may need besides the Layer: the Text Layout of a text Layer, as the editor lays it out. */
@@ -74,6 +80,13 @@ export type ToggleFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   write: (layer: L, value: boolean, context: FieldContext) => L
 }
 
+/** A line of text typed in a TextField (a Group's name). */
+export type TextFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
+  control: 'text'
+  read: (layer: L, context: FieldContext) => string
+  write: (layer: L, value: string, context: FieldContext) => L
+}
+
 /** A value shown but never edited (the Layer id). */
 export type ReadOnlyFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'readonly'
@@ -85,6 +98,14 @@ export type SelectFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'select'
   /** The options, or the options a Layer can take (e.g. the weights of its font family). */
   options: readonly SelectOption[] | ((layer: L) => readonly SelectOption[])
+  read: (layer: L, context: FieldContext) => string
+  write: (layer: L, value: string, context: FieldContext) => L
+}
+
+/** One of a few options, picked from a row of buttons (Segmented). */
+export type SegmentedFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
+  control: 'segmented'
+  options: readonly SegmentedOption[]
   read: (layer: L, context: FieldContext) => string
   write: (layer: L, value: string, context: FieldContext) => L
 }
@@ -112,7 +133,9 @@ export type FieldSpec<L extends Layer = Layer> =
   | NumberFieldSpec<L>
   | ToggleFieldSpec<L>
   | ReadOnlyFieldSpec<L>
+  | TextFieldSpec<L>
   | SelectFieldSpec<L>
+  | SegmentedFieldSpec<L>
 
 /** A titled group of fields: one Section in the Inspector. */
 export type FieldGroup<L extends Layer = Layer> = { key: string; title: string; fields: FieldSpec<L>[] }
@@ -141,12 +164,12 @@ const shape = RectLayerSchema.shape
 const opacityRange = shape.opacity.unwrap()
 
 /** The fields every Layer type has. */
-function commonGroups<L extends Layer>(): FieldGroup<L>[] {
+function commonGroups<L extends LeafLayer>(): FieldGroup<L>[] {
   return [
     {
       key: 'layer',
       title: 'Layer',
-      fields: [{ control: 'readonly', key: 'id', label: 'ID', read: (l) => l.id }],
+      fields: [idField<L>()],
     },
     {
       key: 'layout',
@@ -201,42 +224,52 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           step: 1,
           round: roundAngle,
           read: (l) => l.rotation ?? 0,
-          write: (l, rotation) => setOptional<Layer, 'rotation'>(l, 'rotation', rotation, 0) as L,
+          write: (l, rotation) => setOptional<LeafLayer, 'rotation'>(l, 'rotation', rotation, 0) as L,
         },
       ],
     },
-    {
-      key: 'appearance',
-      title: 'Appearance',
-      fields: [
-        {
-          control: 'number',
-          key: 'opacity',
-          label: 'Opacity',
-          min: opacityRange.minValue ?? undefined,
-          max: opacityRange.maxValue ?? undefined,
-          step: 0.01,
-          read: (l) => l.opacity ?? 1,
-          write: (l, opacity) => setOptional<Layer, 'opacity'>(l, 'opacity', opacity, 1) as L,
-        },
-        {
-          control: 'toggle',
-          key: 'visible',
-          label: 'Visible',
-          read: (l) => layerFlag(l, 'visible'),
-          write: (l, visible) => withLayerFlag(l, 'visible', visible),
-        },
-        {
-          control: 'toggle',
-          key: 'locked',
-          label: 'Locked',
-          read: (l) => layerFlag(l, 'locked'),
-          write: (l, locked) => withLayerFlag(l, 'locked', locked),
-        },
-      ],
-    },
+    appearanceGroup<L>(),
     shadowGroup<L>(),
   ]
+}
+
+/** Every Layer's id. */
+function idField<L extends Layer>(): FieldSpec<L> {
+  return { control: 'readonly', key: 'id', label: 'ID', read: (l) => l.id }
+}
+
+/** Every Layer's opacity and its Visible and Locked flags. */
+function appearanceGroup<L extends Layer>(): FieldGroup<L> {
+  return {
+    key: 'appearance',
+    title: 'Appearance',
+    fields: [
+      {
+        control: 'number',
+        key: 'opacity',
+        label: 'Opacity',
+        min: opacityRange.minValue ?? undefined,
+        max: opacityRange.maxValue ?? undefined,
+        step: 0.01,
+        read: (l) => l.opacity ?? 1,
+        write: (l, opacity) => setOptional<Layer, 'opacity'>(l, 'opacity', opacity, 1) as L,
+      },
+      {
+        control: 'toggle',
+        key: 'visible',
+        label: 'Visible',
+        read: (l) => layerFlag(l, 'visible'),
+        write: (l, visible) => withLayerFlag(l, 'visible', visible),
+      },
+      {
+        control: 'toggle',
+        key: 'locked',
+        label: 'Locked',
+        read: (l) => layerFlag(l, 'locked'),
+        write: (l, locked) => withLayerFlag(l, 'locked', locked),
+      },
+    ],
+  }
 }
 
 /** The shadow a Layer gets when its Shadow switch is turned on. */
@@ -245,7 +278,7 @@ export const DEFAULT_SHADOW: Shadow = { color: 'rgba(0,0,0,0.5)', blur: 8, offse
 const shadowShape = ShadowSchema.shape
 
 /** A number of the Layer's shadow, shown while the shadow is on. */
-function shadowNumber<L extends Layer>(
+function shadowNumber<L extends LeafLayer>(
   key: 'blur' | 'offsetX' | 'offsetY',
   label: string,
   name: string,
@@ -264,7 +297,7 @@ function shadowNumber<L extends Layer>(
 }
 
 /** Every Layer's shadow: a switch (off removes the key) and, while on, its fields. */
-function shadowGroup<L extends Layer>(): FieldGroup<L> {
+function shadowGroup<L extends LeafLayer>(): FieldGroup<L> {
   return {
     key: 'shadow',
     title: 'Shadow',
@@ -405,6 +438,13 @@ const textShape = TextLayerSchema.shape
 const ALIGNS = textShape.align.unwrap().options
 const VERTICAL_ALIGNS = textShape.verticalAlign.unwrap().options
 
+/** The `textTransform` choices, each shown in the case it gives. */
+const TEXT_TRANSFORM_OPTIONS: readonly SegmentedOption<TextTransform>[] = [
+  { value: 'none', label: 'Aa', name: 'None' },
+  { value: 'uppercase', label: 'AA', name: 'Uppercase' },
+  { value: 'lowercase', label: 'aa', name: 'Lowercase' },
+]
+
 /** The common name of each font weight, shown beside the number. */
 const WEIGHT_NAMES: Record<FontWeight, string> = {
   100: 'Thin',
@@ -418,23 +458,40 @@ const WEIGHT_NAMES: Record<FontWeight, string> = {
   900: 'Black',
 }
 
-/** The weights `manifest` has for `family`, lightest first. */
-function weightsOf(manifest: FontManifest, family: string): FontWeight[] {
-  const weights = manifest.filter((f) => f.family === family).map((f) => f.weight as FontWeight)
+/** The weights `manifest` has for `family` in `style`, lightest first. */
+function weightsOf(manifest: FontManifest, family: string, style: FontStyle): FontWeight[] {
+  const weights = manifest.filter((f) => f.family === family && f.style === style).map((f) => f.weight as FontWeight)
   return [...new Set(weights)].sort((a, b) => a - b)
 }
 
-/** The weight of `family` closest to `weight` (on a tie the heavier), or `weight` when it has none. */
-export function nearestWeight(manifest: FontManifest, family: string, weight: FontWeight): FontWeight {
-  const weights = weightsOf(manifest, family)
+/** The weight of `family` in `style` closest to `weight` (on a tie the heavier), or `weight` when it has none. */
+function nearestWeight(manifest: FontManifest, family: string, weight: FontWeight, style: FontStyle): FontWeight {
+  const weights = weightsOf(manifest, family, style)
   if (weights.length === 0) return weight
   return weights.reduce((best, w) => (Math.abs(w - weight) <= Math.abs(best - weight) ? w : best))
 }
 
+/** Whether `manifest` has an italic file for the Layer's family and weight (italics are never synthesised). */
+function hasItalic(manifest: FontManifest, layer: TextLayer): boolean {
+  return manifest.some((f) => f.family === layer.fontFamily && f.weight === layer.fontWeight && f.style === 'italic')
+}
+
 /**
- * The typography of a text Layer (its text is edited on the Canvas). Font family and
- * weight are picked only from the family/weight pairs of `manifest`; a family without
- * the Layer's weight takes its nearest weight.
+ * `layer` in `fontFamily`, at its nearest weight in its style. An italic Layer
+ * moved to a family with no italic at all becomes upright.
+ */
+function withFamily(manifest: FontManifest, layer: TextLayer, fontFamily: string): TextLayer {
+  const style = fontStyleOf(layer)
+  if (style === 'italic' && weightsOf(manifest, fontFamily, 'italic').length === 0) {
+    return { ...omit(layer, 'fontStyle'), fontFamily, fontWeight: nearestWeight(manifest, fontFamily, layer.fontWeight, 'normal') }
+  }
+  return { ...layer, fontFamily, fontWeight: nearestWeight(manifest, fontFamily, layer.fontWeight, style) }
+}
+
+/**
+ * The typography of a text Layer (its text is edited on the Canvas). Font family,
+ * weight and italic are picked only from the family/weight/style faces of `manifest`;
+ * a family without the Layer's weight takes its nearest weight in the Layer's style.
  */
 function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
   const families = [...new Set(manifest.map((f) => f.family))]
@@ -450,16 +507,27 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           name: 'Font family',
           options: families.map((family) => ({ value: family, label: family })),
           read: (l) => l.fontFamily,
-          write: (l, fontFamily) => ({ ...l, fontFamily, fontWeight: nearestWeight(manifest, fontFamily, l.fontWeight) }),
+          write: (l, fontFamily) => withFamily(manifest, l, fontFamily),
         },
         {
+          // Only the weights with a file in the Layer's style.
           control: 'select',
           key: 'fontWeight',
           label: 'Weight',
           name: 'Font weight',
-          options: (l) => weightsOf(manifest, l.fontFamily).map((w) => ({ value: String(w), label: `${w} ${WEIGHT_NAMES[w]}` })),
+          options: (l) =>
+            weightsOf(manifest, l.fontFamily, fontStyleOf(l)).map((w) => ({ value: String(w), label: `${w} ${WEIGHT_NAMES[w]}` })),
           read: (l) => String(l.fontWeight),
           write: (l, weight) => ({ ...l, fontWeight: Number(weight) as FontWeight }),
+        },
+        {
+          // Off when the family has no italic file for the weight (ADR 0003); upright leaves the key out.
+          control: 'toggle',
+          key: 'fontStyle',
+          label: 'Italic',
+          disabled: (l) => fontStyleOf(l) !== 'italic' && !hasItalic(manifest, l),
+          read: (l) => fontStyleOf(l) === 'italic',
+          write: (l, italic) => setOptional(l, 'fontStyle', italic ? 'italic' : 'normal', 'normal'),
         },
         {
           // The declared (largest) size.
@@ -516,6 +584,15 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           read: (l) => l.verticalAlign ?? 'top',
           write: (l, verticalAlign) => setOptional(l, 'verticalAlign', verticalAlign as VerticalAlign, 'top'),
         },
+        {
+          control: 'segmented',
+          key: 'textTransform',
+          label: 'Case',
+          name: 'Text transform',
+          options: TEXT_TRANSFORM_OPTIONS,
+          read: (l) => l.textTransform ?? 'none',
+          write: (l, textTransform) => setOptional(l, 'textTransform', textTransform as TextTransform, 'none'),
+        },
       ],
     },
     autoFitGroup(),
@@ -561,6 +638,41 @@ function autoFitGroup(): FieldGroup<TextLayer> {
   }
 }
 
+/** A side of a Group's Box: shown for it (see `inspectField`), never read from the Layer. */
+function groupBoxSide(key: 'x' | 'y' | 'width' | 'height', label: string, name?: string): NumberFieldSpec<GroupLayer> {
+  return { control: 'number', key, label, name, box: key, round: roundPx, read: () => undefined, write: (l) => l }
+}
+
+/**
+ * A Group's fields: its name (cleared, the key goes), its Box (x/y move everything in
+ * it, width/height only shown; keys shared with the leaves' Layout so a Selection
+ * mixing both keeps them), opacity and flags. No rotation: a Group has none.
+ */
+function groupGroups(): FieldGroup<GroupLayer>[] {
+  return [
+    {
+      key: 'layer',
+      title: 'Layer',
+      fields: [
+        idField(),
+        {
+          control: 'text',
+          key: 'name',
+          label: 'Name',
+          read: (l) => l.name ?? '',
+          write: (l, name) => (name === '' ? omit(l, 'name') : { ...l, name }),
+        },
+      ],
+    },
+    {
+      key: 'layout',
+      title: 'Layout',
+      fields: [groupBoxSide('x', 'X'), groupBoxSide('y', 'Y'), groupBoxSide('width', 'W', 'Width'), groupBoxSide('height', 'H', 'Height')],
+    },
+    appearanceGroup(),
+  ]
+}
+
 /** The Inspector's fields per Layer type, top to bottom. */
 export type FieldTable = { [T in LayerType]: FieldGroup<LayerOf<T>>[] }
 
@@ -570,6 +682,7 @@ export function layerFields(manifest: FontManifest): FieldTable {
     rect: [...commonGroups<RectLayer>(), ...rectGroups()],
     image: [...commonGroups<ImageLayer>(), ...imageGroups()],
     text: [...commonGroups<TextLayer>(), ...textGroups(manifest), textFillGroup()],
+    group: groupGroups(),
   }
 }
 

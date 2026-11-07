@@ -1,10 +1,10 @@
 // S3: direct manipulation in the editor app, autosaved to the Document file on disk.
-import type { Document } from '@bannerkit/core'
+import type { Document, LeafLayer } from '@bannerkit/core'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [
@@ -48,8 +48,8 @@ test('dragging a Layer is autosaved to the Document file', async ({ page, projec
 
   await expect(page.locator('.save')).toHaveText('Saved')
   // The fitted zoom turns whole page px into fractional Document px.
-  await expect.poll(async () => (await projects.read('s3-drag', 'banner')).layers[0]!.x).toBeCloseTo(80, 0)
-  const [rect] = (await projects.read('s3-drag', 'banner')).layers
+  await expect.poll(async () => ((await projects.read('s3-drag', 'banner')).layers[0] as LeafLayer).x).toBeCloseTo(80, 0)
+  const [rect] = (await projects.read('s3-drag', 'banner')).layers as LeafLayer[]
   expect(rect!.y).toBeCloseTo(60, 0)
   expect(rect).toMatchObject({ width: 100, height: 60 })
   await expect(page.locator('.error')).toHaveCount(0)
@@ -86,7 +86,7 @@ test('Undo and Redo in the top bar, and their shortcuts, step whole drags and ar
   const at = await open(page, projects.appUrl('s3-undo', 'banner'))
   const undo = page.getByRole('button', { name: 'Undo' })
   const redo = page.getByRole('button', { name: 'Redo' })
-  const rectOnDisk = async () => (await projects.read('s3-undo', 'banner')).layers[0]!
+  const rectOnDisk = async () => (await projects.read('s3-undo', 'banner')).layers[0] as LeafLayer
   await expect(undo).toBeDisabled()
   await expect(redo).toBeDisabled()
 

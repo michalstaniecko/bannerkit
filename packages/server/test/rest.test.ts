@@ -2,7 +2,7 @@
 // Exercised in-process through `app.request`, against a temporary projects root.
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Document } from '@bannerkit/core'
+import type { Document, LeafLayer } from '@bannerkit/core'
 import sharp from 'sharp'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createProject, writeDocument } from '../src/ops/index.ts'
@@ -10,7 +10,7 @@ import { createApp } from '../src/rest/app.ts'
 import { tempRoot } from './harness.ts'
 
 const hero: Document = {
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 300, height: 250, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x: 10, y: 20, width: 100, height: 50, fill: '#ff0000' }],
@@ -74,7 +74,7 @@ describe('REST: Projects and Documents', () => {
   })
 
   it('answers an invalid Document on disk with 422 and its issues', async () => {
-    await writeFile(join(root, 'summer', 'documents', 'broken.json'), JSON.stringify({ ...hero, version: 2 }))
+    await writeFile(join(root, 'summer', 'documents', 'broken.json'), JSON.stringify({ ...hero, version: 3 }))
 
     const { status, body } = await getJson(createApp({ root }), '/api/projects/summer/documents/broken')
 
@@ -147,7 +147,7 @@ describe('REST: saving a Document', () => {
       body: typeof body === 'string' ? body : JSON.stringify(body),
     })
   const onDisk = async (name: string) => JSON.parse(await readFile(join(root, 'summer', 'documents', `${name}.json`), 'utf8'))
-  const moved: Document = { ...hero, layers: [{ ...hero.layers[0]!, x: 42 }] }
+  const moved: Document = { ...hero, layers: [{ ...(hero.layers[0] as LeafLayer), x: 42 }] }
 
   it('writes the whole Document and answers with it', async () => {
     const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', moved)
@@ -164,7 +164,7 @@ describe('REST: saving a Document', () => {
 
   it('saves a Document whose image src was already missing on disk, with a warning', async () => {
     await writeFile(join(root, 'summer', 'documents', 'hero.json'), JSON.stringify(withMissing))
-    const edited: Document = { ...withMissing, layers: [{ ...hero.layers[0]!, x: 42 }, withMissing.layers[1]!] }
+    const edited: Document = { ...withMissing, layers: [{ ...(hero.layers[0] as LeafLayer), x: 42 }, withMissing.layers[1]!] }
 
     const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', edited)
 
@@ -173,6 +173,18 @@ describe('REST: saving a Document', () => {
       { path: 'layers[1].src', message: 'Asset "assets/gone.png" not found in Project "summer"' },
     ])
     expect(await onDisk('hero')).toEqual(edited)
+  })
+
+  it('saves a Document whose image inside a Group was already missing on disk, with a warning', async () => {
+    const grouped: Document = { ...hero, layers: [{ id: 'group-1', type: 'group', layers: [hero.layers[0]!, withMissing.layers[1]!] }] }
+    await writeFile(join(root, 'summer', 'documents', 'hero.json'), JSON.stringify(grouped))
+
+    const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', grouped)
+
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).warnings).toEqual([
+      { path: 'layers[0].layers[1].src', message: 'Asset "assets/gone.png" not found in Project "summer"' },
+    ])
   })
 
   it.each([
@@ -205,7 +217,7 @@ describe('REST: saving a Document', () => {
   })
 
   it.each([
-    ['an invalid Document', { ...hero, version: 2 }, 'version'],
+    ['an invalid Document', { ...hero, version: 3 }, 'version'],
     ['a src outside the Project', { ...hero, layers: [{ id: 'i', type: 'image', x: 0, y: 0, width: 1, height: 1, src: '../x.png', fit: 'cover' }] }, 'layers[0].src'],
   ])('refuses %s with 422 and leaves the file alone', async (_, document, path) => {
     const res = await put(createApp({ root }), '/api/projects/summer/documents/hero', document)

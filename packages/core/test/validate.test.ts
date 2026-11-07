@@ -57,7 +57,7 @@ describe('validateDocument', () => {
   it('accepts a Document using every Layer type and optional field', () => {
     const result = validateDocument(fullDocument())
 
-    expect(result).toEqual({ ok: true, document: fullDocument(), errors: [], warnings: [] })
+    expect(result).toEqual({ ok: true, document: { ...fullDocument(), version: 2 }, errors: [], warnings: [] })
   })
 
   it('reports an unknown key at its JSON path with a "did you mean" suggestion', () => {
@@ -120,7 +120,7 @@ describe('validateDocument', () => {
 
   it('reports missing required fields, wrong types and an unsupported version together', () => {
     const doc = withDoc((d) => {
-      d.version = 2 as any
+      d.version = 3 as any
       delete (d.layers[1] as Record<string, unknown>).src
       ;(d.layers[2] as Record<string, unknown>).fontWeight = 450
       ;(d.layers[0] as Record<string, unknown>).x = '10'
@@ -130,7 +130,7 @@ describe('validateDocument', () => {
 
     expect(errors).toEqual(
       expect.arrayContaining([
-        { path: 'version', message: 'expected 1, got 2' },
+        { path: 'version', message: 'expected 1 | 2, got 3' },
         { path: 'layers[1].src', message: 'missing required string' },
         expect.objectContaining({ path: 'layers[2].fontWeight', message: expect.stringContaining('got 450') }),
         { path: 'layers[0].x', message: 'expected number, got "10"' },
@@ -183,5 +183,81 @@ describe('validateDocument', () => {
       errors: [],
       warnings: [{ path: 'layers[1].src', message: 'shoes are discouraged' }],
     })
+  })
+})
+
+describe('Document versions', () => {
+  it('lifts a valid v1 Document to v2 without changing anything else', () => {
+    const result = validateDocument(fullDocument())
+
+    expect(result.document?.version).toBe(2)
+    expect(Object.keys(result.document!)).toEqual(['$schema', 'version', 'name', 'canvas', 'layers'])
+  })
+
+  it('accepts a v2 Document with Guides and returns it as is', () => {
+    const doc = { ...fullDocument(), version: 2, guides: { x: [0, 600.5, -10], y: [] } }
+
+    expect(validateDocument(doc)).toEqual({ ok: true, document: doc, errors: [], warnings: [] })
+  })
+
+  it('rejects a v2 field in a v1 Document with a hint to migrate', () => {
+    const doc = { ...fullDocument(), guides: { x: [], y: [] } }
+
+    const result = validateDocument(doc)
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      { path: 'guides', message: '"guides" requires version: 2; run `bannerkit migrate`' },
+    ])
+  })
+
+  it('rejects fontStyle in a v1 Document with a hint to migrate', () => {
+    const doc = fullDocument()
+    const layers = doc.layers.map((layer) => (layer.id === 'text-2' ? { ...layer, fontStyle: 'italic' } : layer))
+
+    expect(validateDocument({ ...doc, layers }).errors).toEqual([
+      { path: 'layers[3].fontStyle', message: '"fontStyle" requires version: 2; run `bannerkit migrate`' },
+    ])
+  })
+
+  it('accepts fontStyle in a v2 Document', () => {
+    const doc = fullDocument()
+    const layers = doc.layers.map((layer) => (layer.id === 'text-2' ? { ...layer, fontStyle: 'italic' } : layer))
+
+    expect(validateDocument({ ...doc, version: 2, layers }).ok).toBe(true)
+  })
+
+  it('accepts textTransform in v2 only', () => {
+    const index = fullDocument().layers.findIndex((l) => l.type === 'text')
+    const withTransform = (version: number, textTransform: unknown) => {
+      const doc = fullDocument()
+      const layers = doc.layers.map((l, i) => (i === index ? { ...l, textTransform } : l))
+      return { ...doc, version, layers }
+    }
+
+    expect(validateDocument(withTransform(2, 'uppercase')).ok).toBe(true)
+    expect(validateDocument(withTransform(2, 'capitalize')).errors).toEqual([
+      { path: `layers[${index}].textTransform`, message: expect.stringContaining('"none"') },
+    ])
+    expect(validateDocument(withTransform(1, 'uppercase')).errors).toEqual([
+      { path: `layers[${index}].textTransform`, message: '"textTransform" requires version: 2; run `bannerkit migrate`' },
+    ])
+  })
+
+  it('requires both Guide axes, with finite numbers only', () => {
+    const v2 = (guides: unknown) => ({ ...fullDocument(), version: 2, guides })
+
+    expect(validateDocument(v2({ x: [] })).errors).toEqual([{ path: 'guides.y', message: 'missing required array' }])
+    expect(validateDocument(v2({ x: [1, 'a'], y: [] })).errors).toEqual([
+      { path: 'guides.x[1]', message: 'expected number, got "a"' },
+    ])
+    expect(validateDocument(v2({ x: [Infinity], y: [] })).ok).toBe(false)
+    expect(validateDocument(v2({ x: [], y: [], zebra: [] })).errors).toEqual([{ path: 'guides.zebra', message: 'unknown key "zebra"' }])
+  })
+
+  it('reports a missing version as expecting 1 or 2', () => {
+    const { version: _, ...doc } = fullDocument()
+
+    expect(validateDocument(doc).errors).toEqual([{ path: 'version', message: 'missing; expected 1 | 2' }])
   })
 })

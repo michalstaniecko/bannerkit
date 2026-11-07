@@ -107,6 +107,8 @@
   --gap-control-icon: var(--space-3);
   /* Layer list rows: indent per nesting level (Groups, M2). */
   --indent-tree: var(--space-6);
+  /* Layer list: thickness of the line showing where a dragged row lands. */
+  --drop-line: var(--space-1);
 
   /* Window dimensions (not palette or spacing, so no primitive scale). */
   --control-size: 28px;

@@ -1,10 +1,10 @@
 // S3, M1 #6: the JSON panel (the Inspector's JSON tab) shows the live Document; pasted JSON is validated before Apply.
-import type { Document } from '@bannerkit/core'
+import type { Document, LeafLayer } from '@bannerkit/core'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x: 40, y: 40, width: 100, height: 60, fill: '#ff0000' }],
@@ -44,7 +44,7 @@ test('the JSON panel shows the live Document and follows Canvas edits', async ({
   await page.mouse.click(at.x + 90 * zoom, at.y + 70 * zoom)
   await page.keyboard.press('ArrowRight')
 
-  await expect.poll(async () => (await shownDocument(page)).layers[0]!.x).toBe(41)
+  await expect.poll(async () => ((await shownDocument(page)).layers[0] as LeafLayer).x).toBe(41)
 })
 
 test('pasting invalid JSON shows errors inline and leaves the Document unchanged', async ({ page, projects }) => {
@@ -95,10 +95,10 @@ test('a Canvas edit does not overwrite JSON the human is still editing', async (
   await page.mouse.click(at.x + 90 * zoom, at.y + 70 * zoom)
   await page.keyboard.press('ArrowRight')
 
-  await expect.poll(async () => (await projects.read('s3-json-typing', 'banner')).layers[0]!.x).toBe(41)
+  await expect.poll(async () => ((await projects.read('s3-json-typing', 'banner')).layers[0] as LeafLayer).x).toBe(41)
   await expect(page.locator('.json-panel .json-stale')).toBeVisible()
   await expect(panelText(page)).toHaveText('{ "half": "typed"')
 
   await page.getByRole('button', { name: 'Revert' }).click()
-  expect((await shownDocument(page)).layers[0]!.x).toBe(41)
+  expect(((await shownDocument(page)).layers[0] as LeafLayer).x).toBe(41)
 })

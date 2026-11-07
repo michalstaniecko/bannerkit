@@ -25,27 +25,45 @@ You are done when validation passes and you have looked at a Preview of the fina
 
 The root is `./projects` by default. Pass `--root <dir>` or set `BANNERKIT_ROOT` to use another one. Names of Projects and Documents must match `[A-Za-z0-9][A-Za-z0-9._-]*`. Create Documents with `doc new` or `doc duplicate`, which also set `$schema`. A file you write by hand only needs to be valid; validation does not compare its `name` with the filename.
 
-## Document schema (v1)
+## Document schema (v2)
 
-The full schema is `packages/core/schema/document.schema.json`. It is generated from `packages/core/src/document.ts`, which is the source of truth. `examples/demo/documents/hero.json` uses every Layer type.
+The full schema is `packages/core/schema/document.schema.json`. It is generated from `packages/core/src/document.ts`, which is the source of truth. `examples/demo/documents/hero.json` uses every leaf Layer type (as a v1 file), and `story.json` is a v2 Document with Guides and a Group.
 
 ```jsonc
 {
   "$schema": "…/document.schema.json",
-  "version": 1,
+  "version": 2,
   "name": "hero",
   "canvas": { "width": 1200, "height": 628, "background": "#ffffff" },  // background null = transparent
+  "guides": { "x": [64, 600], "y": [314] },  // optional
   "layers": [ /* bottom → top */ ]
 }
 ```
 
-Every Layer has these fields: `id`, `type`, `x`, `y`, `width`, plus the optional `rotation`, `opacity` (0–1), `visible`, `locked` and `shadow: { color, blur, offsetX, offsetY }`.
+**Versions.** Write new Documents as `version: 2`. Files with `version: 1` still work unchanged: every command reads them as v2 in memory and leaves the file alone, and the first saved change (CLI or editor) writes it as v2. A v1 file must not contain v2 fields; one that does fails with ``"<field>" requires version: 2; run `bannerkit migrate` ``. Fix such a file by setting `"version": 2` yourself, because `migrate` only rewrites valid v1 files. `bannerkit migrate <project>` upgrades every valid v1 Document of a Project at once.
+
+**Guides** are editor-only alignment lines: `guides: { x: number[], y: number[] }`. `x` holds the positions of vertical Guides and `y` of horizontal ones, in Canvas pixels. Both arrays are required when `guides` is present, may be empty, and take any finite numbers in any order. Guides never appear in a Preview or Render. `doc resize` moves them with the Layers, and `doc duplicate` copies them unchanged.
+
+Every leaf Layer (`rect`, `image`, `text`) has these fields: `id`, `type`, `x`, `y`, `width`, plus the optional `rotation`, `opacity` (0–1), `visible`, `locked` and `shadow: { color, blur, offsetX, offsetY }`.
 
 | type | own fields |
 |---|---|
 | `rect` | `height`, `fill` (colour or LinearGradient), `cornerRadius?` |
 | `image` | `height`, `src`, `fit` |
-| `text` | `text`, `fontFamily`, `fontWeight`, `fontSize`, `fill`, `height?`, `lineHeight?`, `letterSpacing?`, `align?`, `verticalAlign?`, `autoFit?` |
+| `text` | `text`, `fontFamily`, `fontWeight`, `fontSize`, `fill`, `height?`, `lineHeight?`, `letterSpacing?`, `align?`, `verticalAlign?`, `autoFit?`, `fontStyle?` (v2), `textTransform?` (v2) |
+| `group` (v2) | `layers` (children, bottom → top, at least one), `name?`, `opacity?`, `visible?`, `locked?`. **No** `x`/`y`/`width`/`height`/`rotation`/`shadow` |
+
+**Groups** (`type: "group"`) hold other Layers, nested to any depth:
+
+```jsonc
+{ "id": "group-1", "type": "group", "name": "Price badge", "opacity": 0.85,
+  "layers": [ { "id": "rect-3", "type": "rect", "x": 390, "y": 1640, … }, { "id": "text-3", "type": "text", … } ] }
+```
+
+- Children keep **Canvas coordinates**: a child's `x`/`y` mean the same as at the root. To move a Group, move every Layer inside it by the same delta. The Group's Box is derived: the axis-aligned rectangle around all its children, hidden ones included (`inspect` reports it as the Group's `extent`).
+- `opacity` applies to the children composited together, as in CSS: where children overlap, the lower one does not show through the upper one. `visible: false` hides everything inside, and `locked: true` locks everything inside (the editor neither picks nor moves those Layers), whatever the children's own flags say.
+- An empty Group is an error; delete it instead. Prefer `layer group`/`layer ungroup` over hand-editing to create or dissolve a Group. To move a Layer into or out of a Group, move its object between `layers` arrays in the JSON. Ids are unique across the whole tree, and issue paths go through Groups: `layers[1].layers[0].fontWeight`. Name new Groups `group-<n>`.
+- Groups need `version: 2`. In a v1 file, `"type": "group"` fails with ``"group" requires version: 2; run `bannerkit migrate` ``.
 
 Conventions:
 
@@ -53,9 +71,10 @@ Conventions:
 - **Colours** are CSS strings: `"#0e3a32"`, `"rgba(0,0,0,0.45)"`.
 - **Gradient**: `{ "type": "linear", "angle": 120, "stops": [["#0e3a32", 0], ["#2f8f76", 1]] }`. The angle follows the CSS `linear-gradient` convention: `0` runs bottom to top, `90` runs left to right and `180` runs top to bottom. You need at least two stops, and each offset is between 0 and 1.
 - **Fit**: `contain` shows the whole image inside the Box and may leave empty bands. `cover` fills the Box and crops the overflow. `stretch` ignores the aspect ratio. Use the Asset size from `asset add` or `inspect` to size the Box.
-- **Text** always wraps at the Box `width`, and `\n` forces a line break. `fontFamily` and `fontWeight` must be a pair listed in `fonts/fonts.json`; currently that is `Inter` at 100–900. `lineHeight` is a multiple of the font size: lines are `fontSize × 1.13 × lineHeight` apart, and the default is `1.16`. `letterSpacing` is in px. Without `height`, the Box grows to fit the text. With `height`, `verticalAlign` positions the text inside the Box.
+- **Text** always wraps at the Box `width`, and `\n` forces a line break. `fontFamily`, `fontWeight` and `fontStyle` must be a face (`family`/`weight`/`style`) listed in `fonts/fonts.json`; currently that is `Inter` at 100–900, upright and italic. `fontStyle` is `"normal"` (the default; omit it) or `"italic"`. Italic is always drawn from its own font file and never slanted synthetically, so `"italic"` for a family and weight with no italic file fails validation, and the error lists the weights that have one. `lineHeight` is a multiple of the font size: lines are `fontSize × 1.13 × lineHeight` apart, and the default is `1.16`. `letterSpacing` is in px. Without `height`, the Box grows to fit the text. With `height`, `verticalAlign` positions the text inside the Box.
+- **textTransform**: `"uppercase"` or `"lowercase"` changes the case the text is drawn in; `"none"` (or leaving the key out) draws it as written. Keep `text` in its natural case: the transform applies only when the text is laid out. Line breaks, AutoFit and the `lines[].text` that `inspect` reports all use the transformed text, so uppercase usually wraps sooner or shrinks further. The case change ignores locale, and it may change the length of the text (`ß` becomes `SS`).
 - **AutoFit**: with `"autoFit": { "minFontSize": 40 }`, the font size shrinks in 1px steps from `fontSize` until the wrapped text fits the Box. AutoFit requires `height`. If the text still doesn't fit at `minFontSize`, it renders clipped, and validation reports a **warning**, not an error. To fix it, shorten the text, enlarge the Box or lower `minFontSize`.
-- **ids** must be unique within the Document. Name new Layers `<type>-<n>`, with n one above the highest number already used for that type (`text-5`, `image-3`). The editor uses the same scheme. Refer to Layers by id when you talk to the human.
+- **ids** must be unique within the Document, Groups included. Name new Layers `<type>-<n>`, with n one above the highest number already used for that type (`text-5`, `image-3`). The editor uses the same scheme. Refer to Layers by id when you talk to the human.
 - **Strictness**: unknown keys are errors, and each error includes a "did you mean" hint. Never add your own fields. Omit an optional field instead of setting it to `null`. The only nullable field is `canvas.background`.
 - **Missing Assets**: a `src` that isn't in `assets/` is an error in `validate`, `preview` and `render`. The editor still opens the Document and shows a hatched placeholder. Add the file with `asset add` instead of copying it into `assets/` yourself, because ingest auto-orients the image, converts it to sRGB and records the SVG size.
 
@@ -67,7 +86,7 @@ With `--json`, stdout carries exactly one JSON line:
 
 - success: `{ "ok": true, "result": … }`
 - failure: `{ "ok": false, "error": { "code", "message", "issues": [{ "path", "message", "suggestion"? }] } }`
-- `validate` with invalid Documents: `{ "ok": false, "result": … }`
+- `validate` or `migrate` with invalid Documents: `{ "ok": false, "result": … }`
 
 Exit codes are 0 for success, 1 for an operation error or invalid Documents, and 2 for a usage error. Error codes include `NOT_FOUND`, `ALREADY_EXISTS`, `INVALID_DOCUMENT`, `INVALID_INPUT` and `UNSUPPORTED_ASSET`.
 
@@ -76,21 +95,24 @@ Exit codes are 0 for success, 1 for an operation error or invalid Documents, and
 | `project new <name>` | `{ name, path }` |
 | `doc new <project> <name> (--preset WxH \| --size WxH)` | `{ project, name, path, document, warnings, hash }` |
 | `doc duplicate <project> <from> [<name>] (--preset WxH \| --size WxH)` | same as `doc new`. The Layers are copied unchanged, so rearrange them for the new size. The default name is `<from>-<W>x<H>` |
-| `doc resize <project> <doc> (--preset WxH \| --size WxH) [--anchor top-left\|top\|top-right\|left\|center\|right\|bottom-left\|bottom\|bottom-right]` | same as `doc new`. Resizes the Canvas in place, keeping the Anchor point put (default `top-left`). Layers are not scaled: they all move by the same delta and may stick out past the Canvas, so check `placement` with `inspect` afterwards |
+| `doc resize <project> <doc> (--preset WxH \| --size WxH) [--anchor top-left\|top\|top-right\|left\|center\|right\|bottom-left\|bottom\|bottom-right]` | same as `doc new`. Resizes the Canvas in place, keeping the Anchor point put (default `top-left`). Layers are not scaled: they all (Group children too) move by the same delta and may stick out past the Canvas, so check `placement` with `inspect` afterwards |
+| `layer group <project> <doc> <ids…> [--name N]` | same as `doc new`, plus `id` of the new Group. Wraps Layers that share a parent (root or one Group) in a new Group placed where the topmost of them was; they keep their stacking order and coordinates. Layers with different parents are `INVALID_INPUT`, an unknown id is `NOT_FOUND`. Writes v2 |
+| `layer ungroup <project> <doc> <id>` | same as `doc new`, plus `ids` of the former children (bottom to top). Puts them where the Group was, coordinates unchanged; the Group's `name`/`opacity`/`visible`/`locked` are dropped. A Layer that is not a Group is `INVALID_INPUT` |
 | `asset add <project> <files…>` | `{ project, assets: [{ src, path, format, width, height }] }`. Use `src` verbatim. If the name is taken, ingest adds a suffix (`bottle-1.png`) |
 | `validate <project \| path/to/doc.json>` | `{ ok, documents: [{ project, name, path, ok, errors, warnings }] }` |
+| `migrate <project>` | `{ project, migrated: [{ name, path }], unchanged: [{ name, path }], invalid: [{ name, path, errors }] }`. Rewrites each valid v1 Document as v2; only `version` changes (`$schema` stays). `unchanged` are already v2. `invalid` Documents (the errors `validate` reports) are not written, and the command exits 1. Safe to run again |
 | `inspect <project> [<doc>]` | `{ project, name, path, canvas, selection, layers, warnings }` (see below) |
 | `preview <project> <doc>` | `{ project, name, path, width, height }` |
 | `render <project> [--doc N …] [--size WxH …] [--format png\|jpg\|webp] [--scale 1\|2] [--quality N]` | `{ project, files: [{ name, path, width, height, format, scale }] }` |
 
 The Presets are `1200x628`, `1080x1080`, `1080x1920`, `300x250` and `728x90`. Write the format as `jpg`, because `jpeg` is rejected. `--doc` and `--size` can be repeated. When you give both, a Document must match both filters, and an empty `files` list means nothing matched. `preview` and `render` refuse to run while the Document has validation errors.
 
-Each `inspect` entry in `layers` has the form `{ index, id, type, extent, placement: "inside"|"partial"|"outside", selected }`. Text Layers add `text: { fontSize, requestedFontSize, height, overflow, lines: [{ text, width }] }`, and image Layers add `asset: { src, width, height }`. The `warnings` list contains text overflow and Layers that are not fully inside the Canvas.
+Each `inspect` entry in `layers` has the form `{ index, id, type, extent, placement: "inside"|"partial"|"outside", selected }`. Text Layers add `text: { fontSize, requestedFontSize, height, overflow, lines: [{ text, width }] }` (`lines[].text` is after `textTransform`), and image Layers add `asset: { src, width, height }`. A Group entry is `{ index, id, type: "group", name?, extent, placement, selected, layers: [...] }`, with its children's entries nested in `layers`; `index` is always the position in the parent's `layers`. The text output indents Group children by depth. The `warnings` list contains text overflow and leaf Layers that are not fully inside the Canvas (never Groups; their Box is derived).
 
 ## Selection
 
 When the human says "this", "the selected one" or "what I picked", they mean the editor's Selection.
 
-- `pnpm bannerkit inspect <project> --json` without `<doc>` opens the Document the editor has selected. `result.selection` is `{ doc, selectedLayerIds }`, and the matching `layers[]` entries have `selected: true`. In the text output these are marked with `*`.
+- `pnpm bannerkit inspect <project> --json` without `<doc>` opens the Document the editor has selected. `result.selection` is `{ doc, selectedLayerIds }`, and the matching `layers[]` entries (at any depth; a Group can be selected) have `selected: true`. The human can select Layers inside a Group (double click, Cmd+click), from different Groups at once, but never a Layer together with a Group holding it. In the text output these are marked with `*`.
 - If no Selection is recorded, that command fails with `INVALID_INPUT`. Ask the human which Layer they mean, or pass `<doc>` explicitly. Then `selection` is `null`.
 - The Selection is a snapshot taken from the open editor. Read it again before each new request that relies on it.

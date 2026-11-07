@@ -7,7 +7,10 @@
 // step, or, when any result is not a valid Document, none does.
 import {
   boxExtent,
+  mapLayers,
+  translateLayer,
   validateDocument,
+  walkLayers,
   type Document,
   type Layer,
   type LinearGradient,
@@ -27,7 +30,9 @@ import {
   type FieldSpec,
   type GradientFieldSpec,
   type NumberFieldSpec,
+  type SegmentedFieldSpec,
   type SelectFieldSpec,
+  type TextFieldSpec,
 } from './fields.ts'
 import type { GradientChange } from './gradient.ts'
 
@@ -42,7 +47,7 @@ export type Shared<T> = T | Mixed
 export type TextHeight = (layer: TextLayer) => number
 
 export type InspectOptions = FieldContext & {
-  /** Box fields stand for the shared Box of `layers`. Default: when there are several. */
+  /** Box fields stand for the shared Box of `layers`. Default: when there are several, or a Group (its Box). */
   sharedBox?: boolean
 }
 
@@ -51,6 +56,7 @@ export type InspectedField =
   | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => DocumentRecipe }
   | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; disabled: boolean; write: (value: boolean) => DocumentRecipe }
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
+  | { control: 'text'; field: TextFieldSpec; value: Shared<string>; write: (value: string) => DocumentRecipe }
   | {
       control: 'select'
       field: SelectFieldSpec
@@ -59,6 +65,7 @@ export type InspectedField =
       value: Shared<string>
       write: (value: string) => DocumentRecipe
     }
+  | { control: 'segmented'; field: SegmentedFieldSpec; value: Shared<string>; write: (value: string) => DocumentRecipe }
   | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => DocumentRecipe }
   | {
       control: 'gradient'
@@ -99,10 +106,12 @@ export function sharedValue<T>(layers: readonly Layer[], read: (layer: Layer) =>
   return values.every((v) => v === values[0]) ? values[0]! : MIXED
 }
 
-/** The axis-aligned union of the `boxExtent`s of `layers`: their Selection Box. */
+/** The axis-aligned union of the `boxExtent`s of `layers` (a Group's: of its children): their Selection Box. */
 export function sharedBox(layers: readonly Layer[], textHeight: TextHeight): Rect {
   const extents = layers.map((l) =>
-    boxExtent({ ...l, height: 'height' in l && l.height !== undefined ? l.height : textHeight(l as TextLayer) }),
+    l.type === 'group'
+      ? sharedBox(l.layers, textHeight)
+      : boxExtent({ ...l, height: 'height' in l && l.height !== undefined ? l.height : textHeight(l as TextLayer) }),
   )
   const x = Math.min(...extents.map((e) => e.x))
   const y = Math.min(...extents.map((e) => e.y))
@@ -117,14 +126,21 @@ export function sharedBox(layers: readonly Layer[], textHeight: TextHeight): Rec
  * itself comes back, so the edit changes nothing.
  */
 export function editLayers(document: Document, ids: readonly string[], write: (layer: Layer) => Layer): Document {
-  const next = { ...document, layers: document.layers.map((l) => (ids.includes(l.id) ? write(l) : l)) }
+  const next = mapLayers(document, (l) => (ids.includes(l.id) ? write(l) : l))
   return validateDocument(next).ok ? next : document
 }
 
-/** `document` with every Layer in `ids` moved by `dx`, `dy`. */
+/** The Layers `ids` of `document`, in draw order. */
+export function selectedLayers(document: Document, ids: readonly string[]): Layer[] {
+  return walkLayers(document)
+    .map((v) => v.layer)
+    .filter((l) => ids.includes(l.id))
+}
+
+/** `document` with every Layer in `ids` moved by `dx`, `dy` (a Group by moving everything in it). */
 export function moveLayers(document: Document, ids: readonly string[], dx: number, dy: number): Document {
   if (dx === 0 && dy === 0) return document
-  return editLayers(document, ids, (l) => ({ ...l, x: l.x + dx, y: l.y + dy }))
+  return editLayers(document, ids, (l) => translateLayer(l, dx, dy))
 }
 
 /** The options of `field` every one of `layers` can take, in the first Layer's order. */
@@ -138,7 +154,7 @@ function sharedOptions(field: SelectFieldSpec, layers: readonly Layer[]): readon
 /** What `field` shows for `layers` and how a value set on it changes the Document. */
 export function inspectField(field: FieldSpec, layers: readonly Layer[], options: InspectOptions): InspectedField {
   const ids = layers.map((l) => l.id)
-  const shared = options.sharedBox ?? layers.length > 1
+  const shared = options.sharedBox ?? (layers.length > 1 || layers.some((l) => l.type === 'group'))
   const each = (write: (layer: Layer) => Layer): DocumentRecipe => (document) => editLayers(document, ids, write)
   const context: FieldContext = { textLayout: options.textLayout }
   const textHeight: TextHeight = (layer) => options.textLayout(layer).height
@@ -146,6 +162,13 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
   switch (field.control) {
     case 'readonly':
       return { control: 'readonly', field, value: sharedValue(layers, (l) => field.read(l, context)) }
+    case 'text':
+      return {
+        control: 'text',
+        field,
+        value: sharedValue(layers, (l) => field.read(l, context)),
+        write: (value) => each((l) => field.write(l, value, context)),
+      }
     case 'toggle':
       return {
         control: 'toggle',
@@ -159,6 +182,13 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
         control: 'select',
         field,
         options: sharedOptions(field, layers),
+        value: sharedValue(layers, (l) => field.read(l, context)),
+        write: (value) => each((l) => field.write(l, value, context)),
+      }
+    case 'segmented':
+      return {
+        control: 'segmented',
+        field,
         value: sharedValue(layers, (l) => field.read(l, context)),
         write: (value) => each((l) => field.write(l, value, context)),
       }
@@ -194,7 +224,7 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
         if (side === 'width' || side === 'height') return { control: 'number', field, value: roundPx(box[side]), disabled: true, write: () => (d) => d }
         // The Box's side shows on whole px; the typed value moves every Layer by one whole-px delta.
         const write = (value: number): DocumentRecipe => (document) => {
-          const now = sharedBox(document.layers.filter((l) => ids.includes(l.id)), textHeight)
+          const now = sharedBox(selectedLayers(document, ids), textHeight)
           const delta = roundPx(value - now[side])
           return side === 'x' ? moveLayers(document, ids, delta, 0) : moveLayers(document, ids, 0, delta)
         }

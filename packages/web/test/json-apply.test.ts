@@ -6,7 +6,7 @@ import { createEditor, type ChangeEvent, type Editor } from '../src/editor/index
 import { applyJson } from '../src/json-apply.ts'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 400, height: 300, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x: 100, y: 100, width: 100, height: 50, fill: '#ff0000' }],
@@ -53,6 +53,18 @@ describe('applyJson', () => {
     expect(result.errors).toEqual([expect.objectContaining({ path: '', message: expect.stringMatching(/JSON/) })])
     expect(editor.getDocument()).toEqual(banner)
     expect(changes).toEqual([])
+  })
+
+  it('accepts a v1 Document, applying it as v2, and v2 Guides', async () => {
+    const { editor } = await open(banner)
+
+    const v1 = await applyJson(editor, JSON.stringify({ ...banner, version: 1, name: 'old' }))
+    expect(v1.ok).toBe(true)
+    expect(editor.getDocument()).toMatchObject({ version: 2, name: 'old' })
+
+    const guided = await applyJson(editor, JSON.stringify({ ...banner, guides: { x: [10], y: [] } }))
+    expect(guided.ok).toBe(true)
+    expect(editor.getDocument().guides).toEqual({ x: [10], y: [] })
   })
 
   it('applies a valid Document as one undo step', async () => {

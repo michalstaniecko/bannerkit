@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createEditor, type Editor } from '../src/editor/index.ts'
 
 const doc = (layers: Layer[], canvas: Partial<Document['canvas']> = {}): Document => ({
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 200, height: 100, background: '#ffffff', ...canvas },
   layers,

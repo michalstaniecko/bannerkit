@@ -1,6 +1,8 @@
 import type { z } from 'zod'
-import { DocumentSchema, type Document } from './document.ts'
+import { DOCUMENT_VERSION, DocumentSchema, DocumentV1Schema, LAYER_TYPES, type Document } from './document.ts'
+import { liftDocument } from './migrate.ts'
 import { closest } from './suggest.ts'
+import { walkLayers } from './tree.ts'
 
 /**
  * One validation finding. `path` is a JSON path into the Document
@@ -31,38 +33,54 @@ export function formatPath(path: readonly PropertyKey[]): string {
 
 /** Every Layer id is unique within its Document. */
 export const uniqueLayerIds: DocumentRule = (document) => {
-  const firstIndex = new Map<string, number>()
+  const firstPath = new Map<string, string>()
   const issues: RuleIssue[] = []
-  document.layers.forEach((layer, i) => {
-    const first = firstIndex.get(layer.id)
-    if (first === undefined) firstIndex.set(layer.id, i)
-    else issues.push({ path: `layers[${i}].id`, message: `duplicate Layer id "${layer.id}" (also used by layers[${first}])` })
-  })
+  for (const { layer, path } of walkLayers(document)) {
+    const first = firstPath.get(layer.id)
+    if (first === undefined) firstPath.set(layer.id, path)
+    else issues.push({ path: `${path}.id`, message: `duplicate Layer id "${layer.id}" (also used by ${first})` })
+  }
   return issues
 }
 
 /** AutoFit shrinks text to fit its Box, so the Box needs a height. */
 export const autoFitRequiresHeight: DocumentRule = (document) =>
-  document.layers.flatMap((layer, i) =>
+  walkLayers(document).flatMap(({ layer, path }) =>
     layer.type === 'text' && layer.autoFit !== undefined && layer.height === undefined
-      ? [{ path: `layers[${i}].autoFit`, message: 'autoFit requires height' }]
+      ? [{ path: `${path}.autoFit`, message: 'autoFit requires height' }]
       : [],
   )
 
 /** Rules every Document must pass, wherever it is validated. */
 export const CORE_RULES: readonly DocumentRule[] = [uniqueLayerIds, autoFitRequiresHeight]
 
+/** The Document versions that can be read. Anything older than the current one is lifted on read. */
+const READABLE_VERSIONS = [1, DOCUMENT_VERSION] as const
+
 /**
- * Validates an untrusted value as a Document: the strict schema first, then
- * CORE_RULES plus any extra `rules`. Rules only run once the shape is valid.
+ * Validates an untrusted value as a Document: the strict schema of its
+ * `version` first (v1 files by the frozen v1 schema), then CORE_RULES plus any
+ * extra `rules`. Rules only run once the shape is valid. A valid Document is
+ * always returned as the current version (v2), whatever version it was read as.
  */
 export function validateDocument(value: unknown, { rules = [] }: { rules?: readonly DocumentRule[] } = {}): ValidationResult {
-  const parsed = DocumentSchema.safeParse(value)
-  if (!parsed.success) {
-    return { ok: false, errors: parsed.error.issues.flatMap((issue) => toIssues(issue, value)), warnings: [] }
+  const version = (value as { version?: unknown } | null)?.version
+  let document: Document
+  if (version === 1) {
+    const parsed = DocumentV1Schema.safeParse(value)
+    if (!parsed.success) return invalid(parsed.error.issues, value, DocumentV1Schema)
+    document = liftDocument(parsed.data)
+  } else {
+    const parsed = DocumentSchema.safeParse(value)
+    if (!parsed.success) return invalid(parsed.error.issues, value, DocumentSchema)
+    document = parsed.data
   }
-  const found = [...CORE_RULES, ...rules].flatMap((rule) => rule(parsed.data))
-  return splitRuleIssues(found, parsed.data)
+  const found = [...CORE_RULES, ...rules].flatMap((rule) => rule(document))
+  return splitRuleIssues(found, document)
+}
+
+function invalid(issues: readonly z.core.$ZodIssue[], value: unknown, schema: z.core.$ZodType): ValidationResult {
+  return { ok: false, errors: issues.flatMap((issue) => toIssues(issue, value, schema)), warnings: [] }
 }
 
 /** Splits rule findings into errors and warnings, producing a ValidationResult. */
@@ -75,22 +93,28 @@ export function splitRuleIssues(found: readonly RuleIssue[], document: Document)
 
 // zod issue -> Issue -----------------------------------------------------------
 
-function toIssues(issue: z.core.$ZodIssue, input: unknown): Issue[] {
+function toIssues(issue: z.core.$ZodIssue, input: unknown, schema: z.core.$ZodType): Issue[] {
   const path = formatPath(issue.path)
   switch (issue.code) {
     case 'unrecognized_keys': {
-      const known = knownKeys(issue.path, input)
+      const known = knownKeys(schema, issue.path, input)
+      // Keys the current version knows but the file's older version does not.
+      const newer = schema === DocumentSchema ? [] : knownKeys(DocumentSchema, issue.path, input)
       return issue.keys.map((key) =>
-        withSuggestion(
-          { path: formatPath([...issue.path, key]), message: `unknown key "${key}"` },
-          closest(key, known),
-        ),
+        newer.includes(key) && !known.includes(key)
+          ? { path: formatPath([...issue.path, key]), message: requiresCurrentVersion(`"${key}"`) }
+          : withSuggestion(
+              { path: formatPath([...issue.path, key]), message: `unknown key "${key}"` },
+              closest(key, known),
+            ),
       )
     }
     case 'invalid_value': {
       const actual = valueAt(input, issue.path)
-      const options = issue.values.map(String)
-      const expected = issue.values.map((v) => JSON.stringify(v)).join(' | ')
+      // `version` accepts every readable version, not just the one of the schema that ran.
+      const values = path === 'version' ? READABLE_VERSIONS : issue.values
+      const options = values.map(String)
+      const expected = values.map((v) => JSON.stringify(v)).join(' | ')
       const message = actual === undefined ? `missing; expected ${expected}` : `expected ${expected}, got ${describe(actual)}`
       return [withSuggestion({ path, message }, typeof actual === 'string' ? closest(actual, options) : undefined)]
     }
@@ -100,6 +124,10 @@ function toIssues(issue: z.core.$ZodIssue, input: unknown): Issue[] {
       if (discriminated.note === 'No matching discriminator') {
         const actual = valueAt(input, issue.path)
         const options: string[] = (discriminated.options ?? []).map(String)
+        // A Layer type only the current version has (`group`), found in an older-version file.
+        if (schema !== DocumentSchema && typeof actual === 'string' && newerLayerType(actual)) {
+          return [{ path, message: requiresCurrentVersion(JSON.stringify(actual)) }]
+        }
         const message =
           actual === undefined
             ? `missing; expected ${options.map((o) => `"${o}"`).join(' | ')}`
@@ -116,6 +144,15 @@ function toIssues(issue: z.core.$ZodIssue, input: unknown): Issue[] {
     default:
       return [{ path, message: issue.message }]
   }
+}
+
+/** The message for a field only the current Document version has, found in an older-version file. */
+function requiresCurrentVersion(what: string): string {
+  return `${what} requires version: ${DOCUMENT_VERSION}; run \`bannerkit migrate\``
+}
+
+function newerLayerType(type: string): boolean {
+  return (LAYER_TYPES as readonly string[]).includes(type)
 }
 
 function withSuggestion(issue: Issue, suggestion: string | undefined): Issue {
@@ -139,8 +176,8 @@ function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
 }
 
 /** The keys the schema allows on the object at `path`, resolved against the input (for unions). */
-function knownKeys(path: readonly PropertyKey[], input: unknown): string[] {
-  let schema: z.core.$ZodType | undefined = DocumentSchema
+function knownKeys(root: z.core.$ZodType, path: readonly PropertyKey[], input: unknown): string[] {
+  let schema: z.core.$ZodType | undefined = root
   let value: unknown = input
   for (const key of path) {
     schema = schema && childSchema(resolve(schema, value), key)

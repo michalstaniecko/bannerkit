@@ -7,7 +7,7 @@
     },
     "version": {
       "type": "number",
-      "const": 1
+      "const": 2
     },
     "name": {
       "type": "string",
@@ -46,20 +46,13 @@
       ],
       "additionalProperties": false
     },
+    "guides": {
+      "$ref": "#/$defs/Guides"
+    },
     "layers": {
       "type": "array",
       "items": {
-        "oneOf": [
-          {
-            "$ref": "#/$defs/RectLayer"
-          },
-          {
-            "$ref": "#/$defs/ImageLayer"
-          },
-          {
-            "$ref": "#/$defs/TextLayer"
-          }
-        ]
+        "$ref": "#/$defs/Layer"
       },
       "description": "Bottom to top"
     }
@@ -71,8 +64,49 @@
     "layers"
   ],
   "additionalProperties": false,
-  "title": "Bannerkit Document v1",
+  "title": "Bannerkit Document v2",
   "$defs": {
+    "Guides": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Vertical Guides: x positions in Document px"
+        },
+        "y": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Horizontal Guides: y positions in Document px"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "description": "Editor-only alignment lines; never rendered"
+    },
+    "Layer": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RectLayer"
+        },
+        {
+          "$ref": "#/$defs/ImageLayer"
+        },
+        {
+          "$ref": "#/$defs/TextLayer"
+        },
+        {
+          "$ref": "#/$defs/GroupLayer"
+        }
+      ]
+    },
     "RectLayer": {
       "type": "object",
       "properties": {
@@ -451,6 +485,23 @@
             "minFontSize"
           ],
           "additionalProperties": false
+        },
+        "fontStyle": {
+          "description": "Default \"normal\". \"italic\" needs an italic font file for this family and weight; never synthesised",
+          "type": "string",
+          "enum": [
+            "normal",
+            "italic"
+          ]
+        },
+        "textTransform": {
+          "description": "Drawn case, default \"none\". `text` keeps what was typed; layout, AutoFit and inspect lines use the transformed text",
+          "type": "string",
+          "enum": [
+            "none",
+            "uppercase",
+            "lowercase"
+          ]
         }
       },
       "required": [
@@ -464,6 +515,52 @@
         "fontWeight",
         "fontSize",
         "fill"
+      ],
+      "additionalProperties": false
+    },
+    "GroupLayer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the Document; readable `<type>-<n>` when generated"
+        },
+        "type": {
+          "type": "string",
+          "const": "group"
+        },
+        "name": {
+          "description": "Shown in the Layer list instead of the id",
+          "type": "string"
+        },
+        "visible": {
+          "description": "Default true",
+          "type": "boolean"
+        },
+        "locked": {
+          "description": "Default false",
+          "type": "boolean"
+        },
+        "opacity": {
+          "description": "0-1, default 1; applies to the children composited together",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "layers": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Layer"
+          },
+          "description": "Children, bottom to top"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "layers"
       ],
       "additionalProperties": false
     }

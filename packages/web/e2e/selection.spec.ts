@@ -9,7 +9,7 @@ import { expect, test } from './fixtures.ts'
 import { repoRoot } from './root.ts'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [
@@ -58,4 +58,38 @@ test('selecting Layers records the Selection in .state.json for bannerkit inspec
 
   await page.mouse.click(...at(380, 20))
   await expect.poll(() => readState(projects.root, 's3-selection')).toEqual({ doc: 'banner', selectedLayerIds: [] })
+})
+
+const grouped: Document = {
+  ...banner,
+  name: 'grouped',
+  layers: [{ id: 'group-1', type: 'group', layers: banner.layers }],
+}
+
+test('a Layer selected inside a Group (double click) is the recorded Selection, marked in the inspect tree', async ({ page, projects }) => {
+  await projects.write('s3-group-selection', { documents: { grouped } })
+  await page.goto(projects.appUrl('s3-group-selection', 'grouped'))
+  const canvas = page.locator('canvas.upper-canvas')
+  await expect(canvas).toBeVisible()
+  const box = (await canvas.boundingBox())!
+  const zoom = box.width / grouped.canvas.width
+  const at = (x: number, y: number) => [box.x + x * zoom, box.y + y * zoom] as const
+  const state = () => readState(projects.root, 's3-group-selection')
+
+  await page.mouse.click(...at(290, 130))
+  await expect.poll(state).toEqual({ doc: 'grouped', selectedLayerIds: ['group-1'] })
+
+  await page.mouse.dblclick(...at(290, 130))
+  await expect.poll(state).toEqual({ doc: 'grouped', selectedLayerIds: ['rect-2'] })
+
+  const { stdout } = await bannerkit('inspect', 's3-group-selection', '--root', projects.root, '--json')
+  const { result } = JSON.parse(stdout)
+  expect(result.layers[0].selected).toBe(false)
+  expect(result.layers[0].layers.map((l: { id: string; selected: boolean }) => [l.id, l.selected])).toEqual([
+    ['rect-1', false],
+    ['rect-2', true],
+  ])
+
+  await page.keyboard.press('Escape')
+  await expect.poll(state).toEqual({ doc: 'grouped', selectedLayerIds: ['group-1'] })
 })

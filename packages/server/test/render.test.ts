@@ -6,7 +6,7 @@ import { renderDocument } from '../src/render/renderDocument.ts'
 import { expectImageSnapshot } from './snapshot.ts'
 
 function doc(layers: Layer[], background: string | null = '#ffffff', width = 200, height = 100): Document {
-  return { version: 1, name: 'test', canvas: { width, height, background }, layers }
+  return { version: 2, name: 'test', canvas: { width, height, background }, layers }
 }
 
 async function pixels(png: Buffer) {
@@ -69,6 +69,15 @@ describe('renderDocument: text Layers', () => {
     await expectImageSnapshot('text-wrap-left', png)
   })
 
+  it('draws text in the case textTransform asks for', async () => {
+    const typed = await renderDocument(doc([textLayer({ text: 'Spring sale', textTransform: 'uppercase' })]))
+    const uppercase = await renderDocument(doc([textLayer({ text: 'SPRING SALE' })]))
+    const asTyped = await renderDocument(doc([textLayer({ text: 'Spring sale' })]))
+
+    expect(typed.equals(uppercase)).toBe(true)
+    expect(typed.equals(asTyped)).toBe(false)
+  })
+
   it('honours align, verticalAlign and letterSpacing', async () => {
     const layer = textLayer({ text: 'SALE', align: 'right', verticalAlign: 'bottom', height: 100, letterSpacing: 4 })
     const png = await renderDocument(doc([layer], '#ffffff', 200, 120))
@@ -125,6 +134,17 @@ describe('renderDocument: text Layers', () => {
     })
     const png = await renderDocument(doc([{ id: 'rect-1', type: 'rect', x: 0, y: 0, width: 200, height: 60, fill: '#3366ff' }, layer], '#ffffff', 200, 60))
     await expectImageSnapshot('text-rotated-shadow', png)
+  })
+
+  it('draws italic text from the italic font file', async () => {
+    const italic = await renderDocument(doc([textLayer({ text: 'Italic sale', fontStyle: 'italic' })]))
+    const upright = await renderDocument(doc([textLayer({ text: 'Italic sale' })]))
+    expect(italic.equals(upright)).toBe(false)
+    // The line ends where core measured it with the italic face.
+    const layout = layoutText(textLayer({ text: 'Italic sale', fontStyle: 'italic' }), measureText)
+    const ink = await inkBounds(italic)
+    expect(Math.abs(ink.maxX - (20 + layout.lines[0]!.width))).toBeLessThanOrEqual(3)
+    await expectImageSnapshot('text-italic', italic)
   })
 
   it('refuses to draw a font missing from the manifest instead of falling back', async () => {
@@ -288,5 +308,45 @@ describe('renderDocument: rect Layers', () => {
     expect(at(10, 10)[3]).toBe(0)
     near(at(100, 50), [255, 0, 0, 128], 2)
     await expectImageSnapshot('rect-transparent-canvas', png)
+  })
+})
+
+describe('renderDocument: Groups', () => {
+  const red: Layer = { id: 'red', type: 'rect', x: 0, y: 0, width: 120, height: 100, fill: '#ff0000' }
+  const blue: Layer = { id: 'blue', type: 'rect', x: 80, y: 0, width: 120, height: 100, fill: '#0000ff' }
+
+  it('composites a Group with opacity as one surface, not child by child (CSS opacity)', async () => {
+    const png = await renderDocument(doc([{ id: 'group-1', type: 'group', opacity: 0.5, layers: [red, blue] }]))
+    const at = await pixels(png)
+    // Where the children overlap, blue covers red before the Group fades: half blue on white.
+    near(at(100, 50), [128, 128, 255, 255], 3)
+    near(at(40, 50), [255, 128, 128, 255], 3)
+    near(at(160, 50), [128, 128, 255, 255], 3)
+
+    // Fading each child instead would let red show through blue in the overlap.
+    const perChild = await renderDocument(doc([{ ...red, opacity: 0.5 }, { ...blue, opacity: 0.5 }]))
+    near((await pixels(perChild))(100, 50), [128, 64, 191, 255], 3)
+    await expectImageSnapshot('group-opacity', png)
+  })
+
+  it('draws a Group at full opacity like its children on their own', async () => {
+    const grouped = await renderDocument(doc([{ id: 'group-1', type: 'group', layers: [red, { ...blue, rotation: 20 }] }]))
+    const flat = await renderDocument(doc([red, { ...blue, rotation: 20 }]))
+
+    expect(grouped.equals(flat)).toBe(true)
+  })
+
+  it('multiplies the opacity of nested Groups', async () => {
+    const png = await renderDocument(
+      doc([
+        { id: 'outer', type: 'group', opacity: 0.5, layers: [{ id: 'inner', type: 'group', opacity: 0.5, layers: [{ ...red, fill: '#000000' }] }] },
+      ]),
+    )
+    near((await pixels(png))(40, 50), [191, 191, 191, 255], 3)
+  })
+
+  it('skips a hidden Group with everything in it', async () => {
+    const png = await renderDocument(doc([{ id: 'group-1', type: 'group', visible: false, layers: [red, blue] }]))
+    expect((await pixels(png))(100, 50)).toEqual([255, 255, 255, 255])
   })
 })

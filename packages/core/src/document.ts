@@ -1,12 +1,16 @@
 import { z } from 'zod'
 import { MAX_CANVAS_SIDE } from './presets.ts'
 
-// Document schema v1, frozen. Changing the shape of a Document means a new
-// `version`, not an edit here. Cross-field rules (unique ids, autoFit needs
-// height, ...) live in validate.ts, not in this schema, so the generated JSON
-// Schema stays a plain description of the shape.
+// Document schemas. v1 is frozen: files with `version: 1` are checked by
+// `DocumentV1Schema` and lifted to v2 in memory (migrate.ts). The current
+// shape is v2 (`DocumentSchema`); changing it in a breaking way means a new
+// `version`. Cross-field rules (unique ids, autoFit needs height, ...) live in
+// validate.ts, not in these schemas, so the generated JSON Schema stays a plain
+// description of the shape. Shared building blocks (colour, gradient, shadow,
+// Canvas) are the same in both versions.
 
-export const DOCUMENT_VERSION = 1
+/** The version every Document is read as and written with. */
+export const DOCUMENT_VERSION = 2
 
 /** CSS colour string as understood by both renderers (e.g. `#ff0000`, `rgba(0,0,0,0.5)`). */
 export const ColorSchema = z.string().min(1).meta({ description: 'CSS colour, e.g. "#ff0000" or "rgba(0,0,0,0.5)"' })
@@ -48,56 +52,120 @@ const commonShape = {
   shadow: ShadowSchema.optional(),
 }
 
-export const RectLayerSchema = z
-  .strictObject({
-    ...commonShape,
-    type: z.literal('rect'),
-    height: z.number().min(0),
-    fill: z.union([ColorSchema, LinearGradientSchema], {
-      error: 'expected a CSS colour string or a LinearGradient object',
-    }),
-    cornerRadius: z.number().min(0).optional(),
-  })
-  .meta({ id: 'RectLayer' })
+// v1 (frozen) ------------------------------------------------------------------
+// No `.meta({ id })` here: the ids name the v2 definitions in the JSON Schema.
+
+const RectLayerV1Schema = z.strictObject({
+  ...commonShape,
+  type: z.literal('rect'),
+  height: z.number().min(0),
+  fill: z.union([ColorSchema, LinearGradientSchema], {
+    error: 'expected a CSS colour string or a LinearGradient object',
+  }),
+  cornerRadius: z.number().min(0).optional(),
+})
 
 export const FITS = ['contain', 'cover', 'stretch'] as const
 
-export const ImageLayerSchema = z
-  .strictObject({
-    ...commonShape,
-    type: z.literal('image'),
-    height: z.number().min(0),
-    src: z.string().min(1).meta({ description: 'Project-relative Asset path, e.g. "assets/shoe.png"' }),
-    fit: z.enum(FITS),
-  })
-  .meta({ id: 'ImageLayer' })
+const ImageLayerV1Schema = z.strictObject({
+  ...commonShape,
+  type: z.literal('image'),
+  height: z.number().min(0),
+  src: z.string().min(1).meta({ description: 'Project-relative Asset path, e.g. "assets/shoe.png"' }),
+  fit: z.enum(FITS),
+})
 
 export const FONT_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const
+/** Font styles; an italic is always drawn from its own font file, never slanted (ADR 0003). */
+export const FONT_STYLES = ['normal', 'italic'] as const
+export type FontStyle = (typeof FONT_STYLES)[number]
 
-export const TextLayerSchema = z
+const TextLayerV1Schema = z.strictObject({
+  ...commonShape,
+  type: z.literal('text'),
+  text: z.string(),
+  height: z.number().min(0).optional().meta({ description: 'Required when autoFit is set' }),
+  fontFamily: z.string().min(1),
+  fontWeight: z.literal(FONT_WEIGHTS),
+  fontSize: z.number().positive(),
+  lineHeight: z.number().positive().optional().meta({ description: 'Multiple of fontSize' }),
+  letterSpacing: z.number().optional().meta({ description: 'Pixels' }),
+  fill: ColorSchema,
+  align: z.enum(['left', 'center', 'right']).optional(),
+  verticalAlign: z.enum(['top', 'middle', 'bottom']).optional(),
+  autoFit: z
+    .strictObject({ minFontSize: z.number().positive() })
+    .optional()
+    .meta({ description: 'Shrink fontSize down to minFontSize until the text fits its Box; requires height' }),
+})
+
+const LayerV1Schema = z.discriminatedUnion('type', [RectLayerV1Schema, ImageLayerV1Schema, TextLayerV1Schema])
+
+/** Document v1, frozen. Only read (and lifted to v2), never written. */
+export const DocumentV1Schema = z.strictObject({
+  $schema: z.string().optional(),
+  version: z.literal(1),
+  name: z.string().min(1),
+  canvas: CanvasSchema,
+  layers: z.array(LayerV1Schema).meta({ description: 'Bottom to top' }),
+})
+
+// v2 (current) -----------------------------------------------------------------
+
+export const RectLayerSchema = RectLayerV1Schema.meta({ id: 'RectLayer' })
+export const ImageLayerSchema = ImageLayerV1Schema.meta({ id: 'ImageLayer' })
+export const TEXT_TRANSFORMS = ['none', 'uppercase', 'lowercase'] as const
+
+export const TextLayerSchema = TextLayerV1Schema.extend({
+  fontStyle: z
+    .enum(FONT_STYLES)
+    .optional()
+    .meta({ description: 'Default "normal". "italic" needs an italic font file for this family and weight; never synthesised' }),
+  textTransform: z.enum(TEXT_TRANSFORMS).optional().meta({
+    description:
+      'Drawn case, default "none". `text` keeps what was typed; layout, AutoFit and inspect lines use the transformed text',
+  }),
+}).meta({ id: 'TextLayer' })
+
+/** Every Layer type in Document v2: the leaf types plus `group`. */
+export const LAYER_TYPES = ['rect', 'image', 'text', 'group'] as const
+
+/**
+ * A Group (ADR 0007): an ordered list of child Layers, nested to any depth.
+ * No Box of its own: the children keep Canvas coordinates and the Group's Box
+ * is derived from them (`layerExtent`). Its opacity applies to the children
+ * drawn together, as in CSS, not to each child.
+ */
+export const GroupLayerSchema = z
   .strictObject({
-    ...commonShape,
-    type: z.literal('text'),
-    text: z.string(),
-    height: z.number().min(0).optional().meta({ description: 'Required when autoFit is set' }),
-    fontFamily: z.string().min(1),
-    fontWeight: z.literal(FONT_WEIGHTS),
-    fontSize: z.number().positive(),
-    lineHeight: z.number().positive().optional().meta({ description: 'Multiple of fontSize' }),
-    letterSpacing: z.number().optional().meta({ description: 'Pixels' }),
-    fill: ColorSchema,
-    align: z.enum(['left', 'center', 'right']).optional(),
-    verticalAlign: z.enum(['top', 'middle', 'bottom']).optional(),
-    autoFit: z
-      .strictObject({ minFontSize: z.number().positive() })
-      .optional()
-      .meta({ description: 'Shrink fontSize down to minFontSize until the text fits its Box; requires height' }),
+    id: commonShape.id,
+    type: z.literal('group'),
+    name: z.string().optional().meta({ description: 'Shown in the Layer list instead of the id' }),
+    visible: commonShape.visible,
+    locked: commonShape.locked,
+    opacity: z.number().min(0).max(1).optional().meta({ description: '0-1, default 1; applies to the children composited together' }),
+    get layers(): z.ZodArray<typeof LayerSchema> {
+      return z.array(LayerSchema).min(1, 'a Group needs at least one Layer').meta({ description: 'Children, bottom to top' })
+    },
   })
-  .meta({ id: 'TextLayer' })
+  .meta({ id: 'GroupLayer' })
 
-export const LAYER_TYPES = ['rect', 'image', 'text'] as const
+export const LayerSchema: z.ZodDiscriminatedUnion<
+  [typeof RectLayerSchema, typeof ImageLayerSchema, typeof TextLayerSchema, typeof GroupLayerSchema],
+  'type'
+> = z
+  .discriminatedUnion('type', [RectLayerSchema, ImageLayerSchema, TextLayerSchema, GroupLayerSchema])
+  .meta({ id: 'Layer' })
 
-export const LayerSchema = z.discriminatedUnion('type', [RectLayerSchema, ImageLayerSchema, TextLayerSchema])
+const GuideAxisSchema = z.array(z.number()).meta({ description: 'Document px, any order' })
+
+/** Editor-only alignment lines. Never rendered. */
+export const GuidesSchema = z
+  .strictObject({
+    x: GuideAxisSchema.meta({ description: 'Vertical Guides: x positions in Document px' }),
+    y: GuideAxisSchema.meta({ description: 'Horizontal Guides: y positions in Document px' }),
+  })
+  .meta({ id: 'Guides', description: 'Editor-only alignment lines; never rendered' })
 
 export const DocumentSchema = z
   .strictObject({
@@ -105,9 +173,10 @@ export const DocumentSchema = z
     version: z.literal(DOCUMENT_VERSION),
     name: z.string().min(1),
     canvas: CanvasSchema,
+    guides: GuidesSchema.optional(),
     layers: z.array(LayerSchema).meta({ description: 'Bottom to top' }),
   })
-  .meta({ title: 'Bannerkit Document v1' })
+  .meta({ title: 'Bannerkit Document v2' })
 
 export type Color = z.infer<typeof ColorSchema>
 export type LinearGradient = z.infer<typeof LinearGradientSchema>
@@ -116,9 +185,15 @@ export type Canvas = z.infer<typeof CanvasSchema>
 export type RectLayer = z.infer<typeof RectLayerSchema>
 export type ImageLayer = z.infer<typeof ImageLayerSchema>
 export type TextLayer = z.infer<typeof TextLayerSchema>
+export type GroupLayer = z.infer<typeof GroupLayerSchema>
+export type TextTransform = (typeof TEXT_TRANSFORMS)[number]
 export type Layer = z.infer<typeof LayerSchema>
 export type LayerType = Layer['type']
+/** A Layer that draws something itself, with a Box of its own: anything but a Group. */
+export type LeafLayer = Exclude<Layer, GroupLayer>
 export type Fit = ImageLayer['fit']
+export type Guides = z.infer<typeof GuidesSchema>
 export type Document = z.infer<typeof DocumentSchema>
+export type DocumentV1 = z.infer<typeof DocumentV1Schema>
 
 export const DEFAULT_BACKGROUND = '#ffffff'

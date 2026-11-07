@@ -7,7 +7,7 @@ import { expect, test } from './fixtures.ts'
 const RED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#ff0000"/></svg>'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [
@@ -50,7 +50,7 @@ test('shows Assets with their Fit, a hatched placeholder for a missing one, and 
 
 type Checked = { id: string; image: boolean } | { id: string; lines: string[]; core: string[] }
 
-for (const name of ['hero', 'rectangle', 'square']) {
+for (const name of ['hero', 'rectangle', 'square', 'story']) {
   test(`the demo ${name} banner shows every Asset and breaks text like core`, async ({ harness }) => {
     const result = await harness.evaluate(async (name) => {
       const { createEditor, core, fonts, host } = window.bannerkit
@@ -58,7 +58,7 @@ for (const name of ['hero', 'rectangle', 'square']) {
       const editor = createEditor()
       editor.mount(host())
       await editor.load(document, { assetUrl: (src) => `/api/projects/demo/${src}` })
-      return document.layers.flatMap((layer): Checked[] => {
+      return core.walkLayers(document).flatMap(({ layer }): Checked[] => {
         const object = editor.objectFor(layer.id)!
         if (layer.type === 'image') return [{ id: layer.id, image: object.isType('image') }]
         if (layer.type !== 'text') return []

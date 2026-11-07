@@ -6,7 +6,7 @@ import { createEditor, type ChangeEvent, type Editor } from '../src/editor/index
 import { addLayer, duplicateLayers, setLayerFlag } from '../src/layer-actions.ts'
 
 const doc = (layers: Layer[]): Document => ({
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 400, height: 300, background: '#ffffff' },
   layers,

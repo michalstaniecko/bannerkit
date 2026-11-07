@@ -32,6 +32,7 @@ In the top bar, pick a Project and a Document. You can then:
 - drag, resize and rotate Layers; double-click text to edit it; nudge with the arrow keys (Shift moves 10px)
 - reorder Layers, hide or lock them in the Layer list on the left
 - **Add text / Add rect / Add image** (the image picker accepts PNG, JPEG, WebP and SVG)
+- **Group** (Ctrl/Cmd+G) Layers that share a parent and **Ungroup** (Ctrl/Cmd+Shift+G) the selected Groups
 - undo/redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z)
 - **Export** as PNG, JPG or WebP at 1× or 2×
 
@@ -81,4 +82,4 @@ pnpm typecheck
 pnpm schema      # regenerate packages/core/schema/document.schema.json
 ```
 
-The workspace has three packages: `packages/core` (schema, validation, Text Layout), `packages/server` (operations, CLI, REST API and server renderer) and `packages/web` (the editor). Fonts are listed in `fonts/fonts.json`. Inter is bundled under OFL-1.1.
+The workspace has three packages: `packages/core` (schema, validation, Text Layout), `packages/server` (operations, CLI, REST API and server renderer) and `packages/web` (the editor). Fonts are listed in `fonts/fonts.json`. Inter (upright and italic, 100–900) is bundled under OFL-1.1.
