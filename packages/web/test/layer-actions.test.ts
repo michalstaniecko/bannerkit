@@ -132,6 +132,36 @@ describe('addLayer', () => {
     }
     expect(validateDocument(d)).toMatchObject({ ok: true, errors: [] })
   })
+
+  describe('in the context of the Selection', () => {
+    const tree = () =>
+      doc([
+        rect('rect-1'),
+        { id: 'group-1', type: 'group', layers: [rect('rect-2'), rect('rect-3'), rect('rect-4')] },
+        rect('rect-5'),
+      ])
+    const childIds = (d: Document) => (d.layers[1] as Extract<Layer, { type: 'group' }>).layers.map((l) => l.id)
+
+    it('puts it in the parent of selected children, right above the topmost one', () => {
+      const { document, id } = addLayer(tree(), { type: 'rect' }, ['rect-3', 'rect-2'])
+
+      expect(id).toBe('rect-6')
+      expect(ids(document)).toEqual(['rect-1', 'group-1', 'rect-5'])
+      expect(childIds(document)).toEqual(['rect-2', 'rect-3', 'rect-6', 'rect-4'])
+      expect(validateDocument(document)).toMatchObject({ ok: true })
+    })
+
+    it('puts it right above a selected Group, on its level', () => {
+      const { document } = addLayer(tree(), { type: 'text' }, ['group-1'])
+
+      expect(ids(document)).toEqual(['rect-1', 'group-1', 'text-1', 'rect-5'])
+      expect(childIds(document)).toEqual(['rect-2', 'rect-3', 'rect-4'])
+    })
+
+    it('puts it on top of the root without a Selection', () => {
+      expect(ids(addLayer(tree(), { type: 'rect' }, []).document)).toEqual(['rect-1', 'group-1', 'rect-5', 'rect-6'])
+    })
+  })
 })
 
 describe('groupSelection', () => {

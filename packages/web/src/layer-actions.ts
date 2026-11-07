@@ -9,6 +9,7 @@ import {
   removeLayers,
   replaceLayer,
   ungroup,
+  walkLayers,
   type Document,
   type Layer,
 } from '@bannerkit/core'
@@ -54,8 +55,12 @@ export type NewLayer = { type: 'rect' } | { type: 'text' } | { type: 'image'; sr
 /** Share of the Canvas a new rect or image takes at most, per side. */
 const NEW_SHARE = 0.5
 
-/** Adds a Layer on top of the stack, centred in the Canvas, with the next readable id. */
-export function addLayer(document: Document, spec: NewLayer): { document: Document; id: string } {
+/**
+ * Adds a Layer centred in the Canvas, with the next readable id. Where it goes depends
+ * on the Selection: right above its topmost Layer (in draw order), in that Layer's
+ * parent, when that Layer is in a Group or is a Group itself; on top of the root otherwise.
+ */
+export function addLayer(document: Document, spec: NewLayer, selection: readonly string[] = []): { document: Document; id: string } {
   const next = copy(document)
   const { width: cw, height: ch } = next.canvas
   const id = nextLayerId(next, spec.type)
@@ -71,7 +76,11 @@ export function addLayer(document: Document, spec: NewLayer): { document: Docume
     const scale = Math.min(1, (cw * NEW_SHARE) / spec.width, (ch * NEW_SHARE) / spec.height)
     layer = { id, type: 'image', ...centred(spec.width * scale, spec.height * scale), src: spec.src, fit: 'contain' }
   }
-  next.layers.push(layer)
+  const topmost = walkLayers(next).findLast((v) => selection.includes(v.layer.id))
+  if (topmost && (topmost.parent !== next || topmost.layer.type === 'group')) {
+    // `next` is a fresh copy, so its parents' `layers` may be changed in place.
+    ;(topmost.parent.layers as Layer[]).splice(topmost.index + 1, 0, layer)
+  } else next.layers.push(layer)
   return { document: next, id }
 }
 
