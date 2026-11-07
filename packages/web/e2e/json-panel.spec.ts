@@ -1,4 +1,4 @@
-// S3: the JSON panel shows the live Document; pasted JSON is validated before Apply.
+// S3, M1 #6: the JSON panel (the Inspector's JSON tab) shows the live Document; pasted JSON is validated before Apply.
 import type { Document } from '@bannerkit/core'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
@@ -14,6 +14,8 @@ async function open(page: Page, url: string) {
   await page.goto(url)
   await expect(page.locator('canvas.upper-canvas')).toBeVisible()
   await expect(page.locator('.save')).toHaveText('Saved')
+  // The JSON panel is the Inspector's "JSON" tab.
+  await page.getByRole('tab', { name: 'JSON' }).click()
 }
 
 const panelText = (page: Page) => page.locator('.json-panel .cm-content')

@@ -5,7 +5,8 @@
  * Two layers:
  * - primitive (`--color-*`, `--space-*`, `--radius-*`, `--font-size-*`, `--font-family-*`):
  *   the raw scale, referenced only from the semantic layer below;
- * - semantic (`--surface-*`, `--text-*`, `--border-*`, `--accent*`, `--gap-*`, `--pad-*`, ...):
+ * - semantic (`--surface-*`, `--text-*`, `--border-*`, `--accent*`, `--gap-*`, `--pad-*`, `--*-radius`, ...;
+ *   never a primitive prefix, which the guard reserves for the primitive layer):
  *   what layout and components use.
  *
  * A dark theme is a second semantic block (e.g. `[data-theme='dark']`) over the same
@@ -98,7 +99,19 @@
   --pad-section: var(--space-5);
   --indent-list: var(--space-8);
 
-  --radius-control: var(--radius-2);
-  --radius-panel: var(--radius-3);
-  --radius-pill: var(--radius-full);
+  --control-radius: var(--radius-2);
+  --panel-radius: var(--radius-3);
+  --pill-radius: var(--radius-full);
+
+  --surface-control: var(--color-white);
+  --gap-control-icon: var(--space-3);
+  /* Layer list rows: indent per nesting level (Groups, M2). */
+  --indent-tree: var(--space-6);
+
+  /* Window dimensions (not palette or spacing, so no primitive scale). */
+  --control-size: 28px;
+  --layer-list-width: 220px;
+  --inspector-width: 320px;
+  /* Ruler gutters around the Canvas viewport; 0 until the rulers arrive (M3). */
+  --ruler-size: 0px;
 }
