@@ -26,6 +26,22 @@ async function key(key: string) {
 const labelOf = (input: HTMLInputElement) => input.labels![0]!
 
 describe('dragging a number field label', () => {
+  it('dragging the Document Width label previews the resize and commits one resize step', async () => {
+    const { editor, field, changes } = await openInspector(doc([rect()]))
+    const label = labelOf(field('Width'))
+
+    await mouse(label, 'mousedown', { clientX: 50 })
+    await mouse(document.body, 'mousemove', { clientX: 60 })
+    await mouse(document.body, 'mousemove', { clientX: 70 })
+    expect(editor.getDocument().canvas.width).toBe(420)
+    expect(changes).toEqual([])
+    await mouse(document.body, 'mouseup', { clientX: 70 })
+
+    expect(changes.map((c) => c.cause)).toEqual(['resize'])
+    expect(changes[0]!.document.canvas).toMatchObject({ width: 420, height: 300 })
+    expect(changes[0]!.document.layers[0]).toMatchObject({ x: 100, width: 100 })
+  })
+
   it('previews each value on the Canvas and makes the release one step and one change', async () => {
     const original = doc([rect()])
     const { editor, field, changes } = await openInspector(original, { select: ['rect-1'] })

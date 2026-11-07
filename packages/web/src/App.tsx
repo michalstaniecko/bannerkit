@@ -3,12 +3,14 @@
 // Canvas area (centre) and the Inspector (right). React holds names, the zoom and the save
 // state only; the Document and every Fabric object live inside the editor module.
 // Edits reach disk through autosave, fed by the editor's `change` events.
+import type { Anchor } from '@bannerkit/core'
 import { Maximize, Redo2, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { api, isConflict, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 import { CanvasArea } from './CanvasArea.tsx'
+import { CanvasHandles } from './CanvasHandles.tsx'
 import { DocumentActions } from './DocumentActions.tsx'
 import { ExportControl } from './ExportControl.tsx'
 import { Inspector } from './Inspector.tsx'
@@ -53,6 +55,8 @@ export function App() {
   const [save, setSave] = useState<SaveState>('saved')
   const [history, setHistory] = useState({ undo: false, redo: false })
   const [conflict, setConflict] = useState<Conflict | null>(null)
+  /** The Anchor a new Canvas size keeps put: UI state for the whole session, never in a Document. */
+  const [anchor, setAnchor] = useState<Anchor>('top-left')
 
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -165,11 +169,13 @@ export function App() {
     }
   }, [project, doc])
 
-  // Fit mode follows the viewport size; manual zoom stays put.
+  // Fit mode follows the viewport size and the Canvas size (a resize, its undo or redo,
+  // a reload after `doc resize`); manual zoom stays put. The editor reports no Canvas
+  // size while a gesture previews one, so the zoom holds still during a handle drag.
   useEffect(() => {
     const viewport = viewportRef.current!
+    const editor = editorRef.current
     const refit = () => {
-      const editor = editorRef.current
       if (!editor || !loaded) return
       if (fit) {
         setZoom(
@@ -185,7 +191,11 @@ export function App() {
     refit()
     const observer = new ResizeObserver(refit)
     observer.observe(viewport)
-    return () => observer.disconnect()
+    const offCanvas = fit && editor ? editor.on('canvas', refit) : () => {}
+    return () => {
+      observer.disconnect()
+      offCanvas()
+    }
   }, [loaded, fit, zoom])
 
   // A Document made by the top bar's New / Duplicate to size: list it and open it.
@@ -275,8 +285,9 @@ export function App() {
           hostRef={hostRef}
           loaded={loaded}
           placeholder={!error && <p className="hint">Pick a Project and a Document.</p>}
+          overlay={<CanvasHandles editor={editorRef} loaded={loaded} />}
         />
-        <Inspector editor={editorRef} loaded={loaded} />
+        <Inspector editor={editorRef} loaded={loaded} anchor={anchor} onAnchorChange={setAnchor} />
       </div>
     </div>
   )

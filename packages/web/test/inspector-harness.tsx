@@ -1,9 +1,11 @@
 // The Inspector's Properties tab rendered with a real editor (jsdom + node-canvas),
 // driven by user-event like a human: fields are found by their accessible names.
-import type { Document, MeasureText } from '@bannerkit/core'
+import type { Anchor, Document, MeasureText } from '@bannerkit/core'
 import { cleanup, render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
+import { useState, type RefObject } from 'react'
 import { afterEach } from 'vitest'
+import type { Editor } from '../src/editor/index.ts'
 import { Properties } from '../src/inspector/Properties.tsx'
 import { openEditor } from './editor-harness.ts'
 
@@ -21,7 +23,7 @@ export async function openInspector(
   const opened = await openEditor(document_, { measure })
   opened.editor.select(select)
   const user = userEvent.setup()
-  const view = render(<Properties editor={{ current: opened.editor }} loaded />)
+  const view = render(<WithAnchor editor={{ current: opened.editor }} />)
   const field = (name: string) => screen.getByRole('textbox', { name }) as HTMLInputElement
   const toggle = (name: string) => screen.getByRole('checkbox', { name }) as HTMLInputElement
   return { ...opened, user, view, field, toggle }
@@ -29,3 +31,9 @@ export async function openInspector(
 
 /** Waits for pending editor work (an `update` resolves after a microtask or two). */
 export const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+/** Properties holding the Anchor in state, as the App does. */
+function WithAnchor({ editor }: { editor: RefObject<Editor | null> }) {
+  const [anchor, setAnchor] = useState<Anchor>('top-left')
+  return <Properties editor={editor} loaded anchor={anchor} onAnchorChange={setAnchor} />
+}

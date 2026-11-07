@@ -189,6 +189,47 @@ textarea {
   pointer-events: none;
 }
 
+/* Canvas resize handles (CanvasHandles.tsx): on the edges and corners of the overlay,
+   so they follow the zoom; only the handles take the pointer. */
+.canvas-handles {
+  position: absolute;
+  inset: 0;
+}
+
+.canvas-handle {
+  position: absolute;
+  width: var(--canvas-handle-size);
+  height: var(--canvas-handle-size);
+  translate: -50% -50%;
+  background: var(--surface-panel);
+  border: 1px solid var(--accent);
+  pointer-events: auto;
+}
+
+.canvas-handle[data-sx='-1'] { left: 0; }
+.canvas-handle[data-sx='0'] { left: 50%; cursor: ns-resize; }
+.canvas-handle[data-sx='1'] { left: 100%; }
+.canvas-handle[data-sy='-1'] { top: 0; }
+.canvas-handle[data-sy='0'] { top: 50%; cursor: ew-resize; }
+.canvas-handle[data-sy='1'] { top: 100%; }
+.canvas-handle[data-sx='-1'][data-sy='-1'],
+.canvas-handle[data-sx='1'][data-sy='1'] { cursor: nwse-resize; }
+.canvas-handle[data-sx='1'][data-sy='-1'],
+.canvas-handle[data-sx='-1'][data-sy='1'] { cursor: nesw-resize; }
+
+.canvas-size-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% var(--gap-control);
+  padding: var(--pad-control-y) var(--pad-control-x);
+  border-radius: var(--control-radius);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-size-small);
+  white-space: nowrap;
+}
+
 .hint {
   color: var(--text-muted);
 }
@@ -258,6 +299,39 @@ textarea {
 
 .field-grid > .readonly-field {
   grid-column: 1 / -1;
+}
+
+/* The Anchor 3×3 of the Canvas size: a row of its own, nine points in a square. */
+.field-grid > .anchor-picker {
+  grid-column: 1 / -1;
+}
+
+.anchor-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  margin: var(--pad-none);
+  padding: var(--pad-none);
+  border: none;
+  min-width: 0;
+}
+
+.anchor-picker-label {
+  float: left;
+  padding: var(--pad-none);
+  color: var(--text-muted);
+}
+
+.anchor-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: var(--gap-tight);
+}
+
+.anchor-picker-point {
+  margin: var(--pad-none);
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 /* The gradient editor: the angle, then one row per stop (colour, offset, remove), then Add stop. */

@@ -4,8 +4,9 @@
 // one `change`, the Selection kept. A reload from disk drops a value being typed and
 // shows the reloaded one. Dragging a number field's label previews each value on the
 // Canvas (useEdits) and commits one step on release; with several Layers, dragging X/Y
-// moves the Selection Box. The Document (empty Selection) comes with a later ticket.
-import type { TextLayer, TextLayout } from '@bannerkit/core'
+// moves the Selection Box. With an empty Selection it shows the Document
+// (DocumentFields); the Anchor it resizes from is held by the caller for the session.
+import type { Anchor, TextLayer, TextLayout } from '@bannerkit/core'
 import type { RefObject } from 'react'
 import type { Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
@@ -13,6 +14,7 @@ import { ColorField } from '../ui/ColorField.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
 import { Select } from '../ui/Select.tsx'
+import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
 import { inspectField, MIXED, sharedFields, type InspectedField, type Recipe } from './inspect.ts'
 import { useEdits } from './useEdits.ts'
@@ -21,12 +23,15 @@ import { useInspected } from './useInspected.ts'
 type Props = {
   editor: RefObject<Editor | null>
   loaded: boolean
+  /** The Anchor a new Canvas size keeps put: UI state, never in the Document. */
+  anchor: Anchor
+  onAnchorChange: (anchor: Anchor) => void
 }
 
 /** Shown for a value that differs between the selected Layers. */
 const MIXED_LABEL = 'Mixed'
 
-export function Properties({ editor, loaded }: Props) {
+export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
   const { document, selection, reloads } = useInspected(editor, loaded)
   const layers = document ? document.layers.filter((l) => selection.includes(l.id)) : []
   const edits = useEdits(editor)
@@ -35,6 +40,14 @@ export function Properties({ editor, loaded }: Props) {
   const textLayout = (layer: TextLayer): TextLayout => {
     if (!editor.current) throw new Error('No editor')
     return editor.current.textLayout(layer)
+  }
+
+  if (document && layers.length === 0) {
+    return (
+      <div className="inspector-properties">
+        <DocumentFields document={document} anchor={anchor} onAnchorChange={onAnchorChange} edits={edits} resetKey={reloads} />
+      </div>
+    )
   }
 
   return (
