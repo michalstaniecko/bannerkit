@@ -270,7 +270,7 @@ export function App() {
           </span>
           <IconButton icon={ZoomIn} label="Zoom in" onClick={() => zoomBy(ZOOM_STEP)} disabled={!loaded} />
           <IconButton icon={Maximize} label="Fit" pressed={fit} onClick={() => setFit(true)} disabled={!loaded || fit} />
-          <Button variant="ghost" onClick={() => { setFit(false); setZoom(1) }} disabled={!loaded} title="Actual size">
+          <Button variant="ghost" onClick={() => { setFit(false); setZoom(1) }} disabled={!loaded} title="Zoom to 100%">
             100%
           </Button>
         </div>
