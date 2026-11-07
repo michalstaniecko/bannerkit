@@ -1,7 +1,12 @@
 // Select: a labelled native <select> of fixed options (image fit, text align, font
 // weight). Picking an option commits it at once. `value` undefined shows an empty,
-// unpickable entry with `placeholder` (e.g. "Mixed" for several Layers).
+// unpickable entry with `placeholder` (e.g. "Mixed" for several Layers). A value that
+// is none of the options (a font family not in the manifest) shows as itself, marked
+// unavailable and unpickable, rather than as a blank or as some other option.
 import { useId, type ReactNode } from 'react'
+
+/** Marks a current value that is none of the options. */
+const UNAVAILABLE = '(not available)'
 
 export type SelectOption<V extends string = string> = { value: V; label: string }
 
@@ -50,6 +55,11 @@ export function Select<V extends string = string>({
         {value === undefined && (
           <option value="" disabled>
             {placeholder}
+          </option>
+        )}
+        {value !== undefined && !options.some((o) => o.value === value) && (
+          <option value={value} disabled>
+            {`${value} ${UNAVAILABLE}`}
           </option>
         )}
         {options.map((o) => (

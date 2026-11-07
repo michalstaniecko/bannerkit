@@ -90,6 +90,22 @@ describe('font family and weight', () => {
     await act(() => editor.undo())
     expect(editor.getDocument()).toEqual(original)
   })
+
+  it('a family not in the manifest shows as itself, marked and not pickable', async () => {
+    const original = doc([text({ fontFamily: 'Comic Sans' })])
+    const { editor, user, changes } = await openInspector(original, { select: ['text-1'] })
+
+    const family = select('Font family')
+    expect(family.value).toBe('Comic Sans')
+    expect(family.selectedOptions[0]!.textContent).toBe('Comic Sans (not available)')
+    expect(family.selectedOptions[0]!.disabled).toBe(true)
+    expect(select('Font weight').value).toBe('700')
+    await user.selectOptions(family, 'Inter')
+    await settle()
+
+    expect(editor.getDocument().layers[0]).toEqual(text({ fontFamily: 'Inter' }))
+    expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+  })
 })
 
 describe('a rect and a text together', () => {
