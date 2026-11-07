@@ -3,8 +3,9 @@
 // /api/events). `hash` is the content hash the REST read and save also answer
 // with, so a change whose hash the editor itself loaded or saved is its own echo
 // and is ignored. Any other change:
-// - reloads a clean editor silently, through `apply(…, { cause: 'reload' })`, so it
-//   is one undo step and history survives (never `load`);
+// - reloads a clean editor silently, through `update(…, { cause: 'reload' })`, so it
+//   is one undo step, history survives (never `load`) and the Selection stays (the
+//   Inspector shows the reloaded values);
 // - when edits are unsaved (waiting or being saved), raises a Conflict and holds
 //   autosave, so neither the human's edits nor the change on disk is overwritten
 //   until the human picks "reload" or "keep mine".
@@ -28,7 +29,7 @@ export type Conflict = {
 }
 
 export type LiveReloadOptions = {
-  editor: Pick<Editor, 'apply'>
+  editor: Pick<Editor, 'update'>
   autosave: Autosave
   /** Reads the open Document from disk, with its content hash. */
   read: () => Promise<{ document: Document; hash: string }>
@@ -92,7 +93,7 @@ export function createLiveReload({ editor, autosave, read, write, onConflict, on
   const reload = async () => {
     const { document, hash } = await read()
     if (hash === current) return
-    await editor.apply(document, { cause: 'reload' })
+    await editor.update(() => document, { cause: 'reload' })
     remember(hash)
   }
 

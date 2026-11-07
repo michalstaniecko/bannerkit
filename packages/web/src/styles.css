@@ -248,3 +248,32 @@ textarea {
   height: 100%;
   font-family: var(--font-code);
 }
+
+/* Inspector fields: two per row; read-only values and toggles take a whole row. */
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-control);
+}
+
+.field-grid > .readonly-field {
+  grid-column: 1 / -1;
+}
+
+.readonly-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.readonly-field-label {
+  color: var(--text-muted);
+}
+
+.readonly-field-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-code);
+}
