@@ -113,7 +113,14 @@ export const DocumentV1Schema = z.strictObject({
 
 export const RectLayerSchema = RectLayerV1Schema.meta({ id: 'RectLayer' })
 export const ImageLayerSchema = ImageLayerV1Schema.meta({ id: 'ImageLayer' })
-export const TextLayerSchema = TextLayerV1Schema.meta({ id: 'TextLayer' })
+export const TEXT_TRANSFORMS = ['none', 'uppercase', 'lowercase'] as const
+
+export const TextLayerSchema = TextLayerV1Schema.extend({
+  textTransform: z.enum(TEXT_TRANSFORMS).optional().meta({
+    description:
+      'Drawn case, default "none". `text` keeps what was typed; layout, AutoFit and inspect lines use the transformed text',
+  }),
+}).meta({ id: 'TextLayer' })
 
 export const LayerSchema = z.discriminatedUnion('type', [RectLayerSchema, ImageLayerSchema, TextLayerSchema])
 
@@ -145,6 +152,7 @@ export type Canvas = z.infer<typeof CanvasSchema>
 export type RectLayer = z.infer<typeof RectLayerSchema>
 export type ImageLayer = z.infer<typeof ImageLayerSchema>
 export type TextLayer = z.infer<typeof TextLayerSchema>
+export type TextTransform = (typeof TEXT_TRANSFORMS)[number]
 export type Layer = z.infer<typeof LayerSchema>
 export type LayerType = Layer['type']
 export type Fit = ImageLayer['fit']

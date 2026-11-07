@@ -544,7 +544,13 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       })
       c.on('text:editing:exited', ({ target }) => {
         const entry = entryOf(target)
-        if (!entry || entry.base.type !== 'text' || entry.base.text === target.text) return
+        if (!entry || entry.base.type !== 'text') return
+        if (entry.base.text === target.text) {
+          // Unchanged: show the Layer again (its textTransform hides the typed text).
+          applyLayer(target, entry.base, env)
+          c.requestRenderAll()
+          return
+        }
         entry.base = { ...entry.base, text: target.text } satisfies TextLayer
         commit([target], 'text')
       })
