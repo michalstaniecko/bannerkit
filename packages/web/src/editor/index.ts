@@ -49,6 +49,10 @@
 // held, or `setSnapping(false)`, moves freely. `marks()` gives what is drawn. A reload
 // from disk during a gesture abandons it (no step), dropping the active object.
 //
+// Measurement (measure-adapter.ts): with Alt held over the Canvas and no gesture
+// running, the distances from the Selection Box to the Layer a click would select
+// there, or to the Canvas, are Marks too.
+//
 // `export` renders the shown Canvas offscreen (export.ts).
 import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, selectionBox, translateLayer, walkLayers, type Document, type GroupLayer, type Layer, type LeafLayer, type MeasureText, type Rect, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject, type TPointerEvent } from 'fabric'
@@ -64,6 +68,7 @@ import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesO
 import { fitZoom, type Size } from './zoom.ts'
 import { attachOverlay, readOverlayColors } from './overlay.ts'
 import { attachSnapAdapter, type SnapAdapter } from './snap-adapter.ts'
+import { attachMeasurement, type MeasureAdapter } from './measure-adapter.ts'
 import type { Mark } from './snapping/marks.ts'
 import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
@@ -218,7 +223,8 @@ export type Editor = {
   setSnapping(on: boolean): void
   /**
    * What the precision tools draw over the Canvas now (snap lines while a drag snaps), in
-   * Canvas coordinates, for adapters and tests (like `objectFor`). Empty outside a gesture.
+   * Canvas coordinates, for adapters and tests (like `objectFor`). Empty outside a gesture,
+   * except for the Measurement while Alt is held.
    */
   marks(): Mark[]
   /** Canvas px per Document px. The canvas element is resized to the zoomed Canvas size. */
@@ -277,6 +283,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   let snapping = true
   /** The Snapping adapter, from `mount`. */
   let snap: SnapAdapter | undefined
+  /** The Measurement adapter, from `mount`. */
+  let measurement: MeasureAdapter | undefined
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
@@ -344,6 +352,20 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     selectIds(toggleSelection(selectedEntries(), entry).map((e) => e.base.id))
     return true
   }
+
+  /**
+   * The extent of the Layer a click at `e` would select (picking.ts), measured to with
+   * Alt; none over the empty Canvas, a selected Layer or one a click cannot hit.
+   */
+  const measuredLayerAt = (e: TPointerEvent): Rect | undefined => {
+    const path = canvas?.hitPath(e) ?? []
+    const entry = path.length > 0 ? entryOf(pick(path, e)) : undefined
+    if (!entry || selectedEntries().includes(entry)) return undefined
+    return layerExtent(liveLayer(entry), env.measure)
+  }
+
+  /** Everything the overlay draws now: snap lines, then the Measurement. */
+  const allMarks = (): Mark[] => [...(snap?.marks() ?? []), ...(measurement?.marks() ?? [])]
 
   /** Escape with a Layer in a Group selected selects its Group instead. */
   const escapeKey = (event: KeyboardEvent): boolean => {
@@ -791,7 +813,13 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       })
       adapter.setEnabled(snapping)
       snap = adapter
-      const detachOverlay = attachOverlay(c, () => adapter.marks(), () => zoom, readOverlayColors(container))
+      const measuring = attachMeasurement(c, container.ownerDocument, {
+        selectionBox: () => (current ? selectionBox(selectedEntries().map(liveLayer), env.measure) : undefined),
+        layerAt: measuredLayerAt,
+        canvasSize: () => current?.canvas,
+      })
+      measurement = measuring
+      const detachOverlay = attachOverlay(c, allMarks, () => zoom, readOverlayColors(container))
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
       c.on('selection:created', groupSelectionControls)
@@ -810,6 +838,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         detachOverlay()
         adapter.detach()
         snap = undefined
+        measuring.detach()
+        measurement = undefined
         return element
       }
     },
@@ -904,7 +934,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       snap?.setEnabled(on)
     },
 
-    marks: () => [...(snap?.marks() ?? [])],
+    marks: allMarks,
 
     zoomToFit(viewport) {
       if (!current) throw new Error('No Document loaded')
