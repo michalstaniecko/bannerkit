@@ -118,6 +118,23 @@ test('the toolbar adds text and rect Layers, and deletes and duplicates a multi-
   await expect(rows(page)).toHaveCount(7)
 })
 
+test('Ctrl/Cmd+G groups the Selection and Ctrl/Cmd+Shift+G ungroups it, autosaved', async ({ page, projects }) => {
+  await projects.write('s3-group', { documents: { banner } })
+  await open(page, projects.appUrl('s3-group', 'banner'))
+  const read = () => projects.read('s3-group', 'banner')
+  const tree = async () => (await read()).layers.map((l) => (l.type === 'group' ? { [l.id]: l.layers.map((c) => c.id) } : l.id))
+
+  await row(page, 'rect-1').getByRole('button').click()
+  await row(page, 'rect-2').getByRole('button').click({ modifiers: ['Shift'] })
+  await page.keyboard.press('ControlOrMeta+g')
+  await expect.poll(tree).toEqual([{ 'group-1': ['rect-1', 'rect-2'] }, 'text-1'])
+  await expect(page.getByRole('button', { name: 'Ungroup' })).toBeEnabled()
+
+  await page.keyboard.press('ControlOrMeta+Shift+g')
+  await expect.poll(tree).toEqual(['rect-1', 'rect-2', 'text-1'])
+  await expect(page.getByRole('button', { name: 'Ungroup' })).toBeDisabled()
+})
+
 test('adding an image adds the picked file as an Asset', async ({ page, projects }) => {
   await projects.write('s3-image', { documents: { banner } })
   await open(page, projects.appUrl('s3-image', 'banner'))

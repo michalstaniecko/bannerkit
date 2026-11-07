@@ -4,10 +4,13 @@
 import {
   duplicateLayers as duplicate,
   findLayer,
+  group,
   moveLayerTo,
   nextLayerId,
   removeLayers,
   replaceLayer,
+  ungroup,
+  walkLayers,
   type Document,
   type GroupLayer,
   type Layer,
@@ -64,8 +67,12 @@ export type NewLayer = { type: 'rect' } | { type: 'text' } | { type: 'image'; sr
 /** Share of the Canvas a new rect or image takes at most, per side. */
 const NEW_SHARE = 0.5
 
-/** Adds a Layer on top of the stack, centred in the Canvas, with the next readable id. */
-export function addLayer(document: Document, spec: NewLayer): { document: Document; id: string } {
+/**
+ * Adds a Layer centred in the Canvas, with the next readable id. Where it goes depends
+ * on the Selection: right above its topmost Layer (in draw order), in that Layer's
+ * parent, when that Layer is in a Group or is a Group itself; on top of the root otherwise.
+ */
+export function addLayer(document: Document, spec: NewLayer, selection: readonly string[] = []): { document: Document; id: string } {
   const next = copy(document)
   const { width: cw, height: ch } = next.canvas
   const id = nextLayerId(next, spec.type)
@@ -81,7 +88,11 @@ export function addLayer(document: Document, spec: NewLayer): { document: Docume
     const scale = Math.min(1, (cw * NEW_SHARE) / spec.width, (ch * NEW_SHARE) / spec.height)
     layer = { id, type: 'image', ...centred(spec.width * scale, spec.height * scale), src: spec.src, fit: 'contain' }
   }
-  next.layers.push(layer)
+  const topmost = walkLayers(next).findLast((v) => selection.includes(v.layer.id))
+  if (topmost && (topmost.parent !== next || topmost.layer.type === 'group')) {
+    // `next` is a fresh copy, so its parents' `layers` may be changed in place.
+    ;(topmost.parent.layers as Layer[]).splice(topmost.index + 1, 0, layer)
+  } else next.layers.push(layer)
   return { document: next, id }
 }
 
@@ -100,4 +111,35 @@ const DUPLICATE_OFFSET = 10
  */
 export function duplicateLayers(document: Document, ids: readonly string[]): { document: Document; ids: string[] } {
   return duplicate(document, ids, { offset: DUPLICATE_OFFSET })
+}
+
+/** A Layer action's next Document and the Layers to select after it. */
+export type LayerActionResult = { document: Document; select: string[] }
+
+/**
+ * Groups the Selection (Cmd+G) into a new unnamed Group, selected after. Undefined —
+ * the action is unavailable — without a Selection or when its Layers have different parents.
+ */
+export function groupSelection(document: Document, selection: readonly string[]): LayerActionResult | undefined {
+  if (selection.length === 0) return undefined
+  const result = group(document, selection)
+  return result.ok ? { document: result.document, select: [result.id] } : undefined
+}
+
+/**
+ * Ungroups every selected Group (Cmd+Shift+G) and selects their former children.
+ * Undefined — the action is unavailable — when the Selection holds no Group.
+ */
+export function ungroupSelection(document: Document, selection: readonly string[]): LayerActionResult | undefined {
+  const groups = selection.filter((id) => findLayer(document, id)?.layer.type === 'group')
+  if (groups.length === 0) return undefined
+  let next = document
+  const select: string[] = []
+  for (const id of groups) {
+    const result = ungroup(next, id)
+    if (!result.ok) return undefined
+    next = result.document
+    select.push(...result.ids)
+  }
+  return { document: next, select }
 }
