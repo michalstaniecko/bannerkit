@@ -1,8 +1,10 @@
 // How the Inspector changes the Document: `commit` is one `editor.update` with cause
-// `inspector`, unless a gesture (a label drag) is previewing, in which case it ends that
+// `inspector` (or the one given, e.g. `resize`), unless a gesture (a label drag) is previewing, in which case it ends that
 // preview as the one step. `preview` shows a recipe without a step; `cancel` drops it.
 import { useRef, type RefObject } from 'react'
-import type { DocumentRecipe, Editor, Preview } from '../editor/index.ts'
+import type { ApplyCause, DocumentRecipe, Editor, Preview } from '../editor/index.ts'
+
+export type Edits = ReturnType<typeof useEdits>
 
 export function useEdits(editor: RefObject<Editor | null>) {
   const running = useRef<Preview | null>(null)
@@ -20,12 +22,12 @@ export function useEdits(editor: RefObject<Editor | null>) {
       const preview = active() ?? (running.current = current.preview())
       void preview.show(recipe)
     },
-    commit(recipe: DocumentRecipe) {
+    commit(recipe: DocumentRecipe, cause: ApplyCause = 'inspector') {
       const preview = active()
       running.current = null
-      if (!preview) return void editor.current?.update(recipe, { cause: 'inspector' })
+      if (!preview) return void editor.current?.update(recipe, { cause })
       void preview.show(recipe)
-      void preview.commit({ cause: 'inspector' })
+      void preview.commit({ cause })
     },
     cancel() {
       void active()?.cancel()

@@ -198,15 +198,17 @@
   display: none;
 }
 
-/* NumberField: a short label (later a drag handle) beside a compact input. */
-.number-field {
+/* NumberField and TextField: a short label (NumberField's drags) beside a compact input. */
+.number-field,
+.text-field {
   display: flex;
   align-items: center;
   gap: var(--gap-control-icon);
   min-width: 0;
 }
 
-.number-field-label {
+.number-field-label,
+.text-field-label {
   flex: none;
   color: var(--text-muted);
   cursor: default;
@@ -218,7 +220,8 @@
   user-select: none;
 }
 
-.number-field-input {
+.number-field-input,
+.text-field-input {
   flex: 1;
   min-width: 0;
   height: var(--control-size);
@@ -230,12 +233,14 @@
   font: inherit;
 }
 
-.number-field-input:focus-visible {
+.number-field-input:focus-visible,
+.text-field-input:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -1px;
 }
 
-.number-field-input:disabled {
+.number-field-input:disabled,
+.text-field-input:disabled {
   color: var(--text-disabled);
   background: var(--surface-sunken);
 }
@@ -246,6 +251,7 @@
 
 /* Select and ColorField: a label beside a full-width control (a row of their own in a field grid). */
 .field-grid > .select-field,
+.field-grid > .text-field,
 .field-grid > .color-field {
   grid-column: 1 / -1;
 }

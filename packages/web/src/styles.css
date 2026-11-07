@@ -260,6 +260,39 @@ textarea {
   grid-column: 1 / -1;
 }
 
+/* The Anchor 3×3 of the Canvas size: a row of its own, nine points in a square. */
+.field-grid > .anchor-picker {
+  grid-column: 1 / -1;
+}
+
+.anchor-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  margin: var(--pad-none);
+  padding: var(--pad-none);
+  border: none;
+  min-width: 0;
+}
+
+.anchor-picker-label {
+  float: left;
+  padding: var(--pad-none);
+  color: var(--text-muted);
+}
+
+.anchor-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: var(--gap-tight);
+}
+
+.anchor-picker-point {
+  margin: var(--pad-none);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* The gradient editor: the angle, then one row per stop (colour, offset, remove), then Add stop. */
 .field-grid > .gradient-field {
   grid-column: 1 / -1;

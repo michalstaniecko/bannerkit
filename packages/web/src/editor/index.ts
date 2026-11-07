@@ -27,6 +27,9 @@
 // resize handle) runs as a transient `preview()`: shown in place, no step, no
 // `change`; its `commit` is the one step. Any other step drops it first.
 //
+// A different Canvas size left by a step, an undo/redo, a reload or a `load` is also
+// reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
+//
 // Later tickets extend this file: Layer list actions (14), JSON apply (15),
 // reload from disk (16) and Selection sent to the server (17); `export` (18)
 // renders the shown Canvas offscreen (export.ts).
@@ -57,8 +60,11 @@ export type LoadOptions = {
 /** What ended a direct manipulation. */
 export type ManipulationCause = 'transform' | 'text' | 'nudge'
 
-/** An action that replaces the whole Document through `apply` or `update`. */
-export type ApplyCause = 'layers' | 'json' | 'reload' | 'inspector'
+/**
+ * An action that replaces the whole Document through `apply` or `update`; `resize`
+ * is a change of the Canvas size (Inspector fields, Canvas resize handles).
+ */
+export type ApplyCause = 'layers' | 'json' | 'reload' | 'inspector' | 'resize'
 
 /** What made one undo step (or moved through the history). */
 export type ChangeCause = ManipulationCause | ApplyCause | 'undo' | 'redo'
@@ -101,7 +107,14 @@ export type Preview = {
 /** The selected Layers changed. Ids are bottom → top; empty when nothing is selected. */
 export type SelectionEvent = { layerIds: string[] }
 
-export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent }
+/**
+ * The Canvas size shown changed: by a step (a resize, its undo or redo), a reload from
+ * disk or a `load`. Fired once per such change, never while a preview runs (only when
+ * it is committed), so Fit mode can zoom to the new size and stays put during a gesture.
+ */
+export type CanvasEvent = Size
+
+export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent; canvas: CanvasEvent }
 
 export type Editor = {
   /** Creates the Fabric canvas inside `container`. Call once, before `load`. */
@@ -205,10 +218,22 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
     change: new Set(),
     selection: new Set(),
+    canvas: new Set(),
   }
+  /** The Canvas size last reported by a `canvas` event. */
+  let settledSize: Size | undefined
 
   const emit = <K extends keyof EditorEvents>(type: K, event: EditorEvents[K]) => {
     for (const listener of [...listeners[type]]) listener(event)
+  }
+
+  /** Reports the shown Canvas size when it differs from the one last reported (see `CanvasEvent`). */
+  const settleSize = () => {
+    if (!current) return
+    const { width, height } = current.canvas
+    if (settledSize && settledSize.width === width && settledSize.height === height) return
+    settledSize = { width, height }
+    emit('canvas', { width, height })
   }
 
   const requireCanvas = (): Canvas => {
@@ -286,6 +311,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     const after = documentNow()
     if (cause !== 'undo' && cause !== 'redo') history.record(after)
     emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
+    settleSize()
     return true
   }
 
@@ -399,6 +425,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
         if (JSON.stringify(after) === JSON.stringify(base)) return
         history.record(after)
         emit('change', { document: after, cause, layerIds: changedLayerIds(base, after) })
+        settleSize()
       },
       cancel: restore,
       ended: () => ended,
@@ -518,7 +545,9 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 
     async load(document, { assetUrl = (src: string) => src } = {}) {
       previewing?.end()
-      if (await show(document, { assetUrl, measure: measureText })) history.reset(document)
+      if (!(await show(document, { assetUrl, measure: measureText }))) return
+      history.reset(document)
+      settleSize()
     },
 
     getDocument: documentNow,
@@ -551,6 +580,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       const after = documentNow()
       history.record(after)
       emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
+      settleSize()
     },
 
     preview() {
@@ -616,6 +646,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       selected = []
       listeners.change.clear()
       listeners.selection.clear()
+      listeners.canvas.clear()
+      settledSize = undefined
       await c?.dispose()
       // Fabric's dispose puts the bare <canvas> back into the container; take it out too.
       mounted?.remove()
