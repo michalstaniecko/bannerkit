@@ -1,10 +1,10 @@
 // The Inspector's fields, described as data: for each Layer type, titled groups of
 // fields, each with its control, range and how it reads and writes the Layer. The
-// Properties tab only renders these, so a new field of an existing control (a later
-// ticket, M2's Group, `fontStyle`) is a new entry here, not a change to the
-// Inspector. A new kind of control (`segmented`, for `textTransform`) is a new FieldSpec member plus a case in
-// `inspectField` (inspect.ts) and in Properties' `Field`; both switches are exhaustive,
-// so the compiler points at each.
+// Properties tab only renders these, so a new field of an existing control (`fontStyle`)
+// is a new entry here, not a change to the Inspector. A new kind of control (`segmented`
+// for `textTransform`, `text` for a Group's name) is a new FieldSpec member plus a case
+// in `inspectField` (inspect.ts) and in Properties' `Field`; both switches are
+// exhaustive, so the compiler points at each.
 //
 // Ranges come from the Document schema. A write returns the next Layer; an optional
 // field written with its default value leaves the key out of the Document.

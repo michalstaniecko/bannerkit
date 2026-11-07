@@ -163,3 +163,31 @@ describe('Properties of several Layers with a Group among them', () => {
     expect(field('Name').placeholder).toBe('Mixed')
   })
 })
+
+describe('a Layer a Group around it locks or hides', () => {
+  it('shows its own flags and that the Group locks it', async () => {
+    const { view, toggle } = await openInspector(doc([badge({ locked: true })]), { select: ['rect-1'] })
+
+    expect(toggle('Locked').checked).toBe(false)
+    expect(toggle('Visible').checked).toBe(true)
+    expect(view.getByRole('note').textContent).toBe('Locked by Group “Badge”')
+  })
+
+  it('names the nearest Group that hides it, by id when it has no name', async () => {
+    const nested = group('group-1', [group('group-2', [rect({ id: 'rect-1' })], { visible: false }), rect({ id: 'rect-2' })], { visible: false, locked: true })
+    const { view, toggle } = await openInspector(doc([nested]), { select: ['rect-1'] })
+
+    expect(toggle('Visible').checked).toBe(true)
+    expect(view.getAllByRole('note').map((n) => n.textContent)).toEqual(['Locked by Group “group-1”', 'Hidden by Group “group-2”'])
+  })
+
+  it('says nothing when only its own flag is set, or the Group lets it be', async () => {
+    const { view } = await openInspector(doc([badge(), rect({ id: 'rect-3', locked: true, visible: false })]), { select: ['rect-1'] })
+    expect(view.queryByRole('note')).toBeNull()
+    view.unmount()
+
+    const own = await openInspector(doc([rect({ id: 'rect-3', locked: true, visible: false })]), { select: ['rect-3'] })
+    expect(own.view.queryByRole('note')).toBeNull()
+  })
+
+})

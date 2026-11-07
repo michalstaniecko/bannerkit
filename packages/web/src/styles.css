@@ -332,8 +332,15 @@ textarea {
   gap: var(--gap-control);
 }
 
-.field-grid > .readonly-field {
+.field-grid > .readonly-field,
+.field-grid > .text-field {
   grid-column: 1 / -1;
+}
+
+/* "Locked by Group …": a Group around the Layer locks or hides it. */
+.inherited-flag {
+  margin: 0 0 var(--gap-control);
+  color: var(--text-muted);
 }
 
 /* The Anchor 3×3 of the Canvas size: a row of its own, nine points in a square. */

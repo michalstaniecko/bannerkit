@@ -4,9 +4,11 @@
 // one `change`, the Selection kept. A reload from disk drops a value being typed and
 // shows the reloaded one. Dragging a number field's label previews each value on the
 // Canvas (useEdits) and commits one step on release; with several Layers, dragging X/Y
-// moves the Selection Box. With an empty Selection it shows the Document
-// (DocumentFields); the Anchor it resizes from is held by the caller for the session.
-import type { Anchor, TextLayer, TextLayout } from '@bannerkit/core'
+// moves the Selection Box (a single Group's x/y: its Box). A Layer that a Group around
+// it locks or hides shows its own flags plus a note naming that Group. With an empty
+// Selection it shows the Document (DocumentFields); the Anchor it resizes from is held
+// by the caller for the session.
+import { inheritedFlags, type Anchor, type Document, type GroupLayer, type Layer, type TextLayer, type TextLayout } from '@bannerkit/core'
 import type { RefObject } from 'react'
 import type { DocumentRecipe, Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
@@ -56,6 +58,7 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
     <div className="inspector-properties">
       {sharedFields(layers).map((group) => (
         <Section key={group.key} title={group.title}>
+          {group.key === 'appearance' && <InheritedFlags document={document!} layers={layers} />}
           <div className="field-grid">
             {group.fields.map((field) => (
               <Field
@@ -186,6 +189,25 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
       // Every control is handled above: a new one fails to compile here.
       return inspected satisfies never
   }
+}
+
+/**
+ * What a Group around the Layers does to them that their own flags do not show: a line
+ * per Group that locks or hides any of them (the nearest such Group of each Layer).
+ */
+function InheritedFlags({ document, layers }: { document: Document; layers: readonly Layer[] }) {
+  const lines = new Set<string>()
+  const by = (verb: string, group: GroupLayer | undefined) => group && lines.add(`${verb} by Group \u201c${group.name ?? group.id}\u201d`)
+  for (const layer of layers) {
+    const flags = inheritedFlags(document, layer.id)
+    by('Locked', flags?.lockedBy)
+    by('Hidden', flags?.hiddenBy)
+  }
+  return [...lines].map((line) => (
+    <p key={line} role="note" className="inherited-flag">
+      {line}
+    </p>
+  ))
 }
 
 function ReadOnly({ label, name = label, value }: { label: string; name?: string; value: string }) {
