@@ -21,6 +21,14 @@ export function layerExtent(layer: Layer, measure: MeasureText): Rect {
   }
 }
 
+/**
+ * The Selection Box of `layers`: the axis-aligned union of their `layerExtent`s.
+ * No Layers have no Selection Box.
+ */
+export function selectionBox(layers: readonly Layer[], measure: MeasureText): Rect | undefined {
+  return layers.length === 0 ? undefined : union(layers.map((layer) => layerExtent(layer, measure)))
+}
+
 function union(rects: readonly Rect[]): Rect {
   const x = Math.min(...rects.map((r) => r.x))
   const y = Math.min(...rects.map((r) => r.y))
