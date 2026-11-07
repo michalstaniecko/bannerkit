@@ -2,9 +2,11 @@
 // Layers through core `alignLayers` / `distributeLayers` with the editor's measure,
 // one click one undo step. Expected positions are worked out by hand below.
 import type { Document, GroupLayer, Layer, MeasureText } from '@bannerkit/core'
-import { act, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { userEvent } from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { doc, rect, text } from './editor-harness.ts'
+import { Inspector } from '../src/Inspector.tsx'
+import { doc, openEditor, rect, text } from './editor-harness.ts'
 import { openInspector, settle } from './inspector-harness.tsx'
 
 const group = (id: string, layers: Layer[], over: Partial<GroupLayer> = {}): GroupLayer => ({ id, type: 'group', layers, ...over })
@@ -207,6 +209,25 @@ describe('Distribute', () => {
     await user.click(screen.getByRole('button', { name: 'Distribute horizontally' }))
     await settle()
     expect(along(editor.getDocument(), 'x')).toEqual([0, 90, 200])
+  })
+
+  it('keeps the Gap across Inspector tab switches and an empty Selection', async () => {
+    const { editor } = await openEditor(row('x'))
+    editor.select(['a', 'b', 'c'])
+    const user = userEvent.setup()
+    render(<Inspector editor={{ current: editor }} loaded anchor="top-left" onAnchorChange={() => {}} />)
+
+    await user.type(gapField(), '10{Enter}')
+    await user.click(screen.getByRole('tab', { name: 'JSON' }))
+    await user.click(screen.getByRole('tab', { name: 'Properties' }))
+    await act(() => editor.select([]))
+    expect(alignSection()).toBeNull()
+    await act(() => editor.select(['a', 'b', 'c']))
+    expect(gapField().value).toBe('10')
+
+    await user.click(screen.getByRole('button', { name: 'Distribute horizontally' }))
+    await settle()
+    expect(along(editor.getDocument(), 'x')).toEqual([0, 30, 80])
   })
 
   it('takes only a whole number of px ≥ 0 as Gap', async () => {
