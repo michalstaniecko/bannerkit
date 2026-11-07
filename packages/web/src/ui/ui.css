@@ -212,6 +212,12 @@
   cursor: default;
 }
 
+/* Dragging the label left/right changes the value. */
+.number-field-label-drag {
+  cursor: ew-resize;
+  user-select: none;
+}
+
 .number-field-input {
   flex: 1;
   min-width: 0;
