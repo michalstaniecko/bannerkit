@@ -23,7 +23,7 @@ A named standard Canvas size (1200×628, 1080×1080, 1080×1920, 300×250, 728×
 _Avoid_: format, template
 
 **Layer**:
-One visual element of a Document (`rect`, `image`, `text` or `group`), positioned by its unrotated box. Its position in the list is its stacking order, from bottom to top.
+One visual element of a Document (`rect`, `image`, `text` or `group`; `group` comes with v2), positioned by its unrotated box. Its position in the list is its stacking order, from bottom to top.
 _Avoid_: object, element, shape, node
 
 **Group**:
@@ -64,6 +64,10 @@ How an image fills its Box: `contain`, `cover` or `stretch`.
 Shrinking a text Layer's font size, from its declared size down to a minimum, until the wrapped text fits its Box.
 _Avoid_: auto-size, shrink-to-fit
 
+**Declared size / used size**:
+A text Layer's `fontSize` as written in the Document (the largest size AutoFit may use), and the font size its Text Layout actually draws after AutoFit. `bannerkit inspect` reports them as `requestedFontSize` and `fontSize`; the Inspector shows the used size beside the declared one.
+_Avoid_: actual size, effective size, max size
+
 **Text Layout**:
 The resolved line breaks and font size of a text Layer. Both renderers compute it the same way and draw it, never deriving it on their own.
 
@@ -73,6 +77,18 @@ _Avoid_: properties panel, sidebar
 
 **Selection**:
 The Layers currently selected in the browser editor, recorded so an agent can refer to "what's selected".
+
+**Selection Box**:
+The axis-aligned union of the rotated extents (`boxExtent`) of the Layers in the Selection. With several Layers selected, the Inspector's `x`/`y` are its top-left, and typing one moves every Layer by the same delta; its size is shown but not editable.
+_Avoid_: bounding box, group box
+
+**Mixed**:
+What the Inspector shows for a property whose value differs between the selected Layers: an empty field or an indeterminate switch. Setting a value there gives it to all of them.
+_Avoid_: multiple values, varies
+
+**Gesture preview**:
+What the editor shows while a gesture changes a value continuously (dragging an Inspector field's label, a Canvas resize handle): drawn on the Canvas but not an undo step and not saved; releasing makes it one step, Escape drops it. The editor API calls it `preview()`.
+_Avoid_: Preview (the agent's throwaway Render), live preview, draft
 
 ### Output
 
@@ -84,7 +100,7 @@ A final encoded Render (PNG, JPEG or WebP) at an exact pixel size and scale, wri
 _Avoid_: output, download
 
 **Preview**:
-A throwaway Render written so an agent can look at the current state of a Document.
+A throwaway Render written so an agent can look at the current state of a Document. Not the editor's transient display during a gesture: that is a Gesture preview.
 
 **Supersampling**:
 Rendering at twice the target size and downsampling to the target, applied to every Export.

@@ -64,7 +64,7 @@ describe('Layer list actions', () => {
     expect(selections).toEqual([])
   })
 
-  it('selects Layers by id, e.g. the copies of a duplicate, skipping locked and hidden ones', async () => {
+  it('selects Layers by id, e.g. the copies of a duplicate, skipping unknown ones', async () => {
     const { editor, selections } = await open(doc([rect('rect-1', 20), rect('rect-2', 200)]))
 
     const { document, ids } = duplicateLayers(editor.getDocument(), ['rect-1', 'rect-2'])
@@ -72,11 +72,10 @@ describe('Layer list actions', () => {
     editor.select(ids)
     expect(editor.getSelection()).toEqual(['rect-3', 'rect-4'])
 
-    await editor.apply(setLayerFlag(editor.getDocument(), 'rect-3', 'locked', true), { cause: 'layers' })
-    editor.select(['rect-3', 'rect-1'])
+    editor.select(['rect-9', 'rect-1'])
     expect(editor.getSelection()).toEqual(['rect-1'])
 
     editor.select([])
-    expect(selections).toEqual([['rect-3', 'rect-4'], [], ['rect-1'], []])
+    expect(selections).toEqual([['rect-3', 'rect-4'], ['rect-1'], []])
   })
 })

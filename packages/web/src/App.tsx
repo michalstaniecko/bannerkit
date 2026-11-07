@@ -1,19 +1,26 @@
-// Chrome around the editor module: a top bar (Project and Document pickers, save
-// state, undo/redo, zoom) and the Canvas viewport. React holds names, the zoom and the save
+// Chrome around the editor module: a top bar (Project and Document pickers, Document
+// and Layer actions, save state, undo/redo, zoom, Export), the Layer list (left), the
+// Canvas area (centre) and the Inspector (right). React holds names, the zoom and the save
 // state only; the Document and every Fabric object live inside the editor module.
 // Edits reach disk through autosave, fed by the editor's `change` events.
+import type { Anchor } from '@bannerkit/core'
+import { Maximize, Redo2, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { api, isConflict, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
+import { CanvasArea } from './CanvasArea.tsx'
+import { CanvasHandles } from './CanvasHandles.tsx'
 import { DocumentActions } from './DocumentActions.tsx'
 import { ExportControl } from './ExportControl.tsx'
-import { JsonPanel } from './JsonPanel.tsx'
+import { Inspector } from './Inspector.tsx'
 import { LayerList } from './LayerList.tsx'
 import { LayerToolbar } from './LayerToolbar.tsx'
 import { SaveConflict, openLiveReload, type Conflict } from './live-reload.ts'
 import { ReloadBanner } from './ReloadBanner.tsx'
 import { createSelectionSync } from './selection-sync.ts'
+import { Button } from './ui/Button.tsx'
+import { IconButton } from './ui/IconButton.tsx'
 
 const VIEWPORT_PADDING = 32
 const ZOOM_STEP = 1.25
@@ -48,6 +55,8 @@ export function App() {
   const [save, setSave] = useState<SaveState>('saved')
   const [history, setHistory] = useState({ undo: false, redo: false })
   const [conflict, setConflict] = useState<Conflict | null>(null)
+  /** The Anchor a new Canvas size keeps put: UI state for the whole session, never in a Document. */
+  const [anchor, setAnchor] = useState<Anchor>('top-left')
 
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -160,11 +169,13 @@ export function App() {
     }
   }, [project, doc])
 
-  // Fit mode follows the viewport size; manual zoom stays put.
+  // Fit mode follows the viewport size and the Canvas size (a resize, its undo or redo,
+  // a reload after `doc resize`); manual zoom stays put. The editor reports no Canvas
+  // size while a gesture previews one, so the zoom holds still during a handle drag.
   useEffect(() => {
     const viewport = viewportRef.current!
+    const editor = editorRef.current
     const refit = () => {
-      const editor = editorRef.current
       if (!editor || !loaded) return
       if (fit) {
         setZoom(
@@ -180,7 +191,11 @@ export function App() {
     refit()
     const observer = new ResizeObserver(refit)
     observer.observe(viewport)
-    return () => observer.disconnect()
+    const offCanvas = fit && editor ? editor.on('canvas', refit) : () => {}
+    return () => {
+      observer.disconnect()
+      offCanvas()
+    }
   }, [loaded, fit, zoom])
 
   // A Document made by the top bar's New / Duplicate to size: list it and open it.
@@ -197,41 +212,43 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <label>
-          Project{' '}
-          <select
-            value={project}
-            disabled={conflict !== null}
-            title={conflict ? 'Reload or keep your edits first' : undefined}
-            onChange={(e) => {
-              setProject(e.target.value)
-              setDoc('')
-            }}
-          >
-            <option value="">—</option>
-            {projects.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Document{' '}
-          <select
-            value={doc}
-            onChange={(e) => setDoc(e.target.value)}
-            disabled={!project || conflict !== null}
-            title={conflict ? 'Reload or keep your edits first' : undefined}
-          >
-            <option value="">—</option>
-            {documents.map((d) => (
-              <option key={d.name} value={d.name}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="toolbar-group" role="group" aria-label="Open">
+          <label className="field-inline">
+            Project{' '}
+            <select
+              value={project}
+              disabled={conflict !== null}
+              title={conflict ? 'Reload or keep your edits first' : undefined}
+              onChange={(e) => {
+                setProject(e.target.value)
+                setDoc('')
+              }}
+            >
+              <option value="">—</option>
+              {projects.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-inline">
+            Document{' '}
+            <select
+              value={doc}
+              onChange={(e) => setDoc(e.target.value)}
+              disabled={!project || conflict !== null}
+              title={conflict ? 'Reload or keep your edits first' : undefined}
+            >
+              <option value="">—</option>
+              {documents.map((d) => (
+                <option key={d.name} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <DocumentActions saveNow={saveNowRef} project={project} doc={doc} loaded={loaded} disabled={conflict !== null} onOpen={openDocument} onError={setError} />
         <LayerToolbar editor={editorRef} project={project} loaded={loaded} onError={setError} />
         <span className="spacer" />
@@ -240,36 +257,37 @@ export function App() {
             {SAVE_LABEL[save]}
           </span>
         )}
-        <button type="button" onClick={() => void editorRef.current?.undo()} disabled={!loaded || !history.undo} title="Undo (Ctrl/Cmd+Z)">
-          Undo
-        </button>
-        <button type="button" onClick={() => void editorRef.current?.redo()} disabled={!loaded || !history.redo} title="Redo (Ctrl/Cmd+Shift+Z)">
-          Redo
-        </button>
+        <div className="toolbar-group" role="group" aria-label="History">
+          <IconButton icon={Undo2} label="Undo" shortcut="Ctrl/Cmd+Z" onClick={() => void editorRef.current?.undo()} disabled={!loaded || !history.undo} />
+          <IconButton icon={Redo2} label="Redo" shortcut="Ctrl/Cmd+Shift+Z" onClick={() => void editorRef.current?.redo()} disabled={!loaded || !history.redo} />
+        </div>
+        {/* Room for the Snapping switch (M3). */}
+        <div className="toolbar-group topbar-snapping" role="group" aria-label="Snapping" />
+        <div className="toolbar-group" role="group" aria-label="Zoom">
+          <IconButton icon={ZoomOut} label="Zoom out" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={!loaded} />
+          <span className="zoom">
+            {Math.round(zoom * 100)}%
+          </span>
+          <IconButton icon={ZoomIn} label="Zoom in" onClick={() => zoomBy(ZOOM_STEP)} disabled={!loaded} />
+          <IconButton icon={Maximize} label="Fit" pressed={fit} onClick={() => setFit(true)} disabled={!loaded || fit} />
+          <Button variant="ghost" onClick={() => { setFit(false); setZoom(1) }} disabled={!loaded} title="Zoom to 100%">
+            100%
+          </Button>
+        </div>
         <ExportControl editor={editorRef} name={doc} disabled={!loaded} onError={setError} />
-        <button type="button" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={!loaded}>
-          −
-        </button>
-        <span className="zoom">{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={() => zoomBy(ZOOM_STEP)} disabled={!loaded}>
-          +
-        </button>
-        <button type="button" onClick={() => setFit(true)} disabled={!loaded || fit}>
-          Fit
-        </button>
-        <button type="button" onClick={() => { setFit(false); setZoom(1) }} disabled={!loaded}>
-          100%
-        </button>
       </header>
       <ReloadBanner conflict={conflict} />
       {error && <div className="error">{error}</div>}
       <div className="editor-body">
         <LayerList editor={editorRef} loaded={loaded} onError={setError} />
-        <main className="viewport" ref={viewportRef}>
-          <div className="canvas-host" ref={hostRef} hidden={!loaded} />
-          {!loaded && !error && <p className="hint">Pick a Project and a Document.</p>}
-        </main>
-        <JsonPanel editor={editorRef} loaded={loaded} />
+        <CanvasArea
+          viewportRef={viewportRef}
+          hostRef={hostRef}
+          loaded={loaded}
+          placeholder={!error && <p className="hint">Pick a Project and a Document.</p>}
+          overlay={<CanvasHandles editor={editorRef} loaded={loaded} />}
+        />
+        <Inspector editor={editorRef} loaded={loaded} anchor={anchor} onAnchorChange={setAnchor} />
       </div>
     </div>
   )

@@ -7,7 +7,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Document } from '@bannerkit/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createProject, watchDocuments, writeDocument, type DocumentChanged } from '../src/ops/index.ts'
+import { createProject, resizeDocument, watchDocuments, writeDocument, type DocumentChanged } from '../src/ops/index.ts'
 import { createApp } from '../src/rest/app.ts'
 import { tempRoot } from './harness.ts'
 
@@ -88,6 +88,18 @@ describe('SSE: document-changed', () => {
     await expect.poll(() => stream.events.length, { timeout: 3000 }).toBeGreaterThan(0)
     await settle()
     expect(stream.events.map((e) => e.doc)).toEqual(['hero'])
+    await stream.close()
+  })
+
+  it('streams a `doc resize` like any other write, so an open editor reloads or shows the conflict', async () => {
+    const app = createApp({ root })
+    const stream = await listen(app)
+
+    const resized = await resizeDocument({ root, project: 'summer', name: 'hero', size: { width: 600, height: 250 }, anchor: 'center' })
+
+    await expect.poll(() => stream.events.length, { timeout: 3000 }).toBeGreaterThan(0)
+    await settle()
+    expect(stream.events).toEqual([{ project: 'summer', doc: 'hero', hash: resized.hash }])
     await stream.close()
   })
 

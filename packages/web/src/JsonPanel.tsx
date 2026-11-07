@@ -1,15 +1,17 @@
-// The right-hand JSON panel: a CodeMirror 6 view of the live Document, with Apply
+// The Inspector's JSON tab: a CodeMirror 6 view of the live Document, with Apply
 // and inline validation errors. It follows the editor (`change` events and loads)
 // until the human edits the text; from then on their text is kept until they Apply
 // or Revert, so an edit elsewhere never overwrites what they are typing.
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { json } from '@codemirror/lang-json'
+import { Check, RotateCcw } from 'lucide-react'
 import { Annotation, EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import type { Issue } from '@bannerkit/core'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { Editor } from './editor/index.ts'
 import { applyJson } from './json-apply.ts'
+import { Button } from './ui/Button.tsx'
 
 /** Marks text the panel writes itself, so it is not mistaken for the human's edit. */
 const fromEditor = Annotation.define<boolean>()
@@ -100,14 +102,14 @@ export function JsonPanel({ editor, loaded }: { editor: RefObject<Editor | null>
   }
 
   return (
-    <aside className="json-panel">
+    <div className="json-panel">
       <div className="json-actions">
-        <button type="button" onClick={() => void apply()} disabled={!loaded || applying}>
+        <Button variant="primary" icon={Check} onClick={() => void apply()} disabled={!loaded || applying}>
           Apply
-        </button>
-        <button type="button" onClick={revert} disabled={!loaded || !dirty}>
+        </Button>
+        <Button icon={RotateCcw} onClick={revert} disabled={!loaded || !dirty}>
           Revert
-        </button>
+        </Button>
         {stale && <span className="json-stale">The Document changed since you started editing.</span>}
       </div>
       {errors.length > 0 && (
@@ -121,6 +123,6 @@ export function JsonPanel({ editor, loaded }: { editor: RefObject<Editor | null>
         </ul>
       )}
       <div className="json-code" ref={hostRef} />
-    </aside>
+    </div>
   )
 }

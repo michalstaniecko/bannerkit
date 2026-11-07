@@ -9,6 +9,6 @@ export default defineConfig({
     environment: 'jsdom',
     // Lets <img> load (data: URLs), so FabricImage.fromURL resolves or rejects.
     environmentOptions: { jsdom: { resources: 'usable' } },
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.{ts,tsx}'],
   },
 })

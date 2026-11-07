@@ -1,10 +1,13 @@
 import { readFile } from 'node:fs/promises'
 import {
+  AnchorSchema,
   DEFAULT_BACKGROUND,
   DOCUMENT_VERSION,
   exactlyOneSize,
+  resizeCanvas,
   resolveSize,
   sizeChoiceShape,
+  type Anchor,
   type Document,
   type DocumentRef,
   type DocumentResult,
@@ -159,4 +162,21 @@ export async function duplicateDocument(input: DuplicateDocumentInput): Promise<
     canvas: { ...copied.canvas, width, height },
   }
   return writeDocument({ root, project, name: target, document, overwrite: false })
+}
+
+// resizeDocument ----------------------------------------------------------------
+
+const ResizeDocumentInput = z
+  .object({ root: Root, project: Name, name: Name, ...sizeChoiceShape, anchor: AnchorSchema.default('top-left') })
+  .refine(...exactlyOneSize)
+export type ResizeDocumentInput = { root: string; project: string; name: string; anchor?: Anchor } & SizeChoice
+
+/**
+ * Resizes a Document's Canvas in place around an Anchor (core `resizeCanvas`):
+ * Layers move, never scale, and may end up off the Canvas. The write is unconditional.
+ */
+export async function resizeDocument(input: ResizeDocumentInput): Promise<DocumentResult> {
+  const { root, project, name, anchor, ...choice } = parseInput(ResizeDocumentInput, input)
+  const { document } = await readDocument({ root, project, name })
+  return writeDocument({ root, project, name, document: resizeCanvas(document, resolveSize(choice), anchor) })
 }
