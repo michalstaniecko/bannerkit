@@ -1,6 +1,6 @@
 # Research: linijki, przyciąganie i pomiary w edytorze (biblioteka czy własna implementacja)
 
-Status: needs-research
+Status: moved to GitHub — https://github.com/michalstaniecko/bannerkit/issues/4 (the issue is the source of truth; this file is an archive). Decision recorded in `docs/adr/0008-precision-tools-compute-on-document-boxes.md`.
 
 Pytanie: edytor ma dostać narzędzia jak w Figmie albo Canvie: linijki, przyciąganie Layerów do siebie (smart guides), przyciąganie do prowadnic z linijek, pokazywanie odległości między Layerami, a dalej wyrównywanie i rozkładanie, siatkę, transformację wielu zaznaczonych Layerów i obrót. Czy warto do tego dołożyć biblioteki, czy takie biblioteki w ogóle istnieją, czy lepiej napisać to samemu?
 

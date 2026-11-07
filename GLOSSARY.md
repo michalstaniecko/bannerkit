@@ -48,14 +48,22 @@ _Avoid_: upload, media, resource
 The point of the Canvas (one of nine) that stays put when the Canvas is resized; Layers keep their pixel offsets from it and are never scaled.
 
 **Align**:
-Moving Layers so one of their edges or centres lines up with the same edge or centre of the others or of the Canvas.
+Moving Layers so one of their edges or centres lines up with the same edge or centre of their Selection Box (several Layers) or of the Canvas (one Layer, or on request). It works on axis-aligned extents, so a rotated Layer aligns by its rotated extent and keeps its rotation; a Group moves as one Layer.
 
 **Distribute**:
 Moving Layers once so the spaces between neighbours along one axis are equal, or equal to a given gap. Nothing is stored, so later changes do not re-space them.
 
 **Snapping**:
-Pulling a Layer being moved or resized onto a nearby edge, centre or guide of another Layer or the Canvas, or onto an equal spacing. Only the editor snaps; nothing about it is stored.
+Pulling what is being dragged onto a nearby target within 6 screen pixels: the axis-aligned extent of the Layers being moved, or the dragged edge of a single unrotated Layer being resized, onto an edge or centre of another Layer, of the Canvas or onto a Guide, or onto an equal spacing between neighbours. Holding Cmd/Ctrl turns it off for the gesture. Snapping the rotation to 15° steps with Shift is a separate angle snap. Only the editor snaps; nothing about it is stored.
 _Avoid_: sticking, magnet
+
+**Ruler**:
+The strip along the top and left of the Canvas with a scale in Canvas pixels whose step follows the zoom. It highlights the span of the Selection Box, and Guides are dragged out of it and dropped back on it to delete them.
+_Avoid_: scale bar
+
+**Measurement**:
+The edge-to-edge distances in pixels between the Selection Box and the Layer under the cursor (or the Canvas), shown while Alt is held. Nothing is stored.
+_Avoid_: redlines, spacing overlay
 
 **Fit**:
 How an image fills its Box: `contain`, `cover` or `stretch`.
@@ -79,7 +87,7 @@ _Avoid_: properties panel, sidebar
 The Layers currently selected in the browser editor, recorded so an agent can refer to "what's selected".
 
 **Selection Box**:
-The axis-aligned union of the rotated extents (`boxExtent`) of the Layers in the Selection. With several Layers selected, the Inspector's `x`/`y` are its top-left, and typing one moves every Layer by the same delta; its size is shown but not editable.
+The axis-aligned union of the extents of the Layers in the Selection: a leaf's rotated Box (`boxExtent`, a text Layer without `height` taking its Text Layout height), a Group's the union of its children's. With several Layers selected, the Inspector's `x`/`y` are its top-left, and typing one moves every Layer by the same delta; its size is shown but not editable.
 _Avoid_: bounding box, group box
 
 **Mixed**:
@@ -87,7 +95,7 @@ What the Inspector shows for a property whose value differs between the selected
 _Avoid_: multiple values, varies
 
 **Gesture preview**:
-What the editor shows while a gesture changes a value continuously (dragging an Inspector field's label, a Canvas resize handle): drawn on the Canvas but not an undo step and not saved; releasing makes it one step, Escape drops it. The editor API calls it `preview()`.
+What the editor shows while a gesture changes a value continuously (dragging an Inspector field's label, a Canvas resize handle, a Guide): drawn on the Canvas but not an undo step and not saved; releasing makes it one step, Escape drops it. The editor API calls it `preview()`.
 _Avoid_: Preview (the agent's throwaway Render), live preview, draft
 
 ### Output
