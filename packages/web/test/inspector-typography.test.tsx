@@ -177,6 +177,31 @@ describe('font size and line height', () => {
   })
 })
 
+describe('italic', () => {
+  it('turns italic on and off, one step each; upright leaves the key out', async () => {
+    const original = doc([text()])
+    const { editor, user, toggle, changes } = await openInspector(original, { select: ['text-1'] })
+
+    expect(toggle('Italic').checked).toBe(false)
+    expect(toggle('Italic').disabled).toBe(false)
+    await user.click(toggle('Italic'))
+    await settle()
+    expect(editor.getDocument().layers[0]).toEqual(text({ fontStyle: 'italic' }))
+    expect(toggle('Italic').checked).toBe(true)
+
+    await user.click(toggle('Italic'))
+    await settle()
+    expect(editor.getDocument().layers[0]).toEqual(text())
+    expect(changes.map((c) => c.cause)).toEqual(['inspector', 'inspector'])
+  })
+
+  it('shows Mixed over upright and italic texts', async () => {
+    const { toggle } = await openInspector(doc([text(), text({ id: 'text-2', fontStyle: 'italic' })]), { select: ['text-1', 'text-2'] })
+
+    expect(toggle('Italic').indeterminate).toBe(true)
+  })
+})
+
 describe('text transform', () => {
   const group = () => screen.getByRole('radiogroup', { name: 'Text transform' })
   const option = (name: string) => screen.getByRole('radio', { name })

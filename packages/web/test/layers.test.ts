@@ -203,6 +203,31 @@ describe('text Layers', () => {
     expect(calls.sort()).toEqual(['Inter/400', 'Inter/700'])
   })
 
+  it('load the italic face of an italic Layer and draw the Textbox in italic', async () => {
+    const calls: string[] = []
+    const { editor } = await open(doc([text(), text({ id: 'text-2', fontStyle: 'italic' })]), {
+      loadFonts: async (faces) => void calls.push(...faces.map((f) => `${f.family}/${f.weight}/${f.style}`)),
+    })
+
+    expect(calls.sort()).toEqual(['Inter/700/italic', 'Inter/700/normal'])
+    expect((editor.objectFor('text-1') as Textbox).fontStyle).toBe('normal')
+    expect((editor.objectFor('text-2') as Textbox).fontStyle).toBe('italic')
+  })
+
+  it('load the italic face before switching a shown Layer to italic', async () => {
+    const calls: string[] = []
+    const { editor } = await open(doc([text()]), {
+      loadFonts: async (faces) => void calls.push(...faces.map((f) => `${f.family}/${f.weight}/${f.style}`)),
+    })
+    calls.length = 0
+
+    await editor.update(() => doc([text({ fontStyle: 'italic' })]), { cause: 'inspector' })
+
+    expect(calls).toContain('Inter/700/italic')
+    expect((editor.objectFor('text-1') as Textbox).fontStyle).toBe('italic')
+    expect(editor.getDocument().layers[0]).toMatchObject({ fontStyle: 'italic' })
+  })
+
   it('round-trip unchanged, with a Box height, alignment and rotation', async () => {
     const original = doc([
       text({ height: 60, verticalAlign: 'middle', align: 'right', rotation: 20, letterSpacing: 1.5, opacity: 0.9 }),

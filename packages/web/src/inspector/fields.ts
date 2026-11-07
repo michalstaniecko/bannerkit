@@ -16,6 +16,8 @@ import {
   TextLayerSchema,
   type Fit,
   type FontManifest,
+  type FontStyle,
+  fontStyleOf,
   type Shadow,
   type ImageLayer,
   type Layer,
@@ -436,23 +438,40 @@ const WEIGHT_NAMES: Record<FontWeight, string> = {
   900: 'Black',
 }
 
-/** The weights `manifest` has for `family`, lightest first. */
-function weightsOf(manifest: FontManifest, family: string): FontWeight[] {
-  const weights = manifest.filter((f) => f.family === family).map((f) => f.weight as FontWeight)
+/** The weights `manifest` has for `family` in `style`, lightest first. */
+function weightsOf(manifest: FontManifest, family: string, style: FontStyle): FontWeight[] {
+  const weights = manifest.filter((f) => f.family === family && f.style === style).map((f) => f.weight as FontWeight)
   return [...new Set(weights)].sort((a, b) => a - b)
 }
 
-/** The weight of `family` closest to `weight` (on a tie the heavier), or `weight` when it has none. */
-export function nearestWeight(manifest: FontManifest, family: string, weight: FontWeight): FontWeight {
-  const weights = weightsOf(manifest, family)
+/** The weight of `family` in `style` closest to `weight` (on a tie the heavier), or `weight` when it has none. */
+function nearestWeight(manifest: FontManifest, family: string, weight: FontWeight, style: FontStyle): FontWeight {
+  const weights = weightsOf(manifest, family, style)
   if (weights.length === 0) return weight
   return weights.reduce((best, w) => (Math.abs(w - weight) <= Math.abs(best - weight) ? w : best))
 }
 
+/** Whether `manifest` has an italic file for the Layer's family and weight (italics are never synthesised). */
+function hasItalic(manifest: FontManifest, layer: TextLayer): boolean {
+  return manifest.some((f) => f.family === layer.fontFamily && f.weight === layer.fontWeight && f.style === 'italic')
+}
+
 /**
- * The typography of a text Layer (its text is edited on the Canvas). Font family and
- * weight are picked only from the family/weight pairs of `manifest`; a family without
- * the Layer's weight takes its nearest weight.
+ * `layer` in `fontFamily`, at its nearest weight in its style. An italic Layer
+ * moved to a family with no italic at all becomes upright.
+ */
+function withFamily(manifest: FontManifest, layer: TextLayer, fontFamily: string): TextLayer {
+  const style = fontStyleOf(layer)
+  if (style === 'italic' && weightsOf(manifest, fontFamily, 'italic').length === 0) {
+    return { ...omit(layer, 'fontStyle'), fontFamily, fontWeight: nearestWeight(manifest, fontFamily, layer.fontWeight, 'normal') }
+  }
+  return { ...layer, fontFamily, fontWeight: nearestWeight(manifest, fontFamily, layer.fontWeight, style) }
+}
+
+/**
+ * The typography of a text Layer (its text is edited on the Canvas). Font family,
+ * weight and italic are picked only from the family/weight/style faces of `manifest`;
+ * a family without the Layer's weight takes its nearest weight in the Layer's style.
  */
 function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
   const families = [...new Set(manifest.map((f) => f.family))]
@@ -468,16 +487,27 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           name: 'Font family',
           options: families.map((family) => ({ value: family, label: family })),
           read: (l) => l.fontFamily,
-          write: (l, fontFamily) => ({ ...l, fontFamily, fontWeight: nearestWeight(manifest, fontFamily, l.fontWeight) }),
+          write: (l, fontFamily) => withFamily(manifest, l, fontFamily),
         },
         {
+          // Only the weights with a file in the Layer's style.
           control: 'select',
           key: 'fontWeight',
           label: 'Weight',
           name: 'Font weight',
-          options: (l) => weightsOf(manifest, l.fontFamily).map((w) => ({ value: String(w), label: `${w} ${WEIGHT_NAMES[w]}` })),
+          options: (l) =>
+            weightsOf(manifest, l.fontFamily, fontStyleOf(l)).map((w) => ({ value: String(w), label: `${w} ${WEIGHT_NAMES[w]}` })),
           read: (l) => String(l.fontWeight),
           write: (l, weight) => ({ ...l, fontWeight: Number(weight) as FontWeight }),
+        },
+        {
+          // Off when the family has no italic file for the weight (ADR 0003); upright leaves the key out.
+          control: 'toggle',
+          key: 'fontStyle',
+          label: 'Italic',
+          disabled: (l) => fontStyleOf(l) !== 'italic' && !hasItalic(manifest, l),
+          read: (l) => fontStyleOf(l) === 'italic',
+          write: (l, italic) => setOptional(l, 'fontStyle', italic ? 'italic' : 'normal', 'normal'),
         },
         {
           // The declared (largest) size.

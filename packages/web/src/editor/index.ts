@@ -31,7 +31,7 @@
 // reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
 //
 // `export` renders the shown Canvas offscreen (export.ts).
-import { layoutText, walkLayers, type Document, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { faceKey, layoutText, walkLayers, type Document, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
@@ -685,8 +685,8 @@ export type { ExportOptions, ExportResult } from './export.ts'
 
 /** Whether `next` uses no font face that `before` does not (so nothing has to load first). */
 function sameFaces(before: Document, next: Document): boolean {
-  const shown = new Set(facesUsed(before).map((f) => `${f.family} ${f.weight}`))
-  return facesUsed(next).every((f) => shown.has(`${f.family} ${f.weight}`))
+  const shown = new Set(facesUsed(before).map(faceKey))
+  return facesUsed(next).every((f) => shown.has(faceKey(f)))
 }
 
 /** Whether `next` can be laid out on the object made for `base`: same id and type, and same image `src`. */

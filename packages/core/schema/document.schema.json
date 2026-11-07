@@ -480,6 +480,14 @@
           ],
           "additionalProperties": false
         },
+        "fontStyle": {
+          "description": "Default \"normal\". \"italic\" needs an italic font file for this family and weight; never synthesised",
+          "type": "string",
+          "enum": [
+            "normal",
+            "italic"
+          ]
+        },
         "textTransform": {
           "description": "Drawn case, default \"none\". `text` keeps what was typed; layout, AutoFit and inspect lines use the transformed text",
           "type": "string",

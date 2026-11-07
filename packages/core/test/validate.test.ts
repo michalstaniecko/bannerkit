@@ -211,6 +211,22 @@ describe('Document versions', () => {
     ])
   })
 
+  it('rejects fontStyle in a v1 Document with a hint to migrate', () => {
+    const doc = fullDocument()
+    const layers = doc.layers.map((layer) => (layer.id === 'text-2' ? { ...layer, fontStyle: 'italic' } : layer))
+
+    expect(validateDocument({ ...doc, layers }).errors).toEqual([
+      { path: 'layers[3].fontStyle', message: '"fontStyle" requires version: 2; run `bannerkit migrate`' },
+    ])
+  })
+
+  it('accepts fontStyle in a v2 Document', () => {
+    const doc = fullDocument()
+    const layers = doc.layers.map((layer) => (layer.id === 'text-2' ? { ...layer, fontStyle: 'italic' } : layer))
+
+    expect(validateDocument({ ...doc, version: 2, layers }).ok).toBe(true)
+  })
+
   it('accepts textTransform in v2 only', () => {
     const index = fullDocument().layers.findIndex((l) => l.type === 'text')
     const withTransform = (version: number, textTransform: unknown) => {
