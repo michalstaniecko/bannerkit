@@ -2,7 +2,7 @@
 // pointing at the very TTF files the server registers, and core's `MeasureText`
 // on a 2D canvas. Text is never measured or drawn with a fallback font: loading a
 // face that is not in the manifest, or that the browser cannot load, throws.
-import { parseFontManifest, type Document, type FontManifest, type MeasureText, type TextLayer } from '@bannerkit/core'
+import { parseFontManifest, walkLayers, type Document, type FontManifest, type MeasureText, type TextLayer } from '@bannerkit/core'
 import { cache } from 'fabric'
 import manifestJson from '../../../../fonts/fonts.json' with { type: 'json' }
 
@@ -38,7 +38,7 @@ export function fontFaceCss(manifest: FontManifest = fontManifest): string {
 /** The distinct family/weight pairs of a Document's text Layers. */
 export function facesUsed(document: Document): FontFaceRef[] {
   const faces = new Map<string, FontFaceRef>()
-  for (const layer of document.layers) {
+  for (const { layer } of walkLayers(document)) {
     if (layer.type === 'text') faces.set(fontKey(layer.fontFamily, layer.fontWeight), { family: layer.fontFamily, weight: layer.fontWeight })
   }
   return [...faces.values()]

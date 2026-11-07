@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import { DocumentSchema, type Document } from './document.ts'
 import { closest } from './suggest.ts'
+import { walkLayers } from './tree.ts'
 
 /**
  * One validation finding. `path` is a JSON path into the Document
@@ -31,21 +32,21 @@ export function formatPath(path: readonly PropertyKey[]): string {
 
 /** Every Layer id is unique within its Document. */
 export const uniqueLayerIds: DocumentRule = (document) => {
-  const firstIndex = new Map<string, number>()
+  const firstPath = new Map<string, string>()
   const issues: RuleIssue[] = []
-  document.layers.forEach((layer, i) => {
-    const first = firstIndex.get(layer.id)
-    if (first === undefined) firstIndex.set(layer.id, i)
-    else issues.push({ path: `layers[${i}].id`, message: `duplicate Layer id "${layer.id}" (also used by layers[${first}])` })
-  })
+  for (const { layer, path } of walkLayers(document)) {
+    const first = firstPath.get(layer.id)
+    if (first === undefined) firstPath.set(layer.id, path)
+    else issues.push({ path: `${path}.id`, message: `duplicate Layer id "${layer.id}" (also used by ${first})` })
+  }
   return issues
 }
 
 /** AutoFit shrinks text to fit its Box, so the Box needs a height. */
 export const autoFitRequiresHeight: DocumentRule = (document) =>
-  document.layers.flatMap((layer, i) =>
+  walkLayers(document).flatMap(({ layer, path }) =>
     layer.type === 'text' && layer.autoFit !== undefined && layer.height === undefined
-      ? [{ path: `layers[${i}].autoFit`, message: 'autoFit requires height' }]
+      ? [{ path: `${path}.autoFit`, message: 'autoFit requires height' }]
       : [],
   )
 

@@ -7,7 +7,9 @@
 // step, or, when any result is not a valid Document, none does.
 import {
   boxExtent,
+  mapLayers,
   validateDocument,
+  walkLayers,
   type Document,
   type Layer,
   type LinearGradient,
@@ -117,8 +119,15 @@ export function sharedBox(layers: readonly Layer[], textHeight: TextHeight): Rec
  * itself comes back, so the edit changes nothing.
  */
 export function editLayers(document: Document, ids: readonly string[], write: (layer: Layer) => Layer): Document {
-  const next = { ...document, layers: document.layers.map((l) => (ids.includes(l.id) ? write(l) : l)) }
+  const next = mapLayers(document, (l) => (ids.includes(l.id) ? write(l) : l))
   return validateDocument(next).ok ? next : document
+}
+
+/** The Layers `ids` of `document`, in draw order. */
+export function selectedLayers(document: Document, ids: readonly string[]): Layer[] {
+  return walkLayers(document)
+    .map((v) => v.layer)
+    .filter((l) => ids.includes(l.id))
 }
 
 /** `document` with every Layer in `ids` moved by `dx`, `dy`. */
@@ -194,7 +203,7 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
         if (side === 'width' || side === 'height') return { control: 'number', field, value: roundPx(box[side]), disabled: true, write: () => (d) => d }
         // The Box's side shows on whole px; the typed value moves every Layer by one whole-px delta.
         const write = (value: number): DocumentRecipe => (document) => {
-          const now = sharedBox(document.layers.filter((l) => ids.includes(l.id)), textHeight)
+          const now = sharedBox(selectedLayers(document, ids), textHeight)
           const delta = roundPx(value - now[side])
           return side === 'x' ? moveLayers(document, ids, delta, 0) : moveLayers(document, ids, 0, delta)
         }

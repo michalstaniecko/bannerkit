@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { boxExtent, layoutText, svgIntrinsicSize, type Issue, type LayerType, type Rect, type Size } from '@bannerkit/core'
+import { boxExtent, layoutText, svgIntrinsicSize, walkLayers, type Issue, type LayerType, type Rect, type Size } from '@bannerkit/core'
 import sharp from 'sharp'
 import { z } from 'zod'
 import { measureText } from '../render/fonts.ts'
@@ -88,13 +88,14 @@ export async function inspect(input: z.input<typeof InspectInput>): Promise<Insp
   const outside: Issue[] = []
   const dir = projectDir(root, project)
   const layers: LayerInspection[] = []
-  for (const [index, layer] of document.layers.entries()) {
+  // v2: a Group's entry nests its children's (`parent` tells where each one goes).
+  for (const { layer, index, path } of walkLayers(document)) {
     const layout = layer.type === 'text' ? layoutText(layer, measureText) : undefined
     const extent = boxExtent({ ...layer, height: layout?.height ?? layer.height! })
     const placement = placementOf(extent, document.canvas)
     if (placement !== 'inside') {
       const where = placement === 'outside' ? 'entirely outside' : 'partly outside'
-      outside.push({ path: `layers[${index}]`, message: `Layer "${layer.id}" is ${where} the Canvas` })
+      outside.push({ path, message: `Layer "${layer.id}" is ${where} the Canvas` })
     }
     const base = { index, id: layer.id, type: layer.type, extent, placement, selected: selected.has(layer.id) }
     if (layer.type === 'image') {

@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { CanvasSchema, type Document } from './document.ts'
 import type { Size } from './presets.ts'
+import { mapLayers } from './tree.ts'
 
 /** A new Canvas size is checked by the same rules as the Document's own `canvas`. */
 const CanvasSizeSchema = CanvasSchema.pick({ width: true, height: true })
@@ -44,11 +45,7 @@ export function resizeCanvas(document: Document, size: Size, anchor: Anchor = 't
   // `+ 0` turns a -0 from floor(-0) into 0.
   const dx = Math.floor(fx * (width - document.canvas.width)) + 0
   const dy = Math.floor(fy * (height - document.canvas.height)) + 0
-  return {
-    ...document,
-    canvas: { ...document.canvas, width, height },
-    // Only top-level Layers move: v1 has no Groups. v2 Groups (ADR 0007) hold Canvas
-    // coordinates, so once they exist this must recurse into every descendant too.
-    layers: document.layers.map((layer) => ({ ...layer, x: layer.x + dx, y: layer.y + dy })),
-  }
+  // Every Layer in the tree moves: Layers hold Canvas coordinates at every depth.
+  const moved = mapLayers(document, (layer) => ({ ...layer, x: layer.x + dx, y: layer.y + dy }))
+  return { ...moved, canvas: { ...document.canvas, width, height } }
 }
