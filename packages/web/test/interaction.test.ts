@@ -234,6 +234,33 @@ describe('text Layers', () => {
 
     expect(changes).toEqual([])
   })
+
+  it('show the transformed text, and the typed text while editing (textTransform)', async () => {
+    const { editor, changes } = await open(doc([text({ text: 'Straße sale', textTransform: 'uppercase' })]))
+    const box = editor.objectFor('text-1') as Textbox
+    expect(box.text).toBe('STRASSE SALE')
+
+    box.enterEditing()
+    expect(box.text).toBe('Straße sale')
+    expect(box.hiddenTextarea!.value).toBe('Straße sale')
+    box.exitEditing()
+
+    expect(box.text).toBe('STRASSE SALE')
+    expect(changes).toEqual([])
+  })
+
+  it('save the typed text, not the transformed one, when editing exits', async () => {
+    const { editor, changes } = await open(doc([text({ text: 'Spring sale', textTransform: 'uppercase' })]))
+    const box = editor.objectFor('text-1') as Textbox
+
+    box.enterEditing()
+    box.set({ text: 'Winter sale' })
+    box.exitEditing()
+
+    expect(editor.getDocument().layers[0]).toMatchObject({ text: 'Winter sale', textTransform: 'uppercase' })
+    expect(box.text).toBe('WINTER SALE')
+    expect(changes.map((c) => c.cause)).toEqual(['text'])
+  })
 })
 
 const image = (over: Partial<ImageLayer> = {}): ImageLayer => ({

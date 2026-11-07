@@ -28,6 +28,14 @@ const CORPUS: Omit<TextLayer, 'id' | 'type' | 'x' | 'y' | 'fontFamily' | 'fill'>
   { text: 'Unbreakablesuperlongwordthatneedsshrinking ok', width: 200, height: 200, fontSize: 60, fontWeight: 700, autoFit: { minFontSize: 8 } },
   { text: 'Still overflowing at the minimum size because the box is tiny', width: 120, height: 30, fontSize: 40, fontWeight: 700, autoFit: { minFontSize: 20 } },
   { text: '1200 × 628 · 1080 × 1080 · 300 × 250 · 728 × 90', width: 190, fontSize: 22, fontWeight: 600 },
+  // Italic is its own font file with its own advances (ADR 0003).
+  { text: 'Summer sale on every running shoe in the store', width: 300, fontSize: 32, fontWeight: 700, fontStyle: 'italic' },
+  { text: 'The quick brown fox jumps over the lazy dog', width: 180, fontSize: 24, fontWeight: 300, fontStyle: 'italic' },
+  { text: 'Italic letter spacing changes where lines break', width: 240, fontSize: 28, fontWeight: 400, fontStyle: 'italic', letterSpacing: 3 },
+  { text: 'AutoFit shrinks this long italic headline to fit', width: 260, height: 90, fontSize: 72, fontWeight: 900, fontStyle: 'italic', autoFit: { minFontSize: 12 } },
+  { text: 'Uppercase is wider, so it breaks sooner', width: 260, fontSize: 30, fontWeight: 700, textTransform: 'uppercase' },
+  { text: 'Straße größer: ß becomes SS when uppercased', width: 250, height: 80, fontSize: 48, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, autoFit: { minFontSize: 10 } },
+  { text: 'LOWERCASE HEADLINE, Lowercased By Core', width: 220, fontSize: 30, fontWeight: 500, textTransform: 'lowercase' },
 ]
 
 const layers: TextLayer[] = CORPUS.map((c, i) => ({ ...base, ...c, id: `text-${i + 1}` }))
@@ -66,7 +74,7 @@ test('every font the Document uses is loaded before text is created, and is not 
         await fonts.loadBrowserFonts(faces)
         textExisted ||= document.layers.some((l) => editor.objectFor(l.id) !== undefined)
         for (const f of faces) {
-          checks.push({ face: `${f.family}/${f.weight}`, loaded: window.document.fonts.check(fonts.cssFont(f.family, f.weight, 40)) })
+          checks.push({ face: `${f.family}/${f.weight}/${f.style}`, loaded: window.document.fonts.check(fonts.cssFont(f, 40)) })
         }
       },
     })
@@ -78,7 +86,7 @@ test('every font the Document uses is loaded before text is created, and is not 
     const sample = 'Hamburgefonstiv 0123456789'
     const used = fonts.facesUsed(document)
     const widths = (family?: string) =>
-      used.map((f) => fonts.measureText({ family: family ?? f.family, weight: f.weight, size: 40 }, sample, 0))
+      used.map((f) => fonts.measureText({ ...f, family: family ?? f.family, size: 40 }, sample, 0))
     return { checks, textExisted, used: used.length, real: widths(), unregistered: widths('BannerkitUnregisteredFamily') }
   }, doc)
 
@@ -86,7 +94,7 @@ test('every font the Document uses is loaded before text is created, and is not 
   expect(result.checks).toHaveLength(result.used)
   for (const c of result.checks) expect(c, c.face).toEqual({ face: c.face, loaded: true })
   result.real.forEach((width, i) => expect(width, `face #${i}`).not.toBeCloseTo(result.unregistered[i]!, 1))
-  // every weight measures differently, so none was synthesised from another
+  // every weight and style measures differently, so none was synthesised from another
   expect(new Set(result.real).size).toBe(result.used)
 })
 

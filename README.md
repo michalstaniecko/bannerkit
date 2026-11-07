@@ -81,4 +81,4 @@ pnpm typecheck
 pnpm schema      # regenerate packages/core/schema/document.schema.json
 ```
 
-The workspace has three packages: `packages/core` (schema, validation, Text Layout), `packages/server` (operations, CLI, REST API and server renderer) and `packages/web` (the editor). Fonts are listed in `fonts/fonts.json`. Inter is bundled under OFL-1.1.
+The workspace has three packages: `packages/core` (schema, validation, Text Layout), `packages/server` (operations, CLI, REST API and server renderer) and `packages/web` (the editor). Fonts are listed in `fonts/fonts.json`. Inter (upright and italic, 100–900) is bundled under OFL-1.1.

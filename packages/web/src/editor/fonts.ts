@@ -2,12 +2,13 @@
 // pointing at the very TTF files the server registers, and core's `MeasureText`
 // on a 2D canvas. Text is never measured or drawn with a fallback font: loading a
 // face that is not in the manifest, or that the browser cannot load, throws.
-import { parseFontManifest, walkLayers, type Document, type FontManifest, type MeasureText, type TextLayer } from '@bannerkit/core'
+// Italics come from their own files too; the browser would otherwise slant the upright.
+import { faceKey, layerFace, parseFontManifest, walkLayers, type Document, type FontFace, type FontManifest, type MeasureText } from '@bannerkit/core'
 import { cache } from 'fabric'
 import manifestJson from '../../../../fonts/fonts.json' with { type: 'json' }
 
-/** One family/weight a Document uses. */
-export type FontFaceRef = { family: string; weight: TextLayer['fontWeight'] }
+/** One family/weight/style a Document uses. */
+export type FontFaceRef = Omit<FontFace, 'file'>
 
 /** Makes `faces` ready to measure and draw; resolves only once every face is loaded. */
 export type LoadFonts = (faces: FontFaceRef[]) => Promise<void>
@@ -35,21 +36,20 @@ export function fontFaceCss(manifest: FontManifest = fontManifest): string {
     .join('\n')
 }
 
-/** The distinct family/weight pairs of a Document's text Layers. */
+/** The distinct family/weight/style faces of a Document's text Layers. */
 export function facesUsed(document: Document): FontFaceRef[] {
   const faces = new Map<string, FontFaceRef>()
   for (const { layer } of walkLayers(document)) {
-    if (layer.type === 'text') faces.set(fontKey(layer.fontFamily, layer.fontWeight), { family: layer.fontFamily, weight: layer.fontWeight })
+    if (layer.type === 'text') faces.set(faceKey(layerFace(layer)), layerFace(layer))
   }
   return [...faces.values()]
 }
 
 /** The CSS `font` shorthand for a face at `size` px. */
-export const cssFont = (family: string, weight: number, size: number) => `${weight} ${size}px "${family}"`
+export const cssFont = (face: FontFaceRef, size: number) => `${face.style} ${face.weight} ${size}px "${face.family}"`
 
 const STYLE_ID = 'bannerkit-fonts'
 const loaded = new Set<string>()
-const fontKey = (family: string, weight: number) => `${family}/${weight}`
 
 /**
  * The browser `LoadFonts`: installs the `@font-face` rules once, then awaits
@@ -65,17 +65,18 @@ export const loadBrowserFonts: LoadFonts = async (faces) => {
     style.textContent = fontFaceCss()
     doc.head.append(style)
   }
-  const known = new Set(fontManifest.map((f) => fontKey(f.family, f.weight)))
+  const known = new Set(fontManifest.map(faceKey))
   const fresh = new Set<string>()
-  for (const { family, weight } of faces) {
-    const key = fontKey(family, weight)
-    if (!known.has(key)) throw new Error(`font ${family} ${weight} is not in the font manifest; refusing to fall back`)
+  for (const face of faces) {
+    const key = faceKey(face)
+    const name = `${face.family} ${face.weight} ${face.style}`
+    if (!known.has(key)) throw new Error(`font ${name} is not in the font manifest; refusing to fall back`)
     if (loaded.has(key)) continue
-    const spec = cssFont(family, weight, 16)
+    const spec = cssFont(face, 16)
     const matched = await doc.fonts.load(spec)
-    if (matched.length === 0 || !doc.fonts.check(spec)) throw new Error(`font ${family} ${weight} failed to load`)
+    if (matched.length === 0 || !doc.fonts.check(spec)) throw new Error(`font ${name} failed to load`)
     loaded.add(key)
-    fresh.add(family)
+    fresh.add(face.family)
   }
   for (const family of fresh) cache.clearFontCache(family)
 }
@@ -85,7 +86,7 @@ let scratch: CanvasRenderingContext2D | undefined
 /** core's `MeasureText` on a 2D canvas: `measureText` with `ctx.letterSpacing`, like the server. */
 export const measureText: MeasureText = (font, text, letterSpacing) => {
   scratch ??= globalThis.document.createElement('canvas').getContext('2d')!
-  scratch.font = cssFont(font.family, font.weight, font.size)
+  scratch.font = cssFont(font, font.size)
   scratch.letterSpacing = `${letterSpacing}px`
   // Unhinted advances, as the editor's Textbox measures and draws them (see mapper.ts).
   scratch.textRendering = 'geometricPrecision'

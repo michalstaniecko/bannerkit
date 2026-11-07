@@ -7,6 +7,7 @@ import {
   type GroupLayer,
   type Layer,
   type LeafLayer,
+  layerFace,
   layoutText,
   linearGradientLine,
   type RectLayer,
@@ -169,7 +170,7 @@ function drawText(ctx: CanvasRenderingContext2D, layer: TextLayer): void {
     ctx.rect(0, 0, layer.width, layout.height)
     ctx.clip()
   }
-  applyFont(ctx, { family: layer.fontFamily, weight: layer.fontWeight, size: layout.fontSize }, layer.letterSpacing ?? 0)
+  applyFont(ctx, { ...layerFace(layer), size: layout.fontSize }, layer.letterSpacing ?? 0)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = layer.fill

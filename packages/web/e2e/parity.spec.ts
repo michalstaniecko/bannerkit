@@ -85,12 +85,38 @@ function presetDocument(width: number, height: number): Document {
   }
 }
 
+/** Italic text at every weight, drawn from the italic font files (ADR 0003), wrapped, spaced and rotated. */
+function italicDocument(): Document {
+  const weights = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const
+  return {
+    version: 2,
+    name: 'italic',
+    canvas: { width: 800, height: 600, background: '#ffffff' },
+    layers: weights.map((fontWeight, i) => ({
+      id: `text-${i + 1}`,
+      type: 'text',
+      x: 20 + (i % 3) * 260,
+      y: 20 + Math.floor(i / 3) * 190,
+      width: 240,
+      text: `Italic ${fontWeight}: the quick brown fox jumps`,
+      fontFamily: 'Inter',
+      fontWeight,
+      fontStyle: 'italic',
+      fontSize: 30,
+      letterSpacing: i % 2 === 0 ? 0 : 1.5,
+      rotation: i === 4 ? -8 : 0,
+      fill: '#13315c',
+    })),
+  }
+}
+
 const demoAssets = join(repoRoot, 'examples/demo/assets')
 
 /** The demo Documents as committed, then one Document per Preset, each in its own Project. */
 const cases: { project: string; doc: string; document?: Document }[] = [
   // Not story yet: it has a Group, which the editor cannot show until #23.
   ...['hero', 'rectangle', 'square'].map((doc) => ({ project: 'demo', doc })),
+  { project: 's3-parity-italic', doc: 'italic', document: italicDocument() },
   ...Object.values(PRESETS).map(({ width, height }) => ({
     project: `s3-parity-${width}x${height}`,
     doc: 'banner',

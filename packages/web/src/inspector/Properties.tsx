@@ -13,6 +13,7 @@ import { Checkbox } from '../ui/Checkbox.tsx'
 import { ColorField } from '../ui/ColorField.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
+import { Segmented } from '../ui/Segmented.tsx'
 import { Select } from '../ui/Select.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
@@ -134,6 +135,19 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
           name={field.name}
           value={value === MIXED ? undefined : value}
           options={inspected.options}
+          placeholder={MIXED_LABEL}
+          onChange={(value) => onWrite(inspected.write(value))}
+        />
+      )
+    }
+    case 'segmented': {
+      const { field, value } = inspected
+      return (
+        <Segmented
+          label={field.label}
+          name={field.name}
+          value={value === MIXED ? undefined : value}
+          options={field.options}
           placeholder={MIXED_LABEL}
           onChange={(value) => onWrite(inspected.write(value))}
         />

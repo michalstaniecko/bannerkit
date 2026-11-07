@@ -76,6 +76,9 @@ const ImageLayerV1Schema = z.strictObject({
 })
 
 export const FONT_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const
+/** Font styles; an italic is always drawn from its own font file, never slanted (ADR 0003). */
+export const FONT_STYLES = ['normal', 'italic'] as const
+export type FontStyle = (typeof FONT_STYLES)[number]
 
 const TextLayerV1Schema = z.strictObject({
   ...commonShape,
@@ -111,7 +114,18 @@ export const DocumentV1Schema = z.strictObject({
 
 export const RectLayerSchema = RectLayerV1Schema.meta({ id: 'RectLayer' })
 export const ImageLayerSchema = ImageLayerV1Schema.meta({ id: 'ImageLayer' })
-export const TextLayerSchema = TextLayerV1Schema.meta({ id: 'TextLayer' })
+export const TEXT_TRANSFORMS = ['none', 'uppercase', 'lowercase'] as const
+
+export const TextLayerSchema = TextLayerV1Schema.extend({
+  fontStyle: z
+    .enum(FONT_STYLES)
+    .optional()
+    .meta({ description: 'Default "normal". "italic" needs an italic font file for this family and weight; never synthesised' }),
+  textTransform: z.enum(TEXT_TRANSFORMS).optional().meta({
+    description:
+      'Drawn case, default "none". `text` keeps what was typed; layout, AutoFit and inspect lines use the transformed text',
+  }),
+}).meta({ id: 'TextLayer' })
 
 /** Every Layer type in Document v2: the leaf types plus `group`. */
 export const LAYER_TYPES = ['rect', 'image', 'text', 'group'] as const
@@ -172,6 +186,7 @@ export type RectLayer = z.infer<typeof RectLayerSchema>
 export type ImageLayer = z.infer<typeof ImageLayerSchema>
 export type TextLayer = z.infer<typeof TextLayerSchema>
 export type GroupLayer = z.infer<typeof GroupLayerSchema>
+export type TextTransform = (typeof TEXT_TRANSFORMS)[number]
 export type Layer = z.infer<typeof LayerSchema>
 export type LayerType = Layer['type']
 /** A Layer that draws something itself, with a Box of its own: anything but a Group. */

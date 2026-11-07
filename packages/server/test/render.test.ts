@@ -69,6 +69,15 @@ describe('renderDocument: text Layers', () => {
     await expectImageSnapshot('text-wrap-left', png)
   })
 
+  it('draws text in the case textTransform asks for', async () => {
+    const typed = await renderDocument(doc([textLayer({ text: 'Spring sale', textTransform: 'uppercase' })]))
+    const uppercase = await renderDocument(doc([textLayer({ text: 'SPRING SALE' })]))
+    const asTyped = await renderDocument(doc([textLayer({ text: 'Spring sale' })]))
+
+    expect(typed.equals(uppercase)).toBe(true)
+    expect(typed.equals(asTyped)).toBe(false)
+  })
+
   it('honours align, verticalAlign and letterSpacing', async () => {
     const layer = textLayer({ text: 'SALE', align: 'right', verticalAlign: 'bottom', height: 100, letterSpacing: 4 })
     const png = await renderDocument(doc([layer], '#ffffff', 200, 120))
@@ -125,6 +134,17 @@ describe('renderDocument: text Layers', () => {
     })
     const png = await renderDocument(doc([{ id: 'rect-1', type: 'rect', x: 0, y: 0, width: 200, height: 60, fill: '#3366ff' }, layer], '#ffffff', 200, 60))
     await expectImageSnapshot('text-rotated-shadow', png)
+  })
+
+  it('draws italic text from the italic font file', async () => {
+    const italic = await renderDocument(doc([textLayer({ text: 'Italic sale', fontStyle: 'italic' })]))
+    const upright = await renderDocument(doc([textLayer({ text: 'Italic sale' })]))
+    expect(italic.equals(upright)).toBe(false)
+    // The line ends where core measured it with the italic face.
+    const layout = layoutText(textLayer({ text: 'Italic sale', fontStyle: 'italic' }), measureText)
+    const ink = await inkBounds(italic)
+    expect(Math.abs(ink.maxX - (20 + layout.lines[0]!.width))).toBeLessThanOrEqual(3)
+    await expectImageSnapshot('text-italic', italic)
   })
 
   it('refuses to draw a font missing from the manifest instead of falling back', async () => {

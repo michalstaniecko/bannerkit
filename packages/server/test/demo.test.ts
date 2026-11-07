@@ -30,6 +30,12 @@ describe('examples/demo', () => {
     expect(await onDisk('story')).toMatchObject({ version: 2, guides: { x: expect.any(Array), y: expect.any(Array) } })
   })
 
+  it('shows uppercase text (textTransform) in story', async () => {
+    const story = JSON.parse(await readFile(join(root, 'demo', 'documents', 'story.json'), 'utf8')) as Document
+
+    expect(walkLayers(story).some(({ layer }) => layer.type === 'text' && layer.textTransform === 'uppercase')).toBe(true)
+  })
+
   it('uses rect, image and text Layers, with AutoFit text, in every Document', async () => {
     for (const name of Object.keys(DEMO_SIZES)) {
       const doc = JSON.parse(await readFile(join(root, 'demo', 'documents', `${name}.json`), 'utf8')) as Document

@@ -211,6 +211,39 @@ describe('Document versions', () => {
     ])
   })
 
+  it('rejects fontStyle in a v1 Document with a hint to migrate', () => {
+    const doc = fullDocument()
+    const layers = doc.layers.map((layer) => (layer.id === 'text-2' ? { ...layer, fontStyle: 'italic' } : layer))
+
+    expect(validateDocument({ ...doc, layers }).errors).toEqual([
+      { path: 'layers[3].fontStyle', message: '"fontStyle" requires version: 2; run `bannerkit migrate`' },
+    ])
+  })
+
+  it('accepts fontStyle in a v2 Document', () => {
+    const doc = fullDocument()
+    const layers = doc.layers.map((layer) => (layer.id === 'text-2' ? { ...layer, fontStyle: 'italic' } : layer))
+
+    expect(validateDocument({ ...doc, version: 2, layers }).ok).toBe(true)
+  })
+
+  it('accepts textTransform in v2 only', () => {
+    const index = fullDocument().layers.findIndex((l) => l.type === 'text')
+    const withTransform = (version: number, textTransform: unknown) => {
+      const doc = fullDocument()
+      const layers = doc.layers.map((l, i) => (i === index ? { ...l, textTransform } : l))
+      return { ...doc, version, layers }
+    }
+
+    expect(validateDocument(withTransform(2, 'uppercase')).ok).toBe(true)
+    expect(validateDocument(withTransform(2, 'capitalize')).errors).toEqual([
+      { path: `layers[${index}].textTransform`, message: expect.stringContaining('"none"') },
+    ])
+    expect(validateDocument(withTransform(1, 'uppercase')).errors).toEqual([
+      { path: `layers[${index}].textTransform`, message: '"textTransform" requires version: 2; run `bannerkit migrate`' },
+    ])
+  })
+
   it('requires both Guide axes, with finite numbers only', () => {
     const v2 = (guides: unknown) => ({ ...fullDocument(), version: 2, guides })
 

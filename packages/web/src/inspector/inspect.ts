@@ -29,6 +29,7 @@ import {
   type FieldSpec,
   type GradientFieldSpec,
   type NumberFieldSpec,
+  type SegmentedFieldSpec,
   type SelectFieldSpec,
 } from './fields.ts'
 import type { GradientChange } from './gradient.ts'
@@ -61,6 +62,7 @@ export type InspectedField =
       value: Shared<string>
       write: (value: string) => DocumentRecipe
     }
+  | { control: 'segmented'; field: SegmentedFieldSpec; value: Shared<string>; write: (value: string) => DocumentRecipe }
   | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => DocumentRecipe }
   | {
       control: 'gradient'
@@ -171,6 +173,13 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
         control: 'select',
         field,
         options: sharedOptions(field, layers),
+        value: sharedValue(layers, (l) => field.read(l, context)),
+        write: (value) => each((l) => field.write(l, value, context)),
+      }
+    case 'segmented':
+      return {
+        control: 'segmented',
+        field,
         value: sharedValue(layers, (l) => field.read(l, context)),
         write: (value) => each((l) => field.write(l, value, context)),
       }
