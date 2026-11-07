@@ -1,36 +1,31 @@
-// Groups (Document v2) are not shown by the editor yet (ticket #23). Until then a
-// Document with a Group is refused with a readable message, never half shown.
-import type { Layer } from '@bannerkit/core'
+// Groups (Document v2) in the editor: shown as one Fabric object per Group with its
+// children inside, selected and moved as a whole (ticket #23).
+import type { GroupLayer, Layer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
-import { applyJson } from '../src/json-apply.ts'
-import { doc, openEditor, rect } from './editor-harness.ts'
+import { doc, openEditor, rect, text } from './editor-harness.ts'
 
-const grouped = doc([rect({ id: 'rect-1' }), { id: 'group-1', type: 'group', layers: [rect({ id: 'rect-2' })] } satisfies Layer])
+const group = (id: string, layers: Layer[], over: Partial<GroupLayer> = {}): GroupLayer => ({ id, type: 'group', layers, ...over })
 
-describe('a Document with a Group in the editor', () => {
-  it('is refused on load with a readable message', async () => {
-    await expect(openEditor(grouped)).rejects.toThrow(/Group "group-1".*cannot show Groups yet/)
-  })
+/** rect-1 at the root, then group-1 (rect-2 + group-2 (text-1 rotated)) with opacity. */
+const nested = () =>
+  doc([
+    rect({ id: 'rect-1', x: 10, y: 10, width: 30, height: 30 }),
+    group(
+      'group-1',
+      [
+        rect({ id: 'rect-2', x: 100, y: 100, width: 100, height: 50, fill: '#00ff00' }),
+        group('group-2', [text({ id: 'text-1', x: 150.5, y: 130, width: 120, rotation: 12 })], { name: 'Inner', locked: false }),
+      ],
+      { name: 'Badge', opacity: 0.5 },
+    ),
+  ])
 
-  it('is refused by apply and leaves the shown Document as it was', async () => {
-    const shown = doc([rect()])
-    const { editor, changes } = await openEditor(shown)
-
-    await expect(editor.apply(grouped, { cause: 'reload' })).rejects.toThrow(/cannot show Groups yet/)
+describe('a Document with Groups in the editor', () => {
+  it('opens and comes back unchanged from getDocument', async () => {
+    const shown = nested()
+    const { editor } = await openEditor(shown)
 
     expect(editor.getDocument()).toEqual(shown)
-    expect(changes).toEqual([])
-    expect(editor.canUndo()).toBe(false)
-  })
-
-  it('comes back from the JSON panel as an Issue at the Group', async () => {
-    const { editor } = await openEditor(doc([rect()]))
-
-    const result = await applyJson(editor, JSON.stringify(grouped))
-
-    expect(result).toEqual({
-      ok: false,
-      errors: [{ path: 'layers[1]', message: expect.stringMatching(/cannot show Groups yet/) }],
-    })
+    expect(JSON.stringify(editor.getDocument())).toBe(JSON.stringify(shown))
   })
 })

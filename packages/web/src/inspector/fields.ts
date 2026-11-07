@@ -628,7 +628,7 @@ export function layerFields(manifest: FontManifest): FieldTable {
     rect: [...commonGroups<RectLayer>(), ...rectGroups()],
     image: [...commonGroups<ImageLayer>(), ...imageGroups()],
     text: [...commonGroups<TextLayer>(), ...textGroups(manifest), textFillGroup()],
-    // The editor does not show Groups yet, so none is ever selected; their fields come with the Group Inspector (#28).
+    // A selected Group shows no fields yet; they come with the Group Inspector (#28).
     group: [],
   }
 }

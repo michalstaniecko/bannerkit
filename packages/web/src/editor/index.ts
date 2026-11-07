@@ -3,8 +3,14 @@
 // objects never leave this module as state.
 //
 // Model: `load` keeps the Document and lays each Layer out as one Fabric object,
-// bottom → top, in a parallel `Entry` list. `getDocument` rebuilds the Document from
+// bottom → top, in a parallel `Entry` tree (scene.ts): a Group is one DocumentGroup
+// holding its children's objects (group.ts). `getDocument` rebuilds the Document from
 // the objects via the mapper, so whatever Fabric shows is what you get back.
+//
+// A Group is selected and moved as a whole: a click on any of its Layers takes the
+// top-level Group (the Canvas only ever targets top-level objects; `DocumentCanvas`
+// hits a Group only where one of its Layers is hit). Moving it moves every Layer in it
+// by the same delta, and the Group is laid out again around them.
 //
 // Direct manipulation: Fabric runs the drag, scale, rotate and text editing. When
 // one *logical modification* ends (a transform's `object:modified`, a text edit's
@@ -31,14 +37,16 @@
 // reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
 //
 // `export` renders the shown Canvas offscreen (export.ts).
-import { faceKey, layoutText, walkLayers, type Document, type Layer, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
-import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
+import { faceKey, layerExtent, layoutText, walkLayers, type Document, type LeafLayer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { ActiveSelection, Canvas, Point, Textbox, type FabricObject } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
 import { createHistory } from './history.ts'
 import { roundAngle, roundPx } from './rounding.ts'
+import { DocumentGroup } from './group.ts'
 import { applyLayer, isFrozen, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
+import { allEntries, buildEntries, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
 import { fitZoom, type Size } from './zoom.ts'
 
 export type EditorOptions = {
@@ -185,8 +193,6 @@ export type Editor = {
   destroy(): Promise<void>
 }
 
-type Entry = { base: LeafLayer; object: FabricObject }
-
 /** Arrow-key nudge in Document px; Shift multiplies it. */
 const NUDGE = 1
 const NUDGE_SHIFT = 10
@@ -199,28 +205,6 @@ const ARROWS: Record<string, [number, number]> = {
 
 /** Keys typed into these go to the field, not the editor. */
 const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
-
-/**
- * The Document's Layers, when none is a Group. The editor cannot show Groups yet
- * (ticket #23), so a Document with one is refused with a readable message rather
- * than half shown.
- */
-function shownLayers(document: Document): LeafLayer[] {
-  const group = document.layers.find((l) => l.type === 'group')
-  if (group) throw new GroupsNotShown(group.id, document.layers.indexOf(group))
-  return document.layers as LeafLayer[]
-}
-
-/** Thrown for a Document the editor cannot show because it has a Group. */
-export class GroupsNotShown extends Error {
-  /** Issue path of the first Group, e.g. `layers[1]`. */
-  readonly path: string
-  constructor(id: string, index: number) {
-    super(`This Document has a Group "${id}" and the editor cannot show Groups yet; edit it as JSON or with the bannerkit CLI`)
-    this.name = 'GroupsNotShown'
-    this.path = `layers[${index}]`
-  }
-}
 
 /** Whether two Documents are the same (as JSON: same keys, in the same order). */
 const sameDocument = (a: Document, b: Document): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -237,7 +221,8 @@ function changedLayerIds(before: Document, after: Document): string[] {
 export function createEditor({ loadFonts = loadBrowserFonts, measure = measureText }: EditorOptions = {}): Editor {
   let canvas: Canvas | undefined
   let current: Document | undefined
-  let entries: Entry[] = []
+  /** The top-level Layers' Entries, bottom → top (scene.ts). */
+  let roots: Entry[] = []
   let env: MapperEnv = { assetUrl: (src) => src, measure }
   let zoom = 1
   /** Bumped by every `load`, so only the latest one shows its Document. */
@@ -276,11 +261,26 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     return canvas
   }
 
-  const entryOf = (object: FabricObject) => entries.find((e) => e.object === object)
+  const entryOf = (object: FabricObject) => allEntries(roots).find((e) => e.object === object)
 
   const documentNow = (): Document => {
     if (!current) throw new Error('No Document loaded')
-    return { ...structuredClone(current), layers: entries.map((e) => objectToLayer(e.object, e.base)) }
+    return { ...structuredClone(current), layers: roots.map(layerOf) }
+  }
+
+  /**
+   * Bakes a move of a Group's object into its Layers: every leaf in it moves by the
+   * delta of the Group's centre from its Box centre (whole px for a drag, like any
+   * transform), so they all move alike. The Group is laid out again by the caller.
+   */
+  const bakeGroupMove = (entry: GroupEntry, cause: ChangeCause) => {
+    const box = layerExtent(syncBase(entry), env.measure)
+    const centre = new Point(0, 0).transform(entry.object.calcTransformMatrix())
+    let dx = centre.x - (box.x + box.width / 2)
+    let dy = centre.y - (box.y + box.height / 2)
+    if (cause === 'transform') [dx, dy] = [roundPx(dx), roundPx(dy)]
+    if (dx === 0 && dy === 0) return
+    for (const leaf of leavesOf(entry)) leaf.base = { ...leaf.base, x: leaf.base.x + dx, y: leaf.base.y + dy }
   }
 
   /** Ends a logical modification of `objects`: bakes each into its Layer and emits one `change`. */
@@ -296,17 +296,22 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     for (const object of objects) {
       const entry = entryOf(object)
       if (!entry) continue
-      const layer = objectToLayer(object, entry.base)
-      entry.base = cause === 'transform' ? wholePixels(layer) : layer
-      applyLayer(object, entry.base, env)
+      if (isGroupEntry(entry)) bakeGroupMove(entry, cause)
+      else {
+        const layer = objectToLayer(object, entry.base)
+        entry.base = cause === 'transform' ? wholePixels(layer) : layer
+      }
       touched.push(entry)
     }
+    // Lay out each top-level Layer touched again, so a Group's Box follows its Layers.
+    for (const root of new Set(touched.map(rootOf))) applyLayer(root.object, syncBase(root), env)
     if (regroup) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
     c.requestRenderAll()
     if (touched.length === 0) return
     const document = documentNow()
     history.record(document)
-    emit('change', { document, cause, layerIds: touched.map((e) => e.base.id) })
+    const ids = new Set(touched.flatMap((e) => allEntries([e]).map((d) => d.base.id)))
+    emit('change', { document, cause, layerIds: [...ids] })
   }
 
   /**
@@ -315,10 +320,9 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
    */
   const show = async (document: Document, nextEnv: MapperEnv): Promise<boolean> => {
     const c = requireCanvas()
-    shownLayers(document) // refuses a Group before anything (even a show in flight) is touched
     const token = ++loads
     const next = structuredClone(document)
-    const layers = next.layers as LeafLayer[]
+    const layers = next.layers
     // Fonts first: text is laid out (AutoFit, wrapping) only with the real font.
     await loadFonts(facesUsed(next))
     if (token !== loads || canvas !== c) return false
@@ -332,10 +336,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     c.remove(...c.getObjects())
     current = next
     env = nextEnv
-    entries = layers.map((layer, i) => ({ base: layer, object: objects[i]! }))
-    for (const { object } of entries) if (object instanceof Textbox) object.controls = textControls(resizeText)
+    roots = buildEntries(layers, objects)
+    for (const { object } of allEntries(roots)) if (object instanceof Textbox) object.controls = textControls(resizeText)
     c.backgroundColor = current.canvas.background ?? ''
-    c.add(...entries.map((e) => e.object))
+    c.add(...roots.map((e) => e.object))
     applyZoom()
     c.renderAll()
     return true
@@ -354,15 +358,14 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
   /**
    * Shows `next` keeping the Selection. When every Layer keeps its id, type and `src`
-   * (in the same order) each is laid out again on its own object; otherwise the
+   * (in the same order, in the same Groups) each is laid out again on its own object; otherwise the
    * Document is shown afresh and the same Layers selected again. Resolves false when
    * a newer `show` (or `destroy`) won meanwhile.
    */
   const relayout = async (next: Document): Promise<boolean> => {
     const c = requireCanvas()
     const ids = [...selected]
-    const inPlace =
-      entries.length === next.layers.length && next.layers.every((layer, i) => sameObject(entries[i]!.base, layer))
+    const inPlace = sameShape(roots, next.layers)
     holdSelection = true
     try {
       if (!inPlace) {
@@ -375,10 +378,9 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       const group = active instanceof ActiveSelection ? active.getObjects() : undefined
       if (group) c.discardActiveObject()
       current = structuredClone(next)
-      // In place means every Layer has the type of the one shown, so none is a Group.
-      ;(current.layers as LeafLayer[]).forEach((layer, i) => {
-        const entry = entries[i]!
-        entry.base = layer
+      current.layers.forEach((layer, i) => {
+        const entry = roots[i]!
+        rebase(entry, layer)
         applyLayer(entry.object, layer, env)
       })
       c.backgroundColor = current.canvas.background ?? ''
@@ -394,7 +396,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   /** Selects the Layers `ids`, locked and hidden ones too, skipping unknown ones. */
   const selectIds = (ids: readonly string[]) => {
     const c = requireCanvas()
-    const objects = entries.filter((e) => ids.includes(e.base.id)).map((e) => e.object)
+    const objects = allEntries(roots).filter((e) => ids.includes(e.base.id)).map((e) => e.object)
     const held = holdSelection
     holdSelection = true // one report for the whole swap, not a `[]` in between
     try {
@@ -485,7 +487,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   /** Whether the Selection holds a locked or hidden Layer, so it shows no handles and does not move. */
   const selectionFrozen = (): boolean => {
     const active = canvas?.getActiveObjects() ?? []
-    return entries.some((e) => isFrozen(e.base) && active.includes(e.object))
+    return allEntries(roots).some((e) => isFrozen(e.base) && active.includes(e.object))
   }
 
   const reportSelection = () => {
@@ -496,7 +498,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     }
     if (holdSelection) return
     const c = requireCanvas()
-    const ids = entries.filter((e) => c.getActiveObjects().includes(e.object)).map((e) => e.base.id)
+    const ids = allEntries(roots).filter((e) => c.getActiveObjects().includes(e.object)).map((e) => e.base.id)
     if (ids.length === selected.length && ids.every((id, i) => id === selected[i])) return
     selected = ids
     emit('selection', { layerIds: [...ids] })
@@ -509,6 +511,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     const before = entry.base
     entry.base = resizeTextLayer(object, entry.base, edge, point)
     applyLayer(object, entry.base, env)
+    if (entry.parent) applyLayer(rootOf(entry).object, syncBase(rootOf(entry)), env)
     return entry.base.width !== before.width || entry.base.height !== before.height
   }
 
@@ -560,7 +563,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       if (canvas) throw new Error('Editor is already mounted')
       const element = container.ownerDocument.createElement('canvas')
       container.append(element)
-      const c = new Canvas(element, { preserveObjectStacking: true })
+      const c = new DocumentCanvas(element, { preserveObjectStacking: true })
       canvas = c
       c.on('object:modified', ({ target, transform }) => {
         // A text edit fires this without a transform; `text:editing:exited` commits it.
@@ -659,7 +662,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     textLayout: (layer) => layoutText(layer, measure),
 
     objectFor(layerId) {
-      return entries.find((e) => e.base.id === layerId)?.object
+      return allEntries(roots).find((e) => e.base.id === layerId)?.object
     },
 
     setZoom(value) {
@@ -692,7 +695,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       previewing?.end()
       canvas = undefined
       current = undefined
-      entries = []
+      roots = []
       selected = []
       listeners.change.clear()
       listeners.selection.clear()
@@ -714,10 +717,15 @@ function sameFaces(before: Document, next: Document): boolean {
   return facesUsed(next).every((f) => shown.has(faceKey(f)))
 }
 
-/** Whether `next` can be laid out on the object made for `base`: same id and type, and same image `src`. */
-function sameObject(base: Layer, next: Layer): boolean {
-  if (base.id !== next.id || base.type !== next.type) return false
-  return base.type !== 'image' || base.src === (next as typeof base).src
+/**
+ * The editor's Fabric canvas. A Group is hit only where one of its Layers is (shown and
+ * not locked), never on the empty parts of its Box; a locked or hidden Group not at all.
+ */
+class DocumentCanvas extends Canvas {
+  override _checkTarget(object: FabricObject, pointer: Point): boolean {
+    if (!(object instanceof DocumentGroup)) return super._checkTarget(object, pointer)
+    return object.visible && object.evented && object.getObjects().some((child) => this._checkTarget(child, pointer))
+  }
 }
 
 /**
