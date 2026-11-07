@@ -279,6 +279,11 @@ function linearGradient(fill: LinearGradient, width: number, height: number): Gr
   })
 }
 
+/** A locked or hidden Layer: selectable only from the Layer list, never moved on the Canvas. */
+export function isFrozen(layer: Layer): boolean {
+  return layer.locked === true || layer.visible === false
+}
+
 function commonProps(layer: Layer) {
   return {
     originX: 'center' as const,
@@ -291,6 +296,10 @@ function commonProps(layer: Layer) {
     visible: layer.visible ?? true,
     selectable: !layer.locked,
     evented: !layer.locked,
+    // Selected from the Layer list, a locked or hidden Layer shows no handles and does not move.
+    hasControls: !isFrozen(layer),
+    lockMovementX: isFrozen(layer),
+    lockMovementY: isFrozen(layer),
     // A Layer never flips or skews: the Document has no field for either.
     lockScalingFlip: true,
     lockSkewingX: true,
