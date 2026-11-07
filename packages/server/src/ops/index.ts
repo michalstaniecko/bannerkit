@@ -4,7 +4,9 @@
 export { OpError, type OpErrorCode, type OpIssue } from './errors.ts'
 export { createProject, listProjects, type CreateProjectInput, type ProjectRef } from './projects.ts'
 export {
+  alignLayers,
   createDocument,
+  distributeLayers,
   duplicateDocument,
   groupLayers,
   listDocuments,
@@ -12,7 +14,10 @@ export {
   resizeDocument,
   ungroupLayer,
   writeDocument,
+  type AlignLayersInput,
   type CreateDocumentInput,
+  type DistributeLayersInput,
+  type MoveLayersResult,
   type DocumentRef,
   type DocumentResult,
   type DuplicateDocumentInput,

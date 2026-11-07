@@ -1,8 +1,13 @@
 import { readFile } from 'node:fs/promises'
 import {
+  ALIGN_EDGES,
+  ALIGN_TARGETS,
   AnchorSchema,
   DEFAULT_BACKGROUND,
+  DISTRIBUTE_AXES,
   DOCUMENT_VERSION,
+  alignLayers as coreAlignLayers,
+  distributeLayers as coreDistributeLayers,
   exactlyOneSize,
   group,
   resizeCanvas,
@@ -17,6 +22,7 @@ import {
   type TreeEditResult,
 } from '@bannerkit/core'
 import { z } from 'zod'
+import { measureText } from '../render/fonts.ts'
 import { OpError, parseInput, type ConflictCurrent } from './errors.ts'
 import { contentHash, pathExists, serializeJson, writeFileAtomic } from './fs.ts'
 import { Name, Root, documentFile, documentsDir, projectDir } from './paths.ts'
@@ -232,4 +238,68 @@ export async function ungroupLayer(input: UngroupLayerInput): Promise<DocumentRe
   const { root, project, name, id } = parseInput(UngroupLayerInput, input)
   const { document } = await readDocument({ root, project, name })
   return writeTreeEdit({ root, project, name }, ungroup(document, id))
+}
+
+// alignLayers / distributeLayers ----------------------------------------------
+
+/** What Align and Distribute answer: the Document as written (or as on disk) and the ids that moved, in input order. */
+export type MoveLayersResult = DocumentResult & { moved: string[] }
+
+/**
+ * A core Align/Distribute result as an op result: the write when a Layer moved
+ * (as v2, unconditional), otherwise the Document as read, nothing written.
+ */
+async function writeMoves(
+  read: DocumentResult,
+  result: TreeEditResult<{ moved: string[] }>,
+  root: string,
+): Promise<MoveLayersResult> {
+  if (!result.ok) throw new OpError(result.code, result.message)
+  if (result.moved.length === 0) return { ...read, moved: [] }
+  const { project, name } = read
+  return { ...(await writeDocument({ root, project, name, document: result.document })), moved: result.moved }
+}
+
+const AlignLayersInput = z.object({
+  root: Root,
+  project: Name,
+  name: Name,
+  ids: z.array(z.string().min(1)).min(1),
+  edges: z.array(z.enum(ALIGN_EDGES)).min(1),
+  to: z.enum(ALIGN_TARGETS).optional(),
+})
+export type AlignLayersInput = z.input<typeof AlignLayersInput>
+
+/**
+ * Aligns Layers by `edges` (one per axis) to the Canvas or their Selection Box
+ * (core `alignLayers`, text measured like the Render) and writes the Document
+ * (as v2) when a Layer moved. Unknown ids are NOT_FOUND; a Layer with its
+ * Group, or two edges on one axis, INVALID_INPUT.
+ */
+export async function alignLayers(input: AlignLayersInput): Promise<MoveLayersResult> {
+  const { root, project, name, ids, edges, to } = parseInput(AlignLayersInput, input)
+  const read = await readDocument({ root, project, name })
+  return writeMoves(read, coreAlignLayers(read.document, ids, edges, measureText, to === undefined ? {} : { to }), root)
+}
+
+const DistributeLayersInput = z.object({
+  root: Root,
+  project: Name,
+  name: Name,
+  ids: z.array(z.string().min(1)).min(1),
+  axis: z.enum(DISTRIBUTE_AXES),
+  gap: z.number().optional(),
+})
+export type DistributeLayersInput = z.input<typeof DistributeLayersInput>
+
+/**
+ * Spaces Layers along `axis`, evenly (three or more) or by `gap` px (two or
+ * more) (core `distributeLayers`, text measured like the Render), and writes
+ * the Document (as v2) when a Layer moved. Unknown ids are NOT_FOUND; too few
+ * Layers, a Layer with its Group or a bad `gap` INVALID_INPUT.
+ */
+export async function distributeLayers(input: DistributeLayersInput): Promise<MoveLayersResult> {
+  const { root, project, name, ids, axis, gap } = parseInput(DistributeLayersInput, input)
+  const read = await readDocument({ root, project, name })
+  return writeMoves(read, coreDistributeLayers(read.document, ids, axis, measureText, gap === undefined ? {} : { gap }), root)
 }
