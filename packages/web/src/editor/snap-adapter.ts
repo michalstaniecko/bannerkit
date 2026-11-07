@@ -64,7 +64,7 @@ export function attachSnapAdapter(canvas: Canvas, env: SnapAdapterEnv): SnapAdap
       const { offset, marks } = free ? freeMove(raw) : snapMove(session.start, raw, env.zoom())
       // An axis Fabric keeps still stays still.
       const still = { x: target.lockMovementX, y: target.lockMovementY }
-      session.marks = marks.filter((m) => !still[m.axis])
+      session.marks = marks.filter((m) => !('axis' in m && still[m.axis]))
       target.set({ left: session.left + (still.x ? 0 : offset.x), top: session.top + (still.y ? 0 : offset.y) })
       target.setCoords()
     }),

@@ -91,6 +91,8 @@
   /* Guides over the Canvas, and the one under the pointer or dragged. */
   --guide: var(--color-blue-600);
   --guide-active: var(--color-blue-700);
+  /* Measurement with Alt: distances, their labels and the outline measured to. */
+  --measure: var(--color-red-500);
 
   --gap-none: var(--space-0);
   --gap-tight: var(--space-1);

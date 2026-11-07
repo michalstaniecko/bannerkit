@@ -48,6 +48,12 @@
 // the snap lines on Fabric's top context, never in a Render or an Export. Cmd/Ctrl
 // held, or `setSnapping(false)`, moves freely. `marks()` gives what is drawn. A reload
 // from disk during a gesture abandons it (no step), dropping the active object.
+// Resizing one unrotated leaf Layer snaps the dragged edge of its Box the same way
+// (snap-resize-adapter.ts); with Shift the rotation handle turns by 15°, Snapping on or off.
+//
+// Measurement (measure-adapter.ts): with Alt held over the Canvas and no gesture
+// running, the distances from the Selection Box to the Layer a click would select
+// there, or to the Canvas, are Marks too.
 //
 // Guides (guides.ts): drawn by the overlay across the Canvas, hit within 3 screen px
 // (after the active object's handles, before the Layers: the cursor turns `ew-resize` /
@@ -71,6 +77,8 @@ import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesO
 import { fitZoom, type Size } from './zoom.ts'
 import { attachOverlay, readOverlayColors } from './overlay.ts'
 import { attachSnapAdapter, type SnapAdapter } from './snap-adapter.ts'
+import { attachResizeSnap, type ResizeSnap } from './snap-resize-adapter.ts'
+import { attachMeasurement, type MeasureAdapter } from './measure-adapter.ts'
 import type { GuideMark, Mark } from './snapping/marks.ts'
 import { guideTargets, snapGuide } from './snapping/guide.ts'
 import { guideAt, setGuide, type GuideAxis } from './guides.ts'
@@ -251,7 +259,8 @@ export type Editor = {
   setSnapping(on: boolean): void
   /**
    * What the precision tools draw over the Canvas now (snap lines while a drag snaps), in
-   * Canvas coordinates, for adapters and tests (like `objectFor`). Empty outside a gesture.
+   * Canvas coordinates, for adapters and tests (like `objectFor`). Empty outside a gesture,
+   * except for the Measurement while Alt is held.
    */
   marks(): Mark[]
   /**
@@ -324,6 +333,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   let snapping = true
   /** The Snapping adapter, from `mount`. */
   let snap: SnapAdapter | undefined
+  /** The adapter snapping resizes (and stepping rotations), from `mount`. */
+  let resizeSnap: ResizeSnap | undefined
+  /** The Measurement adapter, from `mount`. */
+  let measurement: MeasureAdapter | undefined
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
@@ -400,6 +413,20 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     selectIds(toggleSelection(selectedEntries(), entry).map((e) => e.base.id))
     return true
   }
+
+  /**
+   * The extent of the Layer a click at `e` would select (picking.ts), measured to with
+   * Alt; none over the empty Canvas, a selected Layer or one a click cannot hit.
+   */
+  const measuredLayerAt = (e: TPointerEvent): Rect | undefined => {
+    const path = canvas?.hitPath(e) ?? []
+    const entry = path.length > 0 ? entryOf(pick(path, e)) : undefined
+    if (!entry || selectedEntries().includes(entry)) return undefined
+    return layerExtent(liveLayer(entry), env.measure)
+  }
+
+  /** Everything the overlay draws now: snap lines (of a drag or a resize), then the Measurement. */
+  const allMarks = (): Mark[] => [...(guideDrag?.marks ?? []), ...(snap?.marks() ?? []), ...(resizeSnap?.marks() ?? []), ...(measurement?.marks() ?? [])]
 
   /** Escape with a Layer in a Group selected selects its Group instead. */
   const escapeKey = (event: KeyboardEvent): boolean => {
@@ -613,7 +640,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       c.requestRenderAll()
     }
     const onMove = (e: MouseEvent) => {
-      const hit = under(e)
+      // With Alt held the pointer measures (measure-adapter.ts), so it passes Guides by.
+      const hit = e.altKey ? undefined : under(e)
       hover(hit)
       if (!hit) return
       e.stopPropagation()
@@ -812,6 +840,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     c._currentTransform.target.isMoving = false
     c._currentTransform = null
     snap?.end()
+    resizeSnap?.end()
     c.discardActiveObject()
     c.requestRenderAll()
   }
@@ -851,6 +880,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
     const showNow = async (recipe: DocumentRecipe, token: number) => {
       snap?.end()
+      resizeSnap?.end()
       const next = recipe(structuredClone(base))
       if (!sameFaces(base, next)) {
         await loadFonts(facesUsed(next))
@@ -924,15 +954,29 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   }
 
   /** Moves one edge of a text Layer's Box while its handle is dragged; committed on release. */
-  const resizeText = (object: FabricObject, edge: TextEdge, point: Point) => {
+  const resizeText = (object: FabricObject, edge: TextEdge, point: Point, event: TPointerEvent) => {
     const entry = entryOf(object)
     if (!entry || entry.base.type !== 'text') return false
     const before = entry.base
-    entry.base = resizeTextLayer(object, entry.base, edge, point)
+    entry.base = resizeTextLayer(object, before, edge, snapTextPoint(object, before, edge, point, event))
     applyLayer(object, entry.base, env)
     if (entry.parent) applyLayer(rootOf(entry).object, syncBase(rootOf(entry)), env)
     reportBox()
     return entry.base.width !== before.width || entry.base.height !== before.height
+  }
+
+  /**
+   * `point` for a text resize, moved so the dragged edge of the Box lands where
+   * Snapping puts it (an unrotated text Layer, so the edge is the point's x or y).
+   */
+  const snapTextPoint = (object: FabricObject, base: TextLayer, edge: TextEdge, point: Point, event: TPointerEvent): Point => {
+    if (!resizeSnap) return point
+    const raw = layerExtent(resizeTextLayer(object, base, edge, point), env.measure)
+    const box = resizeSnap.snapText(object, raw, event)
+    if (box === raw) return point
+    if (edge === 'left') return new Point(box.x, point.y)
+    if (edge === 'right') return new Point(box.x + box.width, point.y)
+    return new Point(point.x, box.y + box.height)
   }
 
   /** Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z and Ctrl+Y redo. */
@@ -1035,7 +1079,25 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       })
       adapter.setEnabled(snapping)
       snap = adapter
-      const detachOverlay = attachOverlay(c, () => [...guideMarks(), ...(guideDrag?.marks ?? []), ...adapter.marks()], () => zoom, readOverlayColors(container))
+      const resizing = attachResizeSnap(c, {
+        document: documentNow,
+        idsOf: (objects) => allEntries(roots).filter((e) => objects.includes(e.object)).map((e) => e.base.id),
+        boxOf: (object) => {
+          const entry = entryOf(object)
+          return entry && !isGroupEntry(entry) ? layerExtent(objectToLayer(object, entry.base), env.measure) : undefined
+        },
+        measure: () => env.measure,
+        zoom: () => zoom,
+      })
+      resizing.setEnabled(snapping)
+      resizeSnap = resizing
+      const measuring = attachMeasurement(c, container.ownerDocument, {
+        selectionBox: () => (current ? selectionBox(selectedEntries().map(liveLayer), env.measure) : undefined),
+        layerAt: measuredLayerAt,
+        canvasSize: () => current?.canvas,
+      })
+      measurement = measuring
+      const detachOverlay = attachOverlay(c, () => [...guideMarks(), ...allMarks()], () => zoom, readOverlayColors(container))
       const detachGuides = attachGuideHits(c)
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
@@ -1056,6 +1118,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         detachGuides()
         adapter.detach()
         snap = undefined
+        resizing.detach()
+        resizeSnap = undefined
+        measuring.detach()
+        measurement = undefined
         return element
       }
     },
@@ -1149,9 +1215,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     setSnapping(on) {
       snapping = on
       snap?.setEnabled(on)
+      resizeSnap?.setEnabled(on)
     },
 
-    marks: () => [...(guideDrag?.marks ?? []), ...(snap?.marks() ?? [])],
+    marks: allMarks,
 
     dragGuide,
 

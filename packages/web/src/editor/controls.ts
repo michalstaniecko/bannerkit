@@ -8,11 +8,11 @@
 // A Group (and a Selection holding one) has corner handles that always scale
 // proportionally and the rotation handle; the editor bakes the scale or rotation
 // into its Layers (core `scaleGroup` / `rotateGroup`) when the handle is released.
-import { Control, Point, controlsUtils, type FabricObject, type TransformActionHandler } from 'fabric'
+import { Control, Point, controlsUtils, type FabricObject, type TPointerEvent, type TransformActionHandler } from 'fabric'
 import type { TextEdge } from './mapper.ts'
 
-/** Moves `edge` of `target`'s Box to `point` (scene px); returns whether anything changed. */
-export type ResizeText = (target: FabricObject, edge: TextEdge, point: Point) => boolean
+/** Moves `edge` of `target`'s Box to `point` (scene px) for the pointer `event`; returns whether anything changed. */
+export type ResizeText = (target: FabricObject, edge: TextEdge, point: Point, event: TPointerEvent) => boolean
 
 export function textControls(resize: ResizeText): Record<string, Control> {
   const handle = (edge: TextEdge, x: number, y: number) =>
@@ -21,7 +21,7 @@ export function textControls(resize: ResizeText): Record<string, Control> {
       y,
       actionName: 'resizing',
       cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-      actionHandler: (_event, transform, px, py) => resize(transform.target, edge, new Point(px, py)),
+      actionHandler: (event, transform, px, py) => resize(transform.target, edge, new Point(px, py), event),
     })
   return {
     ml: handle('left', -0.5, 0),
