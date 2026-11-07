@@ -131,6 +131,19 @@ describe('font size and line height', () => {
     expect(changes.map((c) => c.cause)).toEqual(['inspector'])
   })
 
+  it('arrows below the smallest size stop there instead of being dropped', async () => {
+    const original = text({ fontSize: 5, lineHeight: 0.05, height: 40, autoFit: { minFontSize: 3 } })
+    const { editor, user, field } = await openInspector(doc([original]), { select: ['text-1'] })
+
+    for (const name of ['Font size', 'Line height', 'Min font size']) {
+      await user.click(field(name))
+      await user.keyboard('{Shift>}{ArrowDown}{/Shift}')
+      await settle()
+    }
+
+    expect(editor.getDocument().layers[0]).toEqual({ ...original, fontSize: 1, lineHeight: 0.01, autoFit: { minFontSize: 1 } })
+  })
+
   it('line height is a multiplier, 1.16 by default; the default leaves the key out', async () => {
     const { editor, user, field, changes } = await openInspector(doc([text()]), { select: ['text-1'] })
 

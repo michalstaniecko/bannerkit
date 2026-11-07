@@ -123,6 +123,12 @@ export function setOptional<L extends Layer, K extends keyof L>(layer: L, key: K
   return next
 }
 
+/**
+ * The lowest value of a whole-step field the schema wants above 0 (font sizes): its
+ * smallest step, so arrows and label drags stop there instead of being dropped.
+ */
+const POSITIVE_MIN = 1
+
 const shape = RectLayerSchema.shape
 const opacityRange = shape.opacity.unwrap()
 
@@ -456,11 +462,12 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           write: (l, weight) => ({ ...l, fontWeight: Number(weight) as FontWeight }),
         },
         {
-          // The declared (largest) size; above 0, which the schema checks on write.
+          // The declared (largest) size.
           control: 'number',
           key: 'fontSize',
           label: 'Size',
           name: 'Font size',
+          min: POSITIVE_MIN,
           read: (l) => l.fontSize,
           write: (l, fontSize) => ({ ...l, fontSize }),
         },
@@ -479,6 +486,7 @@ function textGroups(manifest: FontManifest): FieldGroup<TextLayer>[] {
           label: 'Line',
           name: 'Line height',
           step: 0.01,
+          min: 0.01, // above 0 (schema), the smallest step
           read: (l) => l.lineHeight ?? DEFAULT_LINE_HEIGHT,
           write: (l, lineHeight) => setOptional(l, 'lineHeight', lineHeight, DEFAULT_LINE_HEIGHT),
         },
@@ -544,11 +552,11 @@ function autoFitGroup(): FieldGroup<TextLayer> {
         },
       },
       {
-        // Above 0, which the schema checks on write.
         control: 'number',
         key: 'autoFit.minFontSize',
         label: 'Min',
         name: 'Min font size',
+        min: POSITIVE_MIN,
         when: (l) => l.autoFit !== undefined,
         read: (l) => l.autoFit?.minFontSize,
         write: (l, minFontSize) => (l.autoFit ? { ...l, autoFit: { ...l.autoFit, minFontSize } } : l),
