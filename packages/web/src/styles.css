@@ -124,6 +124,41 @@ textarea {
   background: var(--surface-selected);
 }
 
+/* Where a dragged row would land: a line above or below the row, or the Group row outlined. */
+.layer-row[data-drop='above'] {
+  box-shadow: inset 0 var(--drop-line) 0 var(--accent);
+}
+
+.layer-row[data-drop='below'] {
+  box-shadow: inset 0 calc(-1 * var(--drop-line)) 0 var(--accent);
+}
+
+.layer-row[data-drop='into'] {
+  box-shadow: inset 0 0 0 var(--drop-line) var(--accent);
+}
+
+.layer-list .layer-expand {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-size);
+  height: var(--control-size);
+  padding: var(--pad-none);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+}
+
+/* Rows inside a hidden or locked Group: their Layers are hidden or locked through it. */
+.layer-list li[data-inherited] > .layer-row .layer-name {
+  color: var(--text-muted);
+}
+
+.layer-list li[data-inherited~='hidden'] > .layer-row .layer-name {
+  font-style: italic;
+}
+
 .layer-list .layer-name {
   flex: 1;
   min-width: 0;

@@ -5,28 +5,40 @@ import {
   duplicateLayers as duplicate,
   findLayer,
   group,
+  moveLayerTo,
   nextLayerId,
   removeLayers,
   replaceLayer,
   ungroup,
   walkLayers,
   type Document,
+  type GroupLayer,
   type Layer,
+  type TreeEditResult,
 } from '@bannerkit/core'
 
 const copy = (document: Document): Document => structuredClone(document)
 
-/** Moves Layer `id` to the stacking position currently held by `targetId`. */
-export function moveLayer(document: Document, id: string, targetId: string): Document {
-  const next = copy(document)
-  const from = findLayer(next, id)
-  const to = findLayer(next, targetId)
-  if (!from || !to || from.parent !== to.parent || from.index === to.index) return next
-  // `next` is a fresh copy, so its parents' `layers` may be changed in place.
-  const siblings = from.parent.layers as Layer[]
-  const [layer] = siblings.splice(from.index, 1)
-  siblings.splice(to.index, 0, layer!)
-  return next
+/** Where a dragged row is dropped on another: above or below it in its parent, or on top of a Group's Layers. */
+export type DropPosition = 'above' | 'below' | 'into'
+
+/**
+ * Moves Layer `id` to where it was dropped on the row of `targetId` (core `moveLayerTo`).
+ * "Above" is higher in the stack (the list shows the top first). A Group left empty
+ * goes; a Group cannot go into its own descendant, nor a Layer onto itself.
+ */
+export function dropLayer(document: Document, id: string, targetId: string, position: DropPosition): TreeEditResult {
+  if (id === targetId) return { ok: false, code: 'INVALID_INPUT', message: `Layer "${id}" cannot be dropped on itself` }
+  if (position === 'into') return moveLayerTo(document, id, { into: targetId })
+  const from = findLayer(document, id)
+  const to = findLayer(document, targetId)
+  if (!from) return { ok: false, code: 'NOT_FOUND', message: `no Layer with id "${id}"` }
+  if (!to) return { ok: false, code: 'NOT_FOUND', message: `no Layer with id "${targetId}"` }
+  // The index counts the destination's Layers with the moved one already taken out.
+  const taken = from.parent === to.parent && from.index < to.index ? 1 : 0
+  const index = to.index - taken + (position === 'above' ? 1 : 0)
+  const into = to.parent === document ? null : (to.parent as GroupLayer).id
+  return moveLayerTo(document, id, { into, index })
 }
 
 /** What a Layer's `visible` and `locked` are when the key is left out. */
