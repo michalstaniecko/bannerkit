@@ -15,6 +15,7 @@ import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
 import { Segmented } from '../ui/Segmented.tsx'
 import { Select } from '../ui/Select.tsx'
+import { TextField } from '../ui/TextField.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
 import { inspectField, MIXED, selectedLayers, sharedFields, type InspectedField } from './inspect.ts'
@@ -165,6 +166,20 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
           onCancel={onCancel}
         />
       )
+    case 'text': {
+      const { field, value } = inspected
+      return (
+        <TextField
+          label={field.label}
+          name={field.name ?? field.label}
+          value={value === MIXED ? '' : value}
+          placeholder={value === MIXED ? MIXED_LABEL : undefined}
+          valid={() => true}
+          resetKey={resetKey}
+          onCommit={(value) => onWrite(inspected.write(value))}
+        />
+      )
+    }
     case 'readonly':
       return <ReadOnly label={field.label} name={field.name} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
     default:

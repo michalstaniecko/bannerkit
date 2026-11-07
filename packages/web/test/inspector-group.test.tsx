@@ -1,0 +1,114 @@
+// #28: the Inspector for a Group, for a Selection holding Groups, and for a Layer that
+// a locked or hidden Group around it locks or hides.
+import type { Document, GroupLayer, Layer } from '@bannerkit/core'
+import { act } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { doc, rect } from './editor-harness.ts'
+import { openInspector, settle } from './inspector-harness.tsx'
+
+const group = (id: string, layers: Layer[], over: Partial<GroupLayer> = {}): GroupLayer => ({ id, type: 'group', layers, ...over })
+
+/** group-1 "Badge" (0.8): rect-1 10,20 100×50 and rect-2 200,120 60×40. */
+const badge = (over: Partial<GroupLayer> = {}) =>
+  group(
+    'group-1',
+    [rect({ id: 'rect-1', x: 10, y: 20, width: 100, height: 50 }), rect({ id: 'rect-2', x: 200, y: 120, width: 60, height: 40 })],
+    { name: 'Badge', opacity: 0.8, ...over },
+  )
+
+const childXs = (document_: Document) => (document_.layers[0] as GroupLayer).layers.map((l) => (l.type === 'group' ? NaN : l.x))
+
+describe('Properties of a Group', () => {
+  it('shows its name, Box, opacity and flags; no rotation', async () => {
+    const { view, field, toggle } = await openInspector(doc([badge({ locked: true })]), { select: ['group-1'] })
+
+    expect(view.getByLabelText('ID').textContent).toBe('group-1')
+    expect(field('Name').value).toBe('Badge')
+    expect([field('X').value, field('Y').value, field('Width').value, field('Height').value]).toEqual(['10', '20', '250', '140'])
+    expect(field('Width').disabled).toBe(true)
+    expect(field('Height').disabled).toBe(true)
+    expect(field('Opacity').value).toBe('0.8')
+    expect(toggle('Visible').checked).toBe(true)
+    expect(toggle('Locked').checked).toBe(true)
+    expect(view.queryByRole('textbox', { name: 'Rotation' })).toBeNull()
+    expect(view.queryByRole('checkbox', { name: 'Shadow' })).toBeNull()
+  })
+
+  it('typing x/y moves everything in the Group by the delta, one undo step each', async () => {
+    const original = doc([badge(), rect({ id: 'rect-3' })])
+    const { editor, user, field, changes } = await openInspector(original, { select: ['group-1'] })
+
+    await user.clear(field('X'))
+    await user.type(field('X'), '0{Enter}')
+    await user.clear(field('Y'))
+    await user.type(field('Y'), '100{Enter}')
+    await settle()
+
+    const moved = editor.getDocument().layers[0] as GroupLayer
+    expect(moved.layers.map((l) => (l.type === 'group' ? [] : [l.x, l.y]))).toEqual([
+      [0, 100],
+      [190, 200],
+    ])
+    expect(editor.getDocument().layers[1]).toEqual(rect({ id: 'rect-3' }))
+    expect([field('X').value, field('Y').value]).toEqual(['0', '100'])
+    expect(changes.map((c) => c.cause)).toEqual(['inspector', 'inspector'])
+    expect(editor.getSelection()).toEqual(['group-1'])
+    await act(() => editor.undo())
+    await act(() => editor.undo())
+    expect(editor.getDocument()).toEqual(original)
+  })
+
+  it('dragging the X label previews the move and commits one step', async () => {
+    const original = doc([badge()])
+    const { editor, field, changes } = await openInspector(original, { select: ['group-1'] })
+    const drag = (type: 'mousedown' | 'mousemove' | 'mouseup', clientX: number) =>
+      act(async () => {
+        const target = type === 'mousedown' ? field('X').labels![0]! : document.body
+        target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY: 10, button: 0, buttons: type === 'mouseup' ? 0 : 1 }))
+        await settle()
+      })
+
+    await drag('mousedown', 50)
+    await drag('mousemove', 60)
+    await drag('mousemove', 75)
+    expect(childXs(editor.getDocument())).toEqual([35, 225])
+    expect(changes).toEqual([])
+    await drag('mouseup', 75)
+
+    expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+    await act(() => editor.undo())
+    expect(editor.getDocument()).toEqual(original)
+  })
+
+  it('typing a name sets it; clearing it removes the key', async () => {
+    const original = doc([badge()])
+    const { editor, user, field, changes } = await openInspector(original, { select: ['group-1'] })
+
+    await user.clear(field('Name'))
+    await user.type(field('Name'), 'Price{Enter}')
+    await settle()
+    expect((editor.getDocument().layers[0] as GroupLayer).name).toBe('Price')
+
+    await user.clear(field('Name'))
+    await user.keyboard('{Enter}')
+    await settle()
+    expect(editor.getDocument().layers[0]).not.toHaveProperty('name')
+    expect(field('Name').value).toBe('')
+    expect(changes.map((c) => c.cause)).toEqual(['inspector', 'inspector'])
+    await act(() => editor.undo())
+    expect((editor.getDocument().layers[0] as GroupLayer).name).toBe('Price')
+  })
+
+  it('opacity and flags write to the Group itself, not its children', async () => {
+    const { editor, user, field, toggle } = await openInspector(doc([badge()]), { select: ['group-1'] })
+
+    await user.clear(field('Opacity'))
+    await user.type(field('Opacity'), '0.5{Enter}')
+    await user.click(toggle('Visible'))
+    await settle()
+
+    const g = editor.getDocument().layers[0] as GroupLayer
+    expect([g.opacity, g.visible]).toEqual([0.5, false])
+    expect(g.layers).toEqual(badge().layers)
+  })
+})

@@ -31,6 +31,7 @@ import {
   type NumberFieldSpec,
   type SegmentedFieldSpec,
   type SelectFieldSpec,
+  type TextFieldSpec,
 } from './fields.ts'
 import type { GradientChange } from './gradient.ts'
 
@@ -45,7 +46,7 @@ export type Shared<T> = T | Mixed
 export type TextHeight = (layer: TextLayer) => number
 
 export type InspectOptions = FieldContext & {
-  /** Box fields stand for the shared Box of `layers`. Default: when there are several. */
+  /** Box fields stand for the shared Box of `layers`. Default: when there are several, or a Group (its Box). */
   sharedBox?: boolean
 }
 
@@ -54,6 +55,7 @@ export type InspectedField =
   | { control: 'number'; field: NumberFieldSpec; value: Shared<number | undefined>; disabled: boolean; write: (value: number) => DocumentRecipe }
   | { control: 'toggle'; field: FieldSpec; value: Shared<boolean>; disabled: boolean; write: (value: boolean) => DocumentRecipe }
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
+  | { control: 'text'; field: TextFieldSpec; value: Shared<string>; write: (value: string) => DocumentRecipe }
   | {
       control: 'select'
       field: SelectFieldSpec
@@ -152,7 +154,7 @@ function sharedOptions(field: SelectFieldSpec, layers: readonly Layer[]): readon
 /** What `field` shows for `layers` and how a value set on it changes the Document. */
 export function inspectField(field: FieldSpec, layers: readonly Layer[], options: InspectOptions): InspectedField {
   const ids = layers.map((l) => l.id)
-  const shared = options.sharedBox ?? layers.length > 1
+  const shared = options.sharedBox ?? (layers.length > 1 || layers.some((l) => l.type === 'group'))
   const each = (write: (layer: Layer) => Layer): DocumentRecipe => (document) => editLayers(document, ids, write)
   const context: FieldContext = { textLayout: options.textLayout }
   const textHeight: TextHeight = (layer) => options.textLayout(layer).height
@@ -160,6 +162,13 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
   switch (field.control) {
     case 'readonly':
       return { control: 'readonly', field, value: sharedValue(layers, (l) => field.read(l, context)) }
+    case 'text':
+      return {
+        control: 'text',
+        field,
+        value: sharedValue(layers, (l) => field.read(l, context)),
+        write: (value) => each((l) => field.write(l, value, context)),
+      }
     case 'toggle':
       return {
         control: 'toggle',

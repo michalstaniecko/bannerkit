@@ -17,6 +17,7 @@ import {
   type Fit,
   type FontManifest,
   type FontStyle,
+  type GroupLayer,
   fontStyleOf,
   type Shadow,
   type ImageLayer,
@@ -79,6 +80,13 @@ export type ToggleFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   write: (layer: L, value: boolean, context: FieldContext) => L
 }
 
+/** A line of text typed in a TextField (a Group's name). */
+export type TextFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
+  control: 'text'
+  read: (layer: L, context: FieldContext) => string
+  write: (layer: L, value: string, context: FieldContext) => L
+}
+
 /** A value shown but never edited (the Layer id). */
 export type ReadOnlyFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   control: 'readonly'
@@ -125,6 +133,7 @@ export type FieldSpec<L extends Layer = Layer> =
   | NumberFieldSpec<L>
   | ToggleFieldSpec<L>
   | ReadOnlyFieldSpec<L>
+  | TextFieldSpec<L>
   | SelectFieldSpec<L>
   | SegmentedFieldSpec<L>
 
@@ -160,7 +169,7 @@ function commonGroups<L extends LeafLayer>(): FieldGroup<L>[] {
     {
       key: 'layer',
       title: 'Layer',
-      fields: [{ control: 'readonly', key: 'id', label: 'ID', read: (l) => l.id }],
+      fields: [idField<L>()],
     },
     {
       key: 'layout',
@@ -219,38 +228,48 @@ function commonGroups<L extends LeafLayer>(): FieldGroup<L>[] {
         },
       ],
     },
-    {
-      key: 'appearance',
-      title: 'Appearance',
-      fields: [
-        {
-          control: 'number',
-          key: 'opacity',
-          label: 'Opacity',
-          min: opacityRange.minValue ?? undefined,
-          max: opacityRange.maxValue ?? undefined,
-          step: 0.01,
-          read: (l) => l.opacity ?? 1,
-          write: (l, opacity) => setOptional<Layer, 'opacity'>(l, 'opacity', opacity, 1) as L,
-        },
-        {
-          control: 'toggle',
-          key: 'visible',
-          label: 'Visible',
-          read: (l) => layerFlag(l, 'visible'),
-          write: (l, visible) => withLayerFlag(l, 'visible', visible),
-        },
-        {
-          control: 'toggle',
-          key: 'locked',
-          label: 'Locked',
-          read: (l) => layerFlag(l, 'locked'),
-          write: (l, locked) => withLayerFlag(l, 'locked', locked),
-        },
-      ],
-    },
+    appearanceGroup<L>(),
     shadowGroup<L>(),
   ]
+}
+
+/** Every Layer's id. */
+function idField<L extends Layer>(): FieldSpec<L> {
+  return { control: 'readonly', key: 'id', label: 'ID', read: (l) => l.id }
+}
+
+/** Every Layer's opacity and its Visible and Locked flags. */
+function appearanceGroup<L extends Layer>(): FieldGroup<L> {
+  return {
+    key: 'appearance',
+    title: 'Appearance',
+    fields: [
+      {
+        control: 'number',
+        key: 'opacity',
+        label: 'Opacity',
+        min: opacityRange.minValue ?? undefined,
+        max: opacityRange.maxValue ?? undefined,
+        step: 0.01,
+        read: (l) => l.opacity ?? 1,
+        write: (l, opacity) => setOptional<Layer, 'opacity'>(l, 'opacity', opacity, 1) as L,
+      },
+      {
+        control: 'toggle',
+        key: 'visible',
+        label: 'Visible',
+        read: (l) => layerFlag(l, 'visible'),
+        write: (l, visible) => withLayerFlag(l, 'visible', visible),
+      },
+      {
+        control: 'toggle',
+        key: 'locked',
+        label: 'Locked',
+        read: (l) => layerFlag(l, 'locked'),
+        write: (l, locked) => withLayerFlag(l, 'locked', locked),
+      },
+    ],
+  }
 }
 
 /** The shadow a Layer gets when its Shadow switch is turned on. */
@@ -619,6 +638,41 @@ function autoFitGroup(): FieldGroup<TextLayer> {
   }
 }
 
+/** A Group Box side: shown for the Group's Box (see `inspectField`), never read from the Layer. */
+function groupBox(key: 'x' | 'y' | 'width' | 'height', label: string, name?: string): NumberFieldSpec<GroupLayer> {
+  return { control: 'number', key, label, name, box: key, round: roundPx, read: () => undefined, write: (l) => l }
+}
+
+/**
+ * A Group's fields: its name (cleared, the key goes), its Box (x/y move everything in
+ * it, width/height only shown; keys shared with the leaves' Layout so a Selection
+ * mixing both keeps them), opacity and flags. No rotation: a Group has none.
+ */
+function groupGroups(): FieldGroup<GroupLayer>[] {
+  return [
+    {
+      key: 'layer',
+      title: 'Layer',
+      fields: [
+        idField(),
+        {
+          control: 'text',
+          key: 'name',
+          label: 'Name',
+          read: (l) => l.name ?? '',
+          write: (l, name) => (name === '' ? omit(l, 'name') : { ...l, name }),
+        },
+      ],
+    },
+    {
+      key: 'layout',
+      title: 'Layout',
+      fields: [groupBox('x', 'X'), groupBox('y', 'Y'), groupBox('width', 'W', 'Width'), groupBox('height', 'H', 'Height')],
+    },
+    appearanceGroup(),
+  ]
+}
+
 /** The Inspector's fields per Layer type, top to bottom. */
 export type FieldTable = { [T in LayerType]: FieldGroup<LayerOf<T>>[] }
 
@@ -628,8 +682,7 @@ export function layerFields(manifest: FontManifest): FieldTable {
     rect: [...commonGroups<RectLayer>(), ...rectGroups()],
     image: [...commonGroups<ImageLayer>(), ...imageGroups()],
     text: [...commonGroups<TextLayer>(), ...textGroups(manifest), textFillGroup()],
-    // A selected Group shows no fields yet; they come with the Group Inspector (#28).
-    group: [],
+    group: groupGroups(),
   }
 }
 
