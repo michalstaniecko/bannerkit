@@ -50,7 +50,7 @@ Every Layer has these fields: `id`, `type`, `x`, `y`, `width`, plus the optional
 |---|---|
 | `rect` | `height`, `fill` (colour or LinearGradient), `cornerRadius?` |
 | `image` | `height`, `src`, `fit` |
-| `text` | `text`, `fontFamily`, `fontWeight`, `fontSize`, `fill`, `height?`, `lineHeight?`, `letterSpacing?`, `align?`, `verticalAlign?`, `autoFit?` |
+| `text` | `text`, `fontFamily`, `fontWeight`, `fontSize`, `fill`, `height?`, `lineHeight?`, `letterSpacing?`, `align?`, `verticalAlign?`, `autoFit?`, `textTransform?` (v2) |
 
 Conventions:
 
@@ -59,6 +59,7 @@ Conventions:
 - **Gradient**: `{ "type": "linear", "angle": 120, "stops": [["#0e3a32", 0], ["#2f8f76", 1]] }`. The angle follows the CSS `linear-gradient` convention: `0` runs bottom to top, `90` runs left to right and `180` runs top to bottom. You need at least two stops, and each offset is between 0 and 1.
 - **Fit**: `contain` shows the whole image inside the Box and may leave empty bands. `cover` fills the Box and crops the overflow. `stretch` ignores the aspect ratio. Use the Asset size from `asset add` or `inspect` to size the Box.
 - **Text** always wraps at the Box `width`, and `\n` forces a line break. `fontFamily` and `fontWeight` must be a pair listed in `fonts/fonts.json`; currently that is `Inter` at 100–900. `lineHeight` is a multiple of the font size: lines are `fontSize × 1.13 × lineHeight` apart, and the default is `1.16`. `letterSpacing` is in px. Without `height`, the Box grows to fit the text. With `height`, `verticalAlign` positions the text inside the Box.
+- **textTransform**: `"uppercase"` or `"lowercase"` changes the case the text is drawn in; `"none"` (or leaving the key out) draws it as written. Keep `text` in its natural case: the transform applies only when the text is laid out. Line breaks, AutoFit and the `lines[].text` that `inspect` reports all use the transformed text, so uppercase usually wraps sooner or shrinks further. The case change ignores locale, and it may change the length of the text (`ß` becomes `SS`).
 - **AutoFit**: with `"autoFit": { "minFontSize": 40 }`, the font size shrinks in 1px steps from `fontSize` until the wrapped text fits the Box. AutoFit requires `height`. If the text still doesn't fit at `minFontSize`, it renders clipped, and validation reports a **warning**, not an error. To fix it, shorten the text, enlarge the Box or lower `minFontSize`.
 - **ids** must be unique within the Document. Name new Layers `<type>-<n>`, with n one above the highest number already used for that type (`text-5`, `image-3`). The editor uses the same scheme. Refer to Layers by id when you talk to the human.
 - **Strictness**: unknown keys are errors, and each error includes a "did you mean" hint. Never add your own fields. Omit an optional field instead of setting it to `null`. The only nullable field is `canvas.background`.
@@ -91,7 +92,7 @@ Exit codes are 0 for success, 1 for an operation error or invalid Documents, and
 
 The Presets are `1200x628`, `1080x1080`, `1080x1920`, `300x250` and `728x90`. Write the format as `jpg`, because `jpeg` is rejected. `--doc` and `--size` can be repeated. When you give both, a Document must match both filters, and an empty `files` list means nothing matched. `preview` and `render` refuse to run while the Document has validation errors.
 
-Each `inspect` entry in `layers` has the form `{ index, id, type, extent, placement: "inside"|"partial"|"outside", selected }`. Text Layers add `text: { fontSize, requestedFontSize, height, overflow, lines: [{ text, width }] }`, and image Layers add `asset: { src, width, height }`. The `warnings` list contains text overflow and Layers that are not fully inside the Canvas.
+Each `inspect` entry in `layers` has the form `{ index, id, type, extent, placement: "inside"|"partial"|"outside", selected }`. Text Layers add `text: { fontSize, requestedFontSize, height, overflow, lines: [{ text, width }] }` (`lines[].text` is after `textTransform`), and image Layers add `asset: { src, width, height }`. The `warnings` list contains text overflow and Layers that are not fully inside the Canvas.
 
 ## Selection
 
