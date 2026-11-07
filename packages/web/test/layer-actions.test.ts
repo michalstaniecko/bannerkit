@@ -2,7 +2,7 @@
 // through `editor.apply(document, { cause: 'layers' })`.
 import { validateDocument, type Document, type Layer, type LeafLayer } from '@bannerkit/core'
 import { describe, expect, it } from 'vitest'
-import { addLayer, deleteLayers, duplicateLayers, moveLayer, setLayerFlag } from '../src/layer-actions.ts'
+import { addLayer, deleteLayers, dropLayer, duplicateLayers, setLayerFlag } from '../src/layer-actions.ts'
 
 describe('deleteLayers', () => {
   it('removes one or several Layers', () => {
@@ -65,21 +65,47 @@ const doc = (layers: Layer[]): Document => ({
 
 const ids = (d: Document) => d.layers.map((l) => l.id)
 
-describe('moveLayer', () => {
+describe('dropLayer', () => {
   const three = doc([rect('a'), rect('b'), rect('c')]) // bottom → top
+  const moved = (result: ReturnType<typeof dropLayer>) => {
+    if (!result.ok) throw new Error(result.message)
+    return result.document
+  }
+  const tree = (d: Document | Layer): unknown =>
+    'layers' in d ? ('type' in d ? { [d.id]: d.layers.map(tree) } : d.layers.map(tree)) : d.id
+  const grouped = () =>
+    doc([rect('a'), { id: 'g', type: 'group', layers: [rect('x'), { id: 'h', type: 'group', layers: [rect('y')] }] }, rect('b')])
 
-  it('moves a Layer to the stacking position of another, upwards', () => {
-    expect(ids(moveLayer(three, 'a', 'c'))).toEqual(['b', 'c', 'a'])
-  })
-
-  it('moves a Layer to the stacking position of another, downwards', () => {
-    expect(ids(moveLayer(three, 'c', 'a'))).toEqual(['c', 'a', 'b'])
-  })
-
-  it('leaves the Document unchanged when dropped on itself, and the input untouched', () => {
-    expect(ids(moveLayer(three, 'b', 'b'))).toEqual(['a', 'b', 'c'])
-    moveLayer(three, 'a', 'c')
+  it('drops a Layer above or below another in the same parent (the list shows the top first)', () => {
+    expect(ids(moved(dropLayer(three, 'a', 'c', 'above')))).toEqual(['b', 'c', 'a'])
+    expect(ids(moved(dropLayer(three, 'a', 'c', 'below')))).toEqual(['b', 'a', 'c'])
+    expect(ids(moved(dropLayer(three, 'c', 'a', 'above')))).toEqual(['a', 'c', 'b'])
+    expect(ids(moved(dropLayer(three, 'c', 'a', 'below')))).toEqual(['c', 'a', 'b'])
     expect(ids(three)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('drops into a Group on top of its Layers', () => {
+    expect(tree(moved(dropLayer(grouped(), 'a', 'g', 'into')))).toEqual([{ g: ['x', { h: ['y'] }, 'a'] }, 'b'])
+  })
+
+  it('drops next to a Layer inside a Group, and out of a Group next to a root Layer', () => {
+    expect(tree(moved(dropLayer(grouped(), 'b', 'x', 'below')))).toEqual(['a', { g: ['b', 'x', { h: ['y'] }] }])
+    expect(tree(moved(dropLayer(grouped(), 'x', 'a', 'above')))).toEqual(['a', 'x', { g: [{ h: ['y'] }] }, 'b'])
+  })
+
+  it('removes a Group whose last Layer is dropped out of it', () => {
+    expect(tree(moved(dropLayer(grouped(), 'y', 'b', 'above')))).toEqual(['a', { g: ['x'] }, 'b', 'y'])
+  })
+
+  it('refuses a Group dropped into or next to its own descendant, and a drop on itself', () => {
+    expect(dropLayer(grouped(), 'g', 'h', 'into')).toMatchObject({ ok: false, code: 'INVALID_INPUT' })
+    expect(dropLayer(grouped(), 'g', 'y', 'above')).toMatchObject({ ok: false, code: 'INVALID_INPUT' })
+    expect(dropLayer(grouped(), 'g', 'g', 'into')).toMatchObject({ ok: false })
+    expect(dropLayer(three, 'b', 'b', 'above')).toMatchObject({ ok: false })
+  })
+
+  it('refuses dropping into a Layer that is not a Group', () => {
+    expect(dropLayer(three, 'a', 'b', 'into')).toMatchObject({ ok: false, code: 'INVALID_INPUT' })
   })
 })
 
