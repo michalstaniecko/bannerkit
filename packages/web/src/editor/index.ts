@@ -33,7 +33,7 @@ import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './font
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
 import { createHistory } from './history.ts'
 import { roundAngle, roundPx } from './rounding.ts'
-import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
+import { applyLayer, isFrozen, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
 import { fitZoom, type Size } from './zoom.ts'
 
 export type EditorOptions = {
@@ -109,7 +109,11 @@ export type Editor = {
   canRedo(): boolean
   /** The ids of the selected Layers, bottom → top. */
   getSelection(): string[]
-  /** Selects the Layers `ids` (none for `[]`), skipping locked, hidden and unknown ones. */
+  /**
+   * Selects the Layers `ids` (none for `[]`), skipping unknown ones. Locked and hidden
+   * Layers are selected too (the Layer list picks them for the Inspector), but on the
+   * Canvas they have no handles and do not move.
+   */
   select(ids: readonly string[]): void
   /** Subscribes to an editor event; returns the unsubscribe function. */
   on<K extends keyof EditorEvents>(type: K, listener: (event: EditorEvents[K]) => void): () => void
@@ -290,15 +294,19 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     }
   }
 
-  /** Selects the Layers `ids`, skipping locked, hidden and unknown ones. */
+  /** Selects the Layers `ids`, locked and hidden ones too, skipping unknown ones. */
   const selectIds = (ids: readonly string[]) => {
     const c = requireCanvas()
-    const objects = entries
-      .filter((e) => ids.includes(e.base.id) && !e.base.locked && e.base.visible !== false)
-      .map((e) => e.object)
-    c.discardActiveObject()
-    if (objects.length === 1) c.setActiveObject(objects[0]!)
-    else if (objects.length > 1) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
+    const objects = entries.filter((e) => ids.includes(e.base.id)).map((e) => e.object)
+    const held = holdSelection
+    holdSelection = true // one report for the whole swap, not a `[]` in between
+    try {
+      c.discardActiveObject()
+      if (objects.length === 1) c.setActiveObject(objects[0]!)
+      else if (objects.length > 1) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
+    } finally {
+      holdSelection = held
+    }
     c.requestRenderAll()
     reportSelection()
   }
@@ -317,7 +325,18 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     return showStep(snapshot, direction)
   }
 
+  /** Whether the Selection holds a locked or hidden Layer, so it shows no handles and does not move. */
+  const selectionFrozen = (): boolean => {
+    const active = canvas?.getActiveObjects() ?? []
+    return entries.some((e) => isFrozen(e.base) && active.includes(e.object))
+  }
+
   const reportSelection = () => {
+    const active = canvas?.getActiveObject()
+    if (active instanceof ActiveSelection) {
+      const frozen = selectionFrozen()
+      active.set({ hasControls: !frozen, lockMovementX: frozen, lockMovementY: frozen })
+    }
     if (holdSelection) return
     const c = requireCanvas()
     const ids = entries.filter((e) => c.getActiveObjects().includes(e.object)).map((e) => e.base.id)
@@ -359,7 +378,7 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
     const direction = ARROWS[event.key]
     if (!direction || !canvas || event.altKey || event.ctrlKey || event.metaKey) return
     const active = canvas.getActiveObject()
-    if (!active || (active instanceof Textbox && active.isEditing)) return
+    if (!active || (active instanceof Textbox && active.isEditing) || selectionFrozen()) return
     event.preventDefault()
     const step = event.shiftKey ? NUDGE_SHIFT : NUDGE
     active.set({ left: active.left + direction[0] * step, top: active.top + direction[1] * step })
