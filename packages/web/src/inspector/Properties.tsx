@@ -7,8 +7,10 @@ import type { Layer } from '@bannerkit/core'
 import type { RefObject } from 'react'
 import type { Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
+import { ColorField } from '../ui/ColorField.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
+import { Select } from '../ui/Select.tsx'
 import { editLayer, fieldsFor, writeNumber, type FieldSpec } from './fields.ts'
 import { useInspected } from './useInspected.ts'
 
@@ -30,7 +32,7 @@ export function Properties({ editor, loaded }: Props) {
         fieldsFor(layer).map((group) => (
           <Section key={group.key} title={group.title}>
             <div className="field-grid">
-              {group.fields.map((field) => (
+              {group.fields.filter((field) => field.when?.(layer) ?? true).map((field) => (
                 <Field key={field.key} field={field} layer={layer} resetKey={reloads} onWrite={(change) => write(layer.id, change)} />
               ))}
             </div>
@@ -65,6 +67,28 @@ function Field({ field, layer, resetKey, onWrite }: FieldProps) {
       )
     case 'toggle':
       return <Checkbox label={field.label} checked={field.read(layer)} onChange={(value) => onWrite((l) => field.write(l, value))} />
+    case 'color':
+      return (
+        <ColorField
+          label={field.label}
+          name={field.name}
+          value={field.read(layer)}
+          nullable={field.nullable}
+          placeholder={field.placeholder}
+          resetKey={resetKey}
+          onCommit={(value) => onWrite((l) => field.write(l, value))}
+        />
+      )
+    case 'select':
+      return (
+        <Select
+          label={field.label}
+          name={field.name}
+          value={field.read(layer)}
+          options={field.options}
+          onChange={(value) => onWrite((l) => field.write(l, value))}
+        />
+      )
     case 'readonly':
       return <ReadOnly label={field.label} value={field.read(layer)} />
   }
