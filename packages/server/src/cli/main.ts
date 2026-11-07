@@ -25,6 +25,7 @@ import {
   createProject,
   duplicateDocument,
   inspect,
+  migrate,
   preview,
   render,
   resizeDocument,
@@ -33,6 +34,7 @@ import {
   validate,
   type AddAssetsResult,
   type InspectResult,
+  type MigrateResult,
   type ValidateResult,
 } from '../ops/index.ts'
 
@@ -169,6 +171,15 @@ function validateReport(report: ValidateResult): string {
   return lines.join('\n')
 }
 
+function migrateReport(r: MigrateResult): string {
+  const lines = [
+    ...r.migrated.map((d) => `migrated ${d.path}`),
+    ...r.invalid.flatMap((d) => [`invalid ${d.path}`, ...d.errors.map((issue) => `  error ${issueLine(issue)}`)]),
+  ]
+  lines.push(`${r.migrated.length} migrated, ${r.unchanged.length} unchanged, ${r.invalid.length} invalid`)
+  return lines.join('\n')
+}
+
 const px = (n: number) => `${Math.round(n * 100) / 100}`
 
 function inspectReport(r: InspectResult): string {
@@ -250,6 +261,16 @@ const COMMANDS: Record<string, Command> = {
     human: validateReport,
     failed: (r: ValidateResult) => !r.ok,
   },
+  migrate: {
+    usage: 'bannerkit migrate <project>',
+    summary:
+      'Rewrite older-version Documents as the current version (only `version` changes); invalid ones are reported, not written, and exit 1',
+    positionals: [1, 1],
+    options: {},
+    run: ({ root, args: [project] }) => migrate({ root, project: project! }),
+    human: migrateReport,
+    failed: (r: MigrateResult) => r.invalid.length > 0,
+  },
   inspect: {
     usage: 'bannerkit inspect <project> [<doc>]',
     summary:
@@ -299,7 +320,7 @@ function helpText(): string {
     'Global options:',
     '  --root <dir>   Projects root (default: $BANNERKIT_ROOT, then ./projects)',
     '  --json         Print { ok, result } or { ok: false, error } as JSON on stdout',
-    '                 (validate prints { ok: false, result } when Documents are invalid)',
+    '                 (validate and migrate print { ok: false, result } when Documents are invalid)',
     '  -h, --help     Show this help',
     '',
     'Exit codes: 0 success, 1 operation error, 2 usage error.',
