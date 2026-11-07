@@ -35,6 +35,9 @@ test('a Canvas size typed in the Inspector is saved, and Fit zooms to it after t
 
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect.poll(() => zoom(page)).toBe(fitted)
+  // The undo is autosaved before the file changes on disk, so the editor reloads it.
+  await expect.poll(async () => (await projects.read('doc-inspector', 'banner')).canvas.height).toBe(200)
+  await expect(page.locator('.save')).toHaveText('Saved')
 
   await projects.write('doc-inspector', { documents: { banner: banner(400, 1600) } })
   await expect(height).toHaveValue('1600')
