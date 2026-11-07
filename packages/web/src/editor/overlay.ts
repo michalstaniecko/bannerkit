@@ -32,12 +32,16 @@ export function readOverlayColors(container: HTMLElement): OverlayColors {
  */
 export function attachOverlay(canvas: Canvas, marks: () => readonly Mark[], zoom: () => number, colors: OverlayColors): () => void {
   let drawn = false
+  // An Export's render (`toCanvasElement`) fires these too, with the top context taken
+  // away meanwhile: nothing to clear or draw then.
+  const exporting = () => !(canvas.contextTop as CanvasRenderingContext2D | undefined)
   const clear = () => {
-    if (!drawn) return
+    if (!drawn || exporting()) return
     canvas.clearContext(canvas.contextTop)
     drawn = false
   }
   const draw = () => {
+    if (exporting()) return
     const shown = marks()
     if (shown.length === 0) return
     const ctx = canvas.contextTop
