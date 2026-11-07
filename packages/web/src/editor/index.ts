@@ -55,7 +55,7 @@
 // running, the distances from the Selection Box to the Layer a click would select
 // there, or to the Canvas, are Marks too.
 //
-// Guides (guides.ts): drawn by the overlay across the Canvas, hit within 3 screen px
+// Guides (guide-adapter.ts, guides.ts): drawn by the overlay across the Canvas, hit within 3 screen px
 // (after the active object's handles, before the Layers: the cursor turns `ew-resize` /
 // `ns-resize` and the Guide lights up) and dragged by `dragGuide`, which the Rulers use
 // too. A drag is a Gesture preview of `guides` only, which lays no Layer out again;
@@ -79,10 +79,9 @@ import { attachOverlay, readOverlayColors } from './overlay.ts'
 import { attachSnapAdapter, type SnapAdapter } from './snap-adapter.ts'
 import { attachResizeSnap, type ResizeSnap } from './snap-resize-adapter.ts'
 import { attachMeasurement, type MeasureAdapter } from './measure-adapter.ts'
-import type { GuideMark, Mark } from './snapping/marks.ts'
-import { guideTargets, snapGuide } from './snapping/guide.ts'
-import { guideAt, setGuide } from './guides.ts'
+import type { Mark } from './snapping/marks.ts'
 import type { Axis } from './snapping/targets.ts'
+import { createGuideAdapter, type GuideDrag, type GuidesEvent } from './guide-adapter.ts'
 import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
 export type EditorOptions = {
@@ -170,28 +169,7 @@ export type CanvasEvent = Size
  */
 export type SelectionBoxEvent = { box: Rect | null }
 
-/** Where a Guide gesture's pointer is: client px, with the keys held (a `MouseEvent` is one). */
-export type GuidePointer = { clientX: number; clientY: number; metaKey?: boolean; ctrlKey?: boolean }
-
-/**
- * A Guide being dragged (`dragGuide`). Each method resolves once the Canvas shows it;
- * after `end` or `cancel` (or Escape, or any other step dropping its preview) every
- * method does nothing.
- */
-export type GuideDrag = {
-  /** Moves the Guide under `pointer` (snapped unless Cmd/Ctrl or Snapping off); over a Ruler it is shown removed. */
-  move(pointer: GuidePointer): Promise<void>
-  /** Releases at `pointer`: one `guides` step (none without a move, or for a new Guide released over a Ruler). */
-  end(pointer: GuidePointer): Promise<void>
-  /** Shows the Guides from before the gesture again, without a step. */
-  cancel(): Promise<void>
-}
-
-/** The Guide being dragged: `value` in Canvas px, undefined while it is over a Ruler (to be removed). */
-export type DraggedGuide = { axis: Axis; index: number | 'new'; value: number | undefined }
-
-/** The Guides shown changed (any step, preview or load), or the one being dragged did. */
-export type GuidesEvent = { guides: { x: number[]; y: number[] }; dragging: DraggedGuide | null }
+export type { DraggedGuide, GuideDrag, GuidePointer, GuidesEvent } from './guide-adapter.ts'
 
 export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent; canvas: CanvasEvent; selectionBox: SelectionBoxEvent; guides: GuidesEvent }
 
@@ -294,9 +272,6 @@ const ARROWS: Record<string, [number, number]> = {
   ArrowDown: [0, 1],
 }
 
-/** How near a Guide the pointer hits it, in screen px. */
-const GUIDE_HIT = 3
-
 /** Keys typed into these go to the field, not the editor. */
 const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
 
@@ -347,14 +322,6 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     selectionBox: new Set(),
     guides: new Set(),
   }
-  /** The Guide drag running, if any (`dragGuide`). */
-  let guideDrag: { dragging: DraggedGuide; marks: Mark[]; settle: () => void } | undefined
-  /** The Guide under the pointer on the Canvas (lit up). */
-  let hoveredGuide: { axis: Axis; index: number } | undefined
-  /** Elements a Guide released over is removed on (`addRuler`). */
-  const rulers = new Set<Element>()
-  /** The last `guides` event sent (as JSON). */
-  let sentGuides: string | undefined
   /** The last `selectionBox` sent (as JSON), so an unchanged Box is not sent again. */
   let sentBox: string | undefined
   /** The Canvas size last reported by a `canvas` event. */
@@ -363,6 +330,20 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   const emit = <K extends keyof EditorEvents>(type: K, event: EditorEvents[K]) => {
     for (const listener of [...listeners[type]]) listener(event)
   }
+
+  /** Guides: their drag, their hits on the Canvas, the Rulers and the `guides` events. */
+  const guides = createGuideAdapter({
+    canvas: () => requireCanvas(),
+    document: () => current,
+    base: () => previewing?.base ?? documentNow(),
+    startPreview: (base) => startPreview(base, dropPreview()),
+    finishTextEdit: () => finishTextEdit(),
+    measure: () => env.measure,
+    zoom: () => zoom,
+    snapping: () => snapping,
+    requestRender: () => canvas?.requestRenderAll(),
+    emit: (event) => emit('guides', event),
+  })
 
   /** Reports the shown Canvas size when it differs from the one last reported (see `CanvasEvent`). */
   const settleSize = () => {
@@ -427,7 +408,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   }
 
   /** Everything the overlay draws now: snap lines of a Guide drag, then of a drag or a resize (with equal gaps), then the Measurement. */
-  const allMarks = (): Mark[] => [...(guideDrag?.marks ?? []), ...(snap?.marks() ?? []), ...(resizeSnap?.marks() ?? []), ...(measurement?.marks() ?? [])]
+  const allMarks = (): Mark[] => [...guides.marks(), ...(snap?.marks() ?? []), ...(resizeSnap?.marks() ?? []), ...(measurement?.marks() ?? [])]
 
   /** Escape with a Layer in a Group selected selects its Group instead. */
   const escapeKey = (event: KeyboardEvent): boolean => {
@@ -511,171 +492,6 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     emit('selectionBox', { box })
   }
 
-  /** Sends the Guides shown and the one dragged when they differ from the ones last sent (see `GuidesEvent`). */
-  const reportGuides = () => {
-    if (!current) return
-    const event: GuidesEvent = { guides: { x: [...(current.guides?.x ?? [])], y: [...(current.guides?.y ?? [])] }, dragging: guideDrag ? { ...guideDrag.dragging } : null }
-    const key = JSON.stringify(event)
-    if (key === sentGuides) return
-    sentGuides = key
-    emit('guides', event)
-  }
-
-  /** The Guides as the overlay draws them, the hovered or dragged one lit up. */
-  const guideMarks = (): GuideMark[] => {
-    const guides = current?.guides
-    if (!current || !guides) return []
-    const { width, height } = current.canvas
-    const drag = guideDrag?.dragging
-    const lit = (axis: Axis, index: number, count: number) =>
-      (hoveredGuide?.axis === axis && hoveredGuide.index === index) ||
-      (drag !== undefined && drag.value !== undefined && drag.axis === axis && (drag.index === 'new' ? index === count - 1 : drag.index === index))
-    return (['x', 'y'] as const).flatMap((axis) =>
-      guides[axis].map((at, index, all): GuideMark => ({ kind: 'guide', axis, at, from: 0, to: axis === 'x' ? height : width, active: lit(axis, index, all.length) })),
-    )
-  }
-
-  /** Whether `pointer` is over a Ruler (`addRuler`). */
-  const overRuler = ({ clientX, clientY }: GuidePointer) =>
-    [...rulers].some((element) => {
-      const r = element.getBoundingClientRect()
-      return clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom
-    })
-
-  /** `pointer` in Canvas px. */
-  const canvasPoint = ({ clientX, clientY }: GuidePointer) => {
-    const r = requireCanvas().lowerCanvasEl.getBoundingClientRect()
-    return { x: (clientX - r.left) / zoom, y: (clientY - r.top) / zoom }
-  }
-
-  const dragGuide = (axis: Axis, index: number | 'new'): GuideDrag => {
-    const c = requireCanvas()
-    if (!current) throw new Error('No Document loaded')
-    guideDrag?.settle()
-    finishTextEdit()
-    const base = previewing?.base ?? documentNow()
-    const list = base.guides?.[axis] ?? []
-    if (index !== 'new' && !(Number.isInteger(index) && index >= 0 && index < list.length)) throw new Error(`No Guide ${index} on ${axis}`)
-    const preview = startPreview(base, dropPreview())
-    const targets = guideTargets(base, env.measure)
-    const keys = c.lowerCanvasEl.ownerDocument
-    let moved = false
-    let done = false
-    const finish = () => {
-      if (done) return
-      done = true
-      keys.removeEventListener('keydown', onKey)
-      if (guideDrag === state) guideDrag = undefined
-      reportGuides()
-      canvas?.requestRenderAll()
-    }
-    const state = {
-      dragging: { axis, index, value: index === 'new' ? undefined : list[index] } as DraggedGuide,
-      marks: [] as Mark[],
-      settle: () => {
-        if (preview.ended()) finish()
-      },
-    }
-    guideDrag = state
-    const live = () => {
-      if (!done && preview.ended()) finish()
-      return !done
-    }
-    const cancel = async () => {
-      if (!live()) return
-      finish()
-      await preview.cancel()
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      void cancel()
-    }
-    keys.addEventListener('keydown', onKey)
-    const move = (pointer: GuidePointer): Promise<void> => {
-      if (!live()) return Promise.resolve()
-      moved = true
-      let value: number | undefined
-      state.marks = []
-      if (!overRuler(pointer)) {
-        const raw = canvasPoint(pointer)[axis]
-        if (!snapping || pointer.metaKey || pointer.ctrlKey) value = Math.round(raw) || 0
-        else ({ value, marks: state.marks } = snapGuide(targets, axis, raw, zoom))
-      }
-      state.dragging.value = value
-      reportGuides()
-      c.requestRenderAll()
-      return preview.show((d) => setGuide(d, axis, index, value))
-    }
-    return {
-      move,
-      async end(pointer) {
-        if (!live()) return
-        if (!moved) return cancel()
-        await move(pointer)
-        finish()
-        await preview.commit({ cause: 'guides' })
-      },
-      cancel,
-    }
-  }
-
-  /**
-   * Guides on the Canvas: the pointer over one (within GUIDE_HIT screen px, not over a
-   * handle of the active object, no gesture running) lights it up and shows a resize
-   * cursor, and a press there drags it (`dragGuide`) instead of reaching Fabric, so it
-   * wins over the Layers below. Listens in the capture phase on Fabric's wrapper.
-   */
-  const attachGuideHits = (c: DocumentCanvas): (() => void) => {
-    const wrapper = c.wrapperEl
-    const page = wrapper.ownerDocument
-    const under = (e: MouseEvent) => {
-      if (!current?.guides || guideDrag || c._currentTransform || c.selecting) return undefined
-      const active = c.getActiveObject()
-      if (active?.findControl(c.getViewportPoint(e))) return undefined
-      return guideAt(current.guides, c.getScenePoint(e), GUIDE_HIT / zoom)
-    }
-    const hover = (hit: { axis: Axis; index: number } | undefined) => {
-      if (hit?.axis === hoveredGuide?.axis && hit?.index === hoveredGuide?.index) return
-      hoveredGuide = hit
-      c.requestRenderAll()
-    }
-    const onMove = (e: MouseEvent) => {
-      // With Alt held the pointer measures (measure-adapter.ts), so it passes Guides by.
-      const hit = e.altKey ? undefined : under(e)
-      hover(hit)
-      if (!hit) return
-      e.stopPropagation()
-      c.upperCanvasEl.style.cursor = hit.axis === 'x' ? 'ew-resize' : 'ns-resize'
-    }
-    const onOut = () => hover(undefined)
-    const onDown = (e: MouseEvent) => {
-      if (e.button !== 0) return
-      const hit = under(e)
-      if (!hit) return
-      e.stopPropagation()
-      e.preventDefault()
-      hover(undefined)
-      const drag = dragGuide(hit.axis, hit.index)
-      const move = (event: MouseEvent) => void drag.move(event)
-      const up = (event: MouseEvent) => {
-        page.removeEventListener('mousemove', move)
-        page.removeEventListener('mouseup', up)
-        void drag.end(event)
-      }
-      page.addEventListener('mousemove', move)
-      page.addEventListener('mouseup', up)
-    }
-    wrapper.addEventListener('mousemove', onMove, true)
-    wrapper.addEventListener('mousedown', onDown, true)
-    wrapper.addEventListener('mouseout', onOut)
-    return () => {
-      wrapper.removeEventListener('mousemove', onMove, true)
-      wrapper.removeEventListener('mousedown', onDown, true)
-      wrapper.removeEventListener('mouseout', onOut)
-    }
-  }
-
   /** Ends a logical modification of `objects`: bakes each into its Layer and emits one `change`. */
   const commit = (objects: FabricObject[], cause: ChangeCause) => {
     const c = requireCanvas()
@@ -740,7 +556,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     c.add(...roots.map((e) => e.object))
     applyZoom()
     c.renderAll()
-    reportGuides()
+    guides.report()
     return true
   }
 
@@ -765,7 +581,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     const layers = current!.layers
     current = { ...structuredClone({ ...next, layers: [] }), layers }
     canvas?.requestRenderAll()
-    reportGuides()
+    guides.report()
   }
 
   /**
@@ -803,7 +619,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       c.backgroundColor = current.canvas.background ?? ''
       if (group) c.setActiveObject(new ActiveSelection(group, { canvas: c }))
       applyZoom()
-      reportGuides()
+      guides.report()
       return true
     } finally {
       holdSelection = false
@@ -855,7 +671,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   /** Drops a preview in progress, so any other step starts from the Document before it. */
   const dropPreview = async () => {
     await previewing?.drop()
-    guideDrag?.settle()
+    guides.settle()
   }
 
   /**
@@ -1098,8 +914,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
         canvasSize: () => current?.canvas,
       })
       measurement = measuring
-      const detachOverlay = attachOverlay(c, () => [...guideMarks(), ...allMarks()], () => zoom, readOverlayColors(container))
-      const detachGuides = attachGuideHits(c)
+      const detachOverlay = attachOverlay(c, () => [...guides.guideMarks(), ...allMarks()], () => zoom, readOverlayColors(container))
+      const detachGuides = guides.attachHits(c)
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
       c.on('selection:created', groupSelectionControls)
@@ -1129,7 +945,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
     async load(document, { assetUrl = (src: string) => src } = {}) {
       previewing?.end()
-      guideDrag?.settle()
+      guides.settle()
       if (!(await show(document, { assetUrl, measure }))) return
       history.reset(document)
       settleSize()
@@ -1221,12 +1037,9 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
     marks: allMarks,
 
-    dragGuide,
+    dragGuide: (axis, index) => guides.drag(axis, index),
 
-    addRuler(element) {
-      rulers.add(element)
-      return () => rulers.delete(element)
-    },
+    addRuler: (element) => guides.addRuler(element),
 
     zoomToFit(viewport) {
       if (!current) throw new Error('No Document loaded')
@@ -1256,11 +1069,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       listeners.canvas.clear()
       listeners.selectionBox.clear()
       listeners.guides.clear()
-      rulers.clear()
-      guideDrag = undefined
-      hoveredGuide = undefined
+      guides.reset()
       sentBox = undefined
-      sentGuides = undefined
       settledSize = undefined
       await c?.dispose()
       // Fabric's dispose puts the bare <canvas> back into the container; take it out too.
