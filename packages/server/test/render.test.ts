@@ -69,6 +69,15 @@ describe('renderDocument: text Layers', () => {
     await expectImageSnapshot('text-wrap-left', png)
   })
 
+  it('draws text in the case textTransform asks for', async () => {
+    const typed = await renderDocument(doc([textLayer({ text: 'Spring sale', textTransform: 'uppercase' })]))
+    const uppercase = await renderDocument(doc([textLayer({ text: 'SPRING SALE' })]))
+    const asTyped = await renderDocument(doc([textLayer({ text: 'Spring sale' })]))
+
+    expect(typed.equals(uppercase)).toBe(true)
+    expect(typed.equals(asTyped)).toBe(false)
+  })
+
   it('honours align, verticalAlign and letterSpacing', async () => {
     const layer = textLayer({ text: 'SALE', align: 'right', verticalAlign: 'bottom', height: 100, letterSpacing: 4 })
     const png = await renderDocument(doc([layer], '#ffffff', 200, 120))

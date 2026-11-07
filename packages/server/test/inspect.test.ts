@@ -25,12 +25,12 @@ const text = (over: Record<string, unknown>) => ({
   ...over,
 })
 
-async function doc(layers: unknown[], canvas = { width: 300, height: 250 }) {
+async function doc(layers: unknown[], canvas = { width: 300, height: 250 }, version = 1) {
   await writeDocument({
     root,
     project: 'p',
     name: 'hero',
-    document: { version: 1, name: 'hero', canvas: { ...canvas, background: '#ffffff' }, layers },
+    document: { version, name: 'hero', canvas: { ...canvas, background: '#ffffff' }, layers },
   })
 }
 
@@ -149,6 +149,14 @@ describe('inspect: Text Layout', () => {
     expect(layer!.text).toMatchObject({ fontSize: 20, requestedFontSize: 20, overflow: false })
     expect(layer!.text!.lines.map((l) => l.text)).toEqual(['Summer', 'Summer', 'sale'])
     expect(result.warnings).toEqual([])
+  })
+
+  it('reports the lines as drawn, after textTransform', async () => {
+    await doc([text({ text: 'Summer sale', textTransform: 'uppercase' })], undefined, 2)
+
+    const { text: layout } = (await inspect({ root, project: 'p', name: 'hero' })).layers[0]!
+
+    expect(layout!.lines.map((l) => l.text)).toEqual(['SUMMER SALE'])
   })
 
   it('reports the smaller font size AutoFit resolved to', async () => {
