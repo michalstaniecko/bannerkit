@@ -77,6 +77,8 @@
       "fontWeight": 400,
       "fontStyle": "italic",
       "fontSize": 40,
+      "letterSpacing": 2,
+      "textTransform": "uppercase",
       "fill": "#d4efe6"
     },
     {

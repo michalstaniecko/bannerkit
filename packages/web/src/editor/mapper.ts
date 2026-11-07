@@ -26,6 +26,7 @@ import {
   fontStyleOf,
   layoutText,
   linearGradientLine,
+  transformedText,
   type ImageLayer,
   type Layer,
   type LinearGradient,
@@ -181,8 +182,10 @@ function applyImage(image: FabricImage, layer: ImageLayer): LocalBox {
  */
 function applyText(textbox: Textbox, layer: TextLayer, env: MapperEnv): LocalBox {
   const layout = layoutText(layer, env.measure)
+  if (textbox instanceof DocumentTextbox) textbox.typedText = layer.text
   textbox.set({
-    text: layer.text,
+    // `textTransform` is shown, except while editing: the user edits what they typed.
+    text: textbox.isEditing ? layer.text : transformedText(layer),
     width: layer.width,
     scaleX: 1,
     scaleY: 1,
@@ -214,8 +217,25 @@ function applyText(textbox: Textbox, layer: TextLayer, env: MapperEnv): LocalBox
  * (`textRendering: 'geometricPrecision'`), like the server's skia-canvas. Chrome's
  * default hints and snaps glyphs, which drifts letter-spaced lines and thickens every
  * glyph edge, enough to fail browser-vs-server parity on text-heavy banners.
+ *
+ * It shows the Layer's transformed text (`textTransform`) but swaps in the typed
+ * text when editing starts; the editor re-applies the Layer when editing ends.
  */
 class DocumentTextbox extends Textbox {
+  /** The Layer's `text` as typed, before `textTransform`. */
+  typedText?: string
+
+  override enterEditingImpl() {
+    if (this.typedText !== undefined && this.text !== this.typedText) {
+      this.set({ text: this.typedText })
+      this.initDimensions()
+      const end = this.text.length
+      this.selectionStart = Math.min(this.selectionStart, end)
+      this.selectionEnd = Math.min(this.selectionEnd, end)
+    }
+    super.enterEditingImpl()
+  }
+
   override _setTextStyles(ctx: CanvasRenderingContext2D, charStyle?: any, forMeasuring?: boolean) {
     super._setTextStyles(ctx, charStyle, forMeasuring)
     ctx.textRendering = 'geometricPrecision'

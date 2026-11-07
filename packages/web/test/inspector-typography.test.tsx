@@ -201,3 +201,48 @@ describe('italic', () => {
     expect(toggle('Italic').indeterminate).toBe(true)
   })
 })
+
+describe('text transform', () => {
+  const group = () => screen.getByRole('radiogroup', { name: 'Text transform' })
+  const option = (name: string) => screen.getByRole('radio', { name })
+  const checked = () =>
+    screen
+      .getAllByRole('radio')
+      .filter((r) => r.getAttribute('aria-checked') === 'true')
+      .map((r) => r.getAttribute('aria-label'))
+
+  it('is a segmented choice, one step each; None leaves the key out', async () => {
+    const { editor, user, changes } = await openInspector(doc([text()]), { select: ['text-1'] })
+
+    expect(checked()).toEqual(['None'])
+    await user.click(option('Uppercase'))
+    await settle()
+    expect(editor.getDocument().layers[0]).toEqual(text({ textTransform: 'uppercase' }))
+    expect(checked()).toEqual(['Uppercase'])
+    await user.click(option('Lowercase'))
+    await settle()
+    expect(editor.getDocument().layers[0]).toEqual(text({ textTransform: 'lowercase' }))
+    await user.click(option('None'))
+    await settle()
+
+    expect(editor.getDocument().layers[0]).toEqual(text())
+    expect(changes.map((c) => c.cause)).toEqual(['inspector', 'inspector', 'inspector'])
+    await act(() => editor.undo())
+    expect(editor.getDocument().layers[0]).toEqual(text({ textTransform: 'lowercase' }))
+  })
+
+  it('shows Mixed for several Layers that differ; a pick sets every one', async () => {
+    const { editor, user, changes } = await openInspector(doc([text({ id: 'a', textTransform: 'uppercase' }), text({ id: 'b' })]), {
+      select: ['a', 'b'],
+    })
+
+    expect(checked()).toEqual([])
+    expect(group().textContent).toContain('Mixed')
+    await user.click(option('None'))
+    await settle()
+
+    expect(editor.getDocument().layers).toEqual([text({ id: 'a' }), text({ id: 'b' })])
+    expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+    expect(checked()).toEqual(['None'])
+  })
+})

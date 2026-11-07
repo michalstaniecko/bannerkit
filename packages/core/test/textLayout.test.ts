@@ -199,3 +199,31 @@ describe('layoutText: positions (Fabric vertical model)', () => {
     expect(layout.lines.map((l) => l.x)).toEqual([0, 75])
   })
 })
+
+describe('layoutText: textTransform', () => {
+  it('lays out the transformed text, so lines show it', () => {
+    expect(lines({ text: 'Hello world', textTransform: 'uppercase' })).toEqual(['HELLO', 'WORLD'])
+    expect(lines({ text: 'Hello World', textTransform: 'lowercase', width: 200 })).toEqual(['hello world'])
+    expect(lines({ text: 'Hello', textTransform: 'none' })).toEqual(['Hello'])
+  })
+
+  it('wraps and fits on the transformed text when it changes length (ß → SS)', () => {
+    // "straße" is 6 graphemes (60 px), "STRASSE" 7 (70 px) in a 60 px Box.
+    expect(layoutText(text({ text: 'straße', width: 60 }), mono).overflow).toBe(false)
+    expect(layoutText(text({ text: 'straße', textTransform: 'uppercase', width: 60 }), mono)).toMatchObject({
+      overflow: true,
+      lines: [{ text: 'STRASSE', width: 70 }],
+    })
+    const fitted = layoutText(
+      text({ text: 'straße', textTransform: 'uppercase', width: 60, height: 100, autoFit: { minFontSize: 5 } }),
+      mono,
+    )
+    // 7 graphemes × 8.5 px = 59.5 px fits at 17 px.
+    expect(fitted).toMatchObject({ fontSize: 17, overflow: false, lines: [{ text: 'STRASSE' }] })
+  })
+
+  it('is locale-free', () => {
+    expect(lines({ text: 'iı', textTransform: 'uppercase' })).toEqual(['II'])
+    expect(lines({ text: 'Iİ', textTransform: 'lowercase' })).toEqual(['ii̇'])
+  })
+})

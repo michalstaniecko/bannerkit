@@ -1,7 +1,7 @@
 // S1: the committed demo Project (examples/demo), copied into a temporary projects root.
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Document } from '@bannerkit/core'
+import { walkLayers, type Document } from '@bannerkit/core'
 import sharp from 'sharp'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { listDocuments, render, validate } from '../src/ops/index.ts'
@@ -27,6 +27,12 @@ describe('examples/demo', () => {
 
     expect((await onDisk('hero')).version).toBe(1)
     expect(await onDisk('story')).toMatchObject({ version: 2, guides: { x: expect.any(Array), y: expect.any(Array) } })
+  })
+
+  it('shows uppercase text (textTransform) in story', async () => {
+    const story = JSON.parse(await readFile(join(root, 'demo', 'documents', 'story.json'), 'utf8')) as Document
+
+    expect(walkLayers(story).some(({ layer }) => layer.type === 'text' && layer.textTransform === 'uppercase')).toBe(true)
   })
 
   it('uses rect, image and text Layers, with AutoFit text, in every Document', async () => {

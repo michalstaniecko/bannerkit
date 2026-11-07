@@ -42,7 +42,22 @@ const FONT_SIZE_MULT = 1.13
 /** Fabric `_fontSizeFraction`: the baseline sits this share of a line box above its bottom. */
 const FONT_SIZE_FRACTION = 0.222
 
-/** Resolves a text Layer's Text Layout, shrinking it with AutoFit when the Layer asks for it. */
+/**
+ * The text as drawn: `text` after `textTransform`. Locale-free on purpose, so
+ * the browser and Node agree; the length may change (`ß` → `SS`).
+ */
+export function transformedText(layer: Pick<TextLayer, 'text' | 'textTransform'>): string {
+  switch (layer.textTransform) {
+    case 'uppercase':
+      return layer.text.toUpperCase()
+    case 'lowercase':
+      return layer.text.toLowerCase()
+    default:
+      return layer.text
+  }
+}
+
+/** Resolves a text Layer's Text Layout (on the transformed text), shrinking it with AutoFit when the Layer asks for it. */
 export function layoutText(layer: TextLayer, measure: MeasureText): TextLayout {
   let wrapped = wrap(layer, layer.fontSize, measure)
   if (layer.autoFit) {
@@ -74,7 +89,7 @@ function wrap(layer: TextLayer, size: number, measure: MeasureText): Wrapped {
     return w
   }
 
-  const hardLines = layer.text.split(/\r?\n/).map((line) => line.split(/[ \t\r]/))
+  const hardLines = transformedText(layer).split(/\r?\n/).map((line) => line.split(/[ \t\r]/))
   const largestWordWidth = Math.max(0, ...hardLines.flat().map(width))
   const maxWidth = Math.max(layer.width, largestWordWidth)
   const spaceWidth = width(' ')

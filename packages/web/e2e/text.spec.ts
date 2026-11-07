@@ -33,6 +33,9 @@ const CORPUS: Omit<TextLayer, 'id' | 'type' | 'x' | 'y' | 'fontFamily' | 'fill'>
   { text: 'The quick brown fox jumps over the lazy dog', width: 180, fontSize: 24, fontWeight: 300, fontStyle: 'italic' },
   { text: 'Italic letter spacing changes where lines break', width: 240, fontSize: 28, fontWeight: 400, fontStyle: 'italic', letterSpacing: 3 },
   { text: 'AutoFit shrinks this long italic headline to fit', width: 260, height: 90, fontSize: 72, fontWeight: 900, fontStyle: 'italic', autoFit: { minFontSize: 12 } },
+  { text: 'Uppercase is wider, so it breaks sooner', width: 260, fontSize: 30, fontWeight: 700, textTransform: 'uppercase' },
+  { text: 'Straße größer: ß becomes SS when uppercased', width: 250, height: 80, fontSize: 48, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, autoFit: { minFontSize: 10 } },
+  { text: 'LOWERCASE HEADLINE, Lowercased By Core', width: 220, fontSize: 30, fontWeight: 500, textTransform: 'lowercase' },
 ]
 
 const layers: TextLayer[] = CORPUS.map((c, i) => ({ ...base, ...c, id: `text-${i + 1}` }))
