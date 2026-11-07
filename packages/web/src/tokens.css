@@ -114,4 +114,6 @@
   --inspector-width: 320px;
   /* Ruler gutters around the Canvas viewport; 0 until the rulers arrive (M3). */
   --ruler-size: 0px;
+  /* Canvas resize handles: a fixed screen size, whatever the zoom. */
+  --canvas-handle-size: 8px;
 }

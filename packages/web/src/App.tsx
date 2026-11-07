@@ -10,6 +10,7 @@ import { api, isConflict, type DocumentRef, type ProjectRef } from './api.ts'
 import { createAutosave } from './autosave.ts'
 import { createEditor, type Editor } from './editor/index.ts'
 import { CanvasArea } from './CanvasArea.tsx'
+import { CanvasHandles } from './CanvasHandles.tsx'
 import { DocumentActions } from './DocumentActions.tsx'
 import { ExportControl } from './ExportControl.tsx'
 import { Inspector } from './Inspector.tsx'
@@ -284,6 +285,7 @@ export function App() {
           hostRef={hostRef}
           loaded={loaded}
           placeholder={!error && <p className="hint">Pick a Project and a Document.</p>}
+          overlay={<CanvasHandles editor={editorRef} loaded={loaded} />}
         />
         <Inspector editor={editorRef} loaded={loaded} anchor={anchor} onAnchorChange={setAnchor} />
       </div>
