@@ -18,6 +18,7 @@ import { LayerList } from './LayerList.tsx'
 import { LayerToolbar } from './LayerToolbar.tsx'
 import { SaveConflict, openLiveReload, type Conflict } from './live-reload.ts'
 import { ReloadBanner } from './ReloadBanner.tsx'
+import { Ruler } from './Ruler.tsx'
 import { createSelectionSync } from './selection-sync.ts'
 import { Button } from './ui/Button.tsx'
 import { IconButton } from './ui/IconButton.tsx'
@@ -285,6 +286,10 @@ export function App() {
           hostRef={hostRef}
           loaded={loaded}
           placeholder={!error && <p className="hint">Pick a Project and a Document.</p>}
+          rulers={{
+            top: <Ruler axis="x" editor={editorRef} loaded={loaded} viewportRef={viewportRef} hostRef={hostRef} zoom={zoom} />,
+            left: <Ruler axis="y" editor={editorRef} loaded={loaded} viewportRef={viewportRef} hostRef={hostRef} zoom={zoom} />,
+          }}
           overlay={<CanvasHandles editor={editorRef} loaded={loaded} />}
         />
         <Inspector editor={editorRef} loaded={loaded} anchor={anchor} onAnchorChange={setAnchor} />
