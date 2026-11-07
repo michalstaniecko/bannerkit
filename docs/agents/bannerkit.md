@@ -50,7 +50,7 @@ Every Layer has these fields: `id`, `type`, `x`, `y`, `width`, plus the optional
 |---|---|
 | `rect` | `height`, `fill` (colour or LinearGradient), `cornerRadius?` |
 | `image` | `height`, `src`, `fit` |
-| `text` | `text`, `fontFamily`, `fontWeight`, `fontSize`, `fill`, `height?`, `lineHeight?`, `letterSpacing?`, `align?`, `verticalAlign?`, `autoFit?` |
+| `text` | `text`, `fontFamily`, `fontWeight`, `fontSize`, `fill`, `fontStyle?`, `height?`, `lineHeight?`, `letterSpacing?`, `align?`, `verticalAlign?`, `autoFit?` |
 
 Conventions:
 
@@ -58,7 +58,7 @@ Conventions:
 - **Colours** are CSS strings: `"#0e3a32"`, `"rgba(0,0,0,0.45)"`.
 - **Gradient**: `{ "type": "linear", "angle": 120, "stops": [["#0e3a32", 0], ["#2f8f76", 1]] }`. The angle follows the CSS `linear-gradient` convention: `0` runs bottom to top, `90` runs left to right and `180` runs top to bottom. You need at least two stops, and each offset is between 0 and 1.
 - **Fit**: `contain` shows the whole image inside the Box and may leave empty bands. `cover` fills the Box and crops the overflow. `stretch` ignores the aspect ratio. Use the Asset size from `asset add` or `inspect` to size the Box.
-- **Text** always wraps at the Box `width`, and `\n` forces a line break. `fontFamily` and `fontWeight` must be a pair listed in `fonts/fonts.json`; currently that is `Inter` at 100–900. `lineHeight` is a multiple of the font size: lines are `fontSize × 1.13 × lineHeight` apart, and the default is `1.16`. `letterSpacing` is in px. Without `height`, the Box grows to fit the text. With `height`, `verticalAlign` positions the text inside the Box.
+- **Text** always wraps at the Box `width`, and `\n` forces a line break. `fontFamily`, `fontWeight` and `fontStyle` must be a face (`family`/`weight`/`style`) listed in `fonts/fonts.json`; currently that is `Inter` at 100–900, upright and italic. `fontStyle` is `"normal"` (the default; omit it) or `"italic"`. Italic is always drawn from its own font file and never slanted synthetically, so `"italic"` for a family and weight with no italic file fails validation, and the error lists the weights that have one. `lineHeight` is a multiple of the font size: lines are `fontSize × 1.13 × lineHeight` apart, and the default is `1.16`. `letterSpacing` is in px. Without `height`, the Box grows to fit the text. With `height`, `verticalAlign` positions the text inside the Box.
 - **AutoFit**: with `"autoFit": { "minFontSize": 40 }`, the font size shrinks in 1px steps from `fontSize` until the wrapped text fits the Box. AutoFit requires `height`. If the text still doesn't fit at `minFontSize`, it renders clipped, and validation reports a **warning**, not an error. To fix it, shorten the text, enlarge the Box or lower `minFontSize`.
 - **ids** must be unique within the Document. Name new Layers `<type>-<n>`, with n one above the highest number already used for that type (`text-5`, `image-3`). The editor uses the same scheme. Refer to Layers by id when you talk to the human.
 - **Strictness**: unknown keys are errors, and each error includes a "did you mean" hint. Never add your own fields. Omit an optional field instead of setting it to `null`. The only nullable field is `canvas.background`.
