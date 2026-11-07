@@ -6,7 +6,7 @@ import { renderDocument } from '../src/render/renderDocument.ts'
 import { expectImageSnapshot } from './snapshot.ts'
 
 function doc(layers: Layer[], background: string | null = '#ffffff', width = 200, height = 100): Document {
-  return { version: 1, name: 'test', canvas: { width, height, background }, layers }
+  return { version: 2, name: 'test', canvas: { width, height, background }, layers }
 }
 
 async function pixels(png: Buffer) {

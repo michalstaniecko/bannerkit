@@ -8,7 +8,7 @@ import { createEditor, type Editor } from '../src/editor/index.ts'
 import { createLiveReload, SaveConflict, type Conflict } from '../src/live-reload.ts'
 
 const rect = (x: number): Layer => ({ id: 'rect-1', type: 'rect', x, y: 100, width: 100, height: 50, fill: '#ff0000' })
-const doc = (x: number): Document => ({ version: 1, name: 'hero', canvas: { width: 400, height: 300, background: '#ffffff' }, layers: [rect(x)] })
+const doc = (x: number): Document => ({ version: 2, name: 'hero', canvas: { width: 400, height: 300, background: '#ffffff' }, layers: [rect(x)] })
 
 let editor: Editor | undefined
 afterEach(async () => {

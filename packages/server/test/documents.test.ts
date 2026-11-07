@@ -27,7 +27,7 @@ describe('createDocument', () => {
     expect(result.path).toBe(join(root, 'p', 'documents', 'hero.json'))
     expect(await readDocFile('hero')).toEqual({
       $schema: expect.stringMatching(/document\.schema\.json$/),
-      version: 1,
+      version: 2,
       name: 'hero',
       canvas: { width: 1200, height: 628, background: '#ffffff' },
       layers: [],
@@ -100,7 +100,7 @@ describe('duplicateDocument', () => {
     expect(result.name).toBe('square')
     expect(await readDocFile('square')).toEqual({
       $schema: expect.stringMatching(/document\.schema\.json$/),
-      version: 1,
+      version: 2,
       name: 'square',
       canvas: { width: 1080, height: 1080, background: '#111111' },
       layers,

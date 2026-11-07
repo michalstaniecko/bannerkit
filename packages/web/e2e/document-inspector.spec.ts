@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
 
 const banner = (width: number, height: number): Document => ({
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width, height, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x: 100, y: 50, width: 100, height: 100, fill: '#ff0000' }],

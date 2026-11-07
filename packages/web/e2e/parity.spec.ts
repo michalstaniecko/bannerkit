@@ -18,7 +18,7 @@ function presetDocument(width: number, height: number): Document {
   const u = Math.min(width, height)
   const tall = height > width
   return {
-    version: 1,
+    version: 2,
     name: `preset-${width}x${height}`,
     canvas: { width, height, background: '#ffffff' },
     layers: [

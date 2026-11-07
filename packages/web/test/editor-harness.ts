@@ -6,7 +6,7 @@ import { afterEach } from 'vitest'
 import { createEditor, type ChangeEvent, type Editor } from '../src/editor/index.ts'
 
 export const doc = (layers: Layer[], over: Partial<Document> = {}): Document => ({
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 400, height: 300, background: '#ffffff' },
   layers,

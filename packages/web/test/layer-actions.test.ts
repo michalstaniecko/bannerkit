@@ -43,7 +43,7 @@ const rect = (id: string, over: Partial<Extract<Layer, { type: 'rect' }>> = {}):
 })
 
 const doc = (layers: Layer[]): Document => ({
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 300, height: 250, background: '#ffffff' },
   layers,

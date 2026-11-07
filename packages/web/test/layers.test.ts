@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createEditor, type Editor, type EditorOptions } from '../src/editor/index.ts'
 
 const doc = (layers: Layer[]): Document => ({
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 200, height: 100, background: '#ffffff' },
   layers,

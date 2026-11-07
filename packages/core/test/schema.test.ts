@@ -21,6 +21,15 @@ describe('documentJsonSchema', () => {
     expect(text.properties.fontWeight.enum).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900])
     expect(Object.keys(schema.$defs)).toEqual(expect.arrayContaining(['RectLayer', 'ImageLayer', 'TextLayer', 'LinearGradient']))
   })
+
+  it('describes Document v2, with optional Guides on both axes', () => {
+    const schema = documentJsonSchema() as any
+
+    expect(schema.properties.version.const).toBe(2)
+    expect(schema.required).not.toContain('guides')
+    expect(schema.$defs.Guides.required).toEqual(['x', 'y'])
+    expect(schema.$defs.Guides.additionalProperties).toBe(false)
+  })
 })
 
 describe('nextLayerId', () => {

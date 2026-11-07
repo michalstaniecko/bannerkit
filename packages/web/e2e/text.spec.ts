@@ -31,7 +31,7 @@ const CORPUS: Omit<TextLayer, 'id' | 'type' | 'x' | 'y' | 'fontFamily' | 'fill'>
 ]
 
 const layers: TextLayer[] = CORPUS.map((c, i) => ({ ...base, ...c, id: `text-${i + 1}` }))
-const doc = { version: 1 as const, name: 'corpus', canvas: { width: 800, height: 600, background: '#ffffff' }, layers }
+const doc = { version: 2 as const, name: 'corpus', canvas: { width: 800, height: 600, background: '#ffffff' }, layers }
 
 test('Fabric Textbox line breaks and font size equal core Text Layout across the corpus', async ({ harness }) => {
   const results = await harness.evaluate(async (document) => {

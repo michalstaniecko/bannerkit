@@ -50,7 +50,7 @@ beforeEach(async () => {
 })
 
 function doc(layers: Layer[], width = 100, height = 100): Document {
-  return { version: 1, name: 'test', canvas: { width, height, background: '#ffffff' }, layers }
+  return { version: 2, name: 'test', canvas: { width, height, background: '#ffffff' }, layers }
 }
 
 const image = (fit: Fit, extra: Partial<ImageLayer> = {}): ImageLayer => ({

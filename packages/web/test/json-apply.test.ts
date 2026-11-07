@@ -6,7 +6,7 @@ import { createEditor, type ChangeEvent, type Editor } from '../src/editor/index
 import { applyJson } from '../src/json-apply.ts'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 400, height: 300, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x: 100, y: 100, width: 100, height: 50, fill: '#ff0000' }],

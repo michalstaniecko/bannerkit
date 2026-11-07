@@ -32,7 +32,7 @@ function anchorFractions(anchor: Anchor): { fx: number; fy: number } {
 
 /**
  * The Document with its Canvas resized to `size`, keeping the `anchor` point put.
- * Layers are never scaled: every Layer moves by the same whole-pixel delta
+ * Layers are never scaled: every Layer (and every Guide) moves by the same whole-pixel delta
  * `floor(f · (new − old))` per axis (so at a centre Anchor an odd extra pixel
  * goes to the right or bottom edge), and may end up partly or fully off the Canvas.
  * The same size returns the Document as is. Throws when `size` is outside the
@@ -47,5 +47,7 @@ export function resizeCanvas(document: Document, size: Size, anchor: Anchor = 't
   const dy = Math.floor(fy * (height - document.canvas.height)) + 0
   // Every Layer in the tree moves: Layers hold Canvas coordinates at every depth.
   const moved = mapLayers(document, (layer) => ({ ...layer, x: layer.x + dx, y: layer.y + dy }))
-  return { ...moved, canvas: { ...document.canvas, width, height } }
+  // Guides stay where they were relative to the Layers.
+  const guides = document.guides && { x: document.guides.x.map((x) => x + dx), y: document.guides.y.map((y) => y + dy) }
+  return { ...moved, canvas: { ...document.canvas, width, height }, ...(guides && { guides }) }
 }

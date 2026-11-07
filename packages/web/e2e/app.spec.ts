@@ -7,7 +7,7 @@ import { expect, test } from './fixtures.ts'
 const RED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#ff0000"/></svg>'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [

@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
 
 const banner: Document = {
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [

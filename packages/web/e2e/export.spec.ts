@@ -6,7 +6,7 @@ import { expect, test } from './fixtures.ts'
 test.use({ deviceScaleFactor: 2 })
 
 const presetDocument = (width: number, height: number, background: string | null): Document => ({
-  version: 1,
+  version: 2,
   name: `preset-${width}x${height}`,
   canvas: { width, height, background },
   layers: [{ id: 'rect-1', type: 'rect', x: 0, y: 0, width: width / 2, height: height / 2, fill: '#ff0000' }],
@@ -20,7 +20,7 @@ test('Export is exactly the Canvas size × scale for every Preset on a 2× scree
     for (const { width, height } of sizes) {
       const editor = createEditor()
       editor.mount(host())
-      await editor.load({ version: 1, name: 'p', canvas: { width, height, background: '#ffffff' }, layers: [] })
+      await editor.load({ version: 2, name: 'p', canvas: { width, height, background: '#ffffff' }, layers: [] })
       editor.setZoom(0.37)
       for (const scale of [1, 2] as const) {
         for (const format of ['png', 'jpg', 'webp'] as const) {

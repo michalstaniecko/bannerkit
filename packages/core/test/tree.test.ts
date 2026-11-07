@@ -4,7 +4,7 @@ import { findLayer, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers
 const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000' })
 
 const doc = (...layers: Layer[]): Document => ({
-  version: 1,
+  version: 2,
   name: 'hero',
   canvas: { width: 100, height: 50, background: '#ffffff' },
   layers,

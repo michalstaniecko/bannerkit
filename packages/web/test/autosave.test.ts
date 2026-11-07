@@ -3,7 +3,7 @@ import type { Document } from '@bannerkit/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAutosave } from '../src/autosave.ts'
 
-const doc = (name: string): Document => ({ version: 1, name, canvas: { width: 10, height: 10, background: null }, layers: [] })
+const doc = (name: string): Document => ({ version: 2, name, canvas: { width: 10, height: 10, background: null }, layers: [] })
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())

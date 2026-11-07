@@ -5,7 +5,7 @@ import type { Page } from '@playwright/test'
 import { expect, test, type Projects } from './fixtures.ts'
 
 const banner = (fill: string, x = 0): Document => ({
-  version: 1,
+  version: 2,
   name: 'banner',
   canvas: { width: 400, height: 200, background: '#ffffff' },
   layers: [{ id: 'rect-1', type: 'rect', x, y: 0, width: 200, height: 200, fill }],
