@@ -31,7 +31,7 @@ export type MeasureAdapter = {
   detach(): void
 }
 
-export function attachMeasurement(canvas: Canvas, keys: Document, env: MeasureAdapterEnv): MeasureAdapter {
+export function attachMeasurement(canvas: Canvas, ownerDocument: Document, env: MeasureAdapterEnv): MeasureAdapter {
   let held = false
   let pointer: TPointerEvent | undefined
   let pressed = false
@@ -52,9 +52,9 @@ export function attachMeasurement(canvas: Canvas, keys: Document, env: MeasureAd
   const onKeyUp = (event: KeyboardEvent) => {
     if (event.key === 'Alt') release()
   }
-  const view = keys.defaultView
-  keys.addEventListener('keydown', onKeyDown)
-  keys.addEventListener('keyup', onKeyUp)
+  const view = ownerDocument.defaultView
+  ownerDocument.addEventListener('keydown', onKeyDown)
+  ownerDocument.addEventListener('keyup', onKeyUp)
   view?.addEventListener('blur', release)
 
   const whileHeld = () => {
@@ -91,8 +91,8 @@ export function attachMeasurement(canvas: Canvas, keys: Document, env: MeasureAd
       return [{ kind: 'measure-box', rect: b }, ...measure(a, b)]
     },
     detach() {
-      keys.removeEventListener('keydown', onKeyDown)
-      keys.removeEventListener('keyup', onKeyUp)
+      ownerDocument.removeEventListener('keydown', onKeyDown)
+      ownerDocument.removeEventListener('keyup', onKeyUp)
       view?.removeEventListener('blur', release)
       for (const off of offs) off()
     },

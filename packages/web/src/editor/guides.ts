@@ -4,14 +4,12 @@
 import type { Document } from '@bannerkit/core'
 import type { Axis } from './snapping/targets.ts'
 
-export type GuideAxis = Axis
-
 /**
  * `document` with the Guide `index` on `axis` set to `value` (`'new'`: appended), or
  * removed when `value` is undefined. The first Guide adds the `guides` key (before
  * `layers`, as the schema orders it); removing the last one drops it.
  */
-export function setGuide(document: Document, axis: GuideAxis, index: number | 'new', value: number | undefined): Document {
+export function setGuide(document: Document, axis: Axis, index: number | 'new', value: number | undefined): Document {
   const guides = { x: [...(document.guides?.x ?? [])], y: [...(document.guides?.y ?? [])] }
   const list = guides[axis]
   if (index === 'new') {
@@ -31,8 +29,8 @@ export function setGuide(document: Document, axis: GuideAxis, index: number | 'n
 }
 
 /** The Guide nearest `point` (Canvas px) within `tolerance` Canvas px, if any. */
-export function guideAt(guides: Document['guides'], point: { x: number; y: number }, tolerance: number): { axis: GuideAxis; index: number } | undefined {
-  let best: { axis: GuideAxis; index: number; distance: number } | undefined
+export function guideAt(guides: Document['guides'], point: { x: number; y: number }, tolerance: number): { axis: Axis; index: number } | undefined {
+  let best: { axis: Axis; index: number; distance: number } | undefined
   for (const axis of ['x', 'y'] as const) {
     ;(guides?.[axis] ?? []).forEach((at, index) => {
       const distance = Math.abs(at - point[axis])

@@ -1,4 +1,4 @@
-// The top bar's Snapping switch (slot `topbar-snapping`): a magnet toggle that turns
+// The top bar's Snapping switch (slot `topbar-snapping`): a Snapping toggle that turns
 // Snapping on or off for the session (not stored in the Document) through
 // `editor.setSnapping`. On by default, like the editor. Holding Cmd/Ctrl turns it off
 // for one drag only, without touching this switch.

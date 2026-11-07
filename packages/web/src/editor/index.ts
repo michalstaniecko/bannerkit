@@ -81,7 +81,8 @@ import { attachResizeSnap, type ResizeSnap } from './snap-resize-adapter.ts'
 import { attachMeasurement, type MeasureAdapter } from './measure-adapter.ts'
 import type { GuideMark, Mark } from './snapping/marks.ts'
 import { guideTargets, snapGuide } from './snapping/guide.ts'
-import { guideAt, setGuide, type GuideAxis } from './guides.ts'
+import { guideAt, setGuide } from './guides.ts'
+import type { Axis } from './snapping/targets.ts'
 import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
 export type EditorOptions = {
@@ -187,7 +188,7 @@ export type GuideDrag = {
 }
 
 /** The Guide being dragged: `value` in Canvas px, undefined while it is over a Ruler (to be removed). */
-export type DraggedGuide = { axis: GuideAxis; index: number | 'new'; value: number | undefined }
+export type DraggedGuide = { axis: Axis; index: number | 'new'; value: number | undefined }
 
 /** The Guides shown changed (any step, preview or load), or the one being dragged did. */
 export type GuidesEvent = { guides: { x: number[]; y: number[] }; dragging: DraggedGuide | null }
@@ -267,7 +268,7 @@ export type Editor = {
    * Starts dragging the Guide `index` on `axis` (`x`: a vertical Guide, in `guides.x`),
    * or a new one at the end of that axis (`'new'`). Escape cancels it.
    */
-  dragGuide(axis: GuideAxis, index: number | 'new'): GuideDrag
+  dragGuide(axis: Axis, index: number | 'new'): GuideDrag
   /** Registers a Ruler: a Guide released over `element` is removed. Returns the unregister function. */
   addRuler(element: Element): () => void
   /** Canvas px per Document px. The canvas element is resized to the zoomed Canvas size. */
@@ -349,7 +350,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   /** The Guide drag running, if any (`dragGuide`). */
   let guideDrag: { dragging: DraggedGuide; marks: Mark[]; settle: () => void } | undefined
   /** The Guide under the pointer on the Canvas (lit up). */
-  let hoveredGuide: { axis: GuideAxis; index: number } | undefined
+  let hoveredGuide: { axis: Axis; index: number } | undefined
   /** Elements a Guide released over is removed on (`addRuler`). */
   const rulers = new Set<Element>()
   /** The last `guides` event sent (as JSON). */
@@ -425,7 +426,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     return layerExtent(liveLayer(entry), env.measure)
   }
 
-  /** Everything the overlay draws now: snap lines (of a drag or a resize), then the Measurement. */
+  /** Everything the overlay draws now: snap lines of a Guide drag, then of a drag or a resize (with equal gaps), then the Measurement. */
   const allMarks = (): Mark[] => [...(guideDrag?.marks ?? []), ...(snap?.marks() ?? []), ...(resizeSnap?.marks() ?? []), ...(measurement?.marks() ?? [])]
 
   /** Escape with a Layer in a Group selected selects its Group instead. */
@@ -526,7 +527,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     if (!current || !guides) return []
     const { width, height } = current.canvas
     const drag = guideDrag?.dragging
-    const lit = (axis: GuideAxis, index: number, count: number) =>
+    const lit = (axis: Axis, index: number, count: number) =>
       (hoveredGuide?.axis === axis && hoveredGuide.index === index) ||
       (drag !== undefined && drag.value !== undefined && drag.axis === axis && (drag.index === 'new' ? index === count - 1 : drag.index === index))
     return (['x', 'y'] as const).flatMap((axis) =>
@@ -547,7 +548,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     return { x: (clientX - r.left) / zoom, y: (clientY - r.top) / zoom }
   }
 
-  const dragGuide = (axis: GuideAxis, index: number | 'new'): GuideDrag => {
+  const dragGuide = (axis: Axis, index: number | 'new'): GuideDrag => {
     const c = requireCanvas()
     if (!current) throw new Error('No Document loaded')
     guideDrag?.settle()
@@ -634,7 +635,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       if (active?.findControl(c.getViewportPoint(e))) return undefined
       return guideAt(current.guides, c.getScenePoint(e), GUIDE_HIT / zoom)
     }
-    const hover = (hit: { axis: GuideAxis; index: number } | undefined) => {
+    const hover = (hit: { axis: Axis; index: number } | undefined) => {
       if (hit?.axis === hoveredGuide?.axis && hit?.index === hoveredGuide?.index) return
       hoveredGuide = hit
       c.requestRenderAll()

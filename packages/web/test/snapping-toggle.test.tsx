@@ -1,4 +1,4 @@
-// The top bar's Snapping switch: a magnet toggle button that turns Snapping on and off
+// The top bar's Snapping switch: a Snapping toggle button that turns Snapping on and off
 // for the session through `editor.setSnapping`.
 import { cleanup, render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
