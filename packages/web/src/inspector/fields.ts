@@ -14,6 +14,7 @@ import {
   type ImageLayer,
   type Layer,
   type LayerType,
+  type LinearGradient,
   type RectLayer,
   type TextLayer,
 } from '@bannerkit/core'
@@ -83,8 +84,16 @@ export type ColorFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
   write: (layer: L, value: string | null) => L
 }
 
+/** A linear gradient (angle and stops) edited in the gradient editor. */
+export type GradientFieldSpec<L extends Layer = Layer> = FieldBase<L> & {
+  control: 'gradient'
+  read: (layer: L) => LinearGradient | undefined
+  write: (layer: L, value: LinearGradient) => L
+}
+
 export type FieldSpec<L extends Layer = Layer> =
   | ColorFieldSpec<L>
+  | GradientFieldSpec<L>
   | NumberFieldSpec<L>
   | ToggleFieldSpec<L>
   | ReadOnlyFieldSpec<L>
@@ -248,21 +257,74 @@ function shadowGroup<L extends Layer>(): FieldGroup<L> {
   }
 }
 
-/** The fields of a rect Layer (a gradient `fill` gets its own editor later). */
+/** The gradient a rect's colour fill becomes when its fill type is switched to Linear gradient. */
+export function gradientFrom(color: string): LinearGradient {
+  return { type: 'linear', angle: 90, stops: [[color, 0], ['#ffffff', 1]] }
+}
+
+/**
+ * The colour `fill` of a rect or text Layer, shared by both in the `fill` group so a
+ * Selection of both shows it. A gradient shows as the placeholder (Mixed with several
+ * Layers); a colour set on it replaces the gradient.
+ */
+function fillColor<L extends RectLayer | TextLayer>(): ColorFieldSpec<L> {
+  return {
+    control: 'color',
+    key: 'fill',
+    label: 'Fill',
+    placeholder: 'Gradient',
+    read: (l) => (typeof l.fill === 'string' ? l.fill : undefined),
+    write: (l, fill) => (fill === null ? l : { ...l, fill }),
+  }
+}
+
+/** The fill of a text Layer: a colour only. */
+function textFillGroup(): FieldGroup<TextLayer> {
+  return { key: 'fill', title: 'Fill', fields: [fillColor<TextLayer>()] }
+}
+
+/** The fill of a rect: a colour, or a linear gradient with its own editor. */
+function rectFillGroup(): FieldGroup<RectLayer> {
+  return {
+    key: 'fill',
+    title: 'Fill',
+    fields: [
+      {
+        control: 'select',
+        key: 'fill.type',
+        label: 'Type',
+        name: 'Fill type',
+        options: [
+          { value: 'color', label: 'Color' },
+          { value: 'linear', label: 'Linear gradient' },
+        ],
+        read: (l) => (typeof l.fill === 'string' ? 'color' : 'linear'),
+        write: (l, type) => {
+          if (type === 'color') return typeof l.fill === 'string' ? l : { ...l, fill: l.fill.stops[0]![0] }
+          return typeof l.fill === 'string' ? { ...l, fill: gradientFrom(l.fill) } : l
+        },
+      },
+      fillColor<RectLayer>(),
+      {
+        control: 'gradient',
+        key: 'fill.gradient',
+        label: 'Gradient',
+        when: (l) => typeof l.fill !== 'string',
+        read: (l) => (typeof l.fill === 'string' ? undefined : l.fill),
+        write: (l, fill) => ({ ...l, fill }),
+      },
+    ],
+  }
+}
+
+/** The fields of a rect Layer. */
 function rectGroups(): FieldGroup<RectLayer>[] {
   return [
+    rectFillGroup(),
     {
       key: 'rect',
       title: 'Rectangle',
       fields: [
-        {
-          control: 'color',
-          key: 'fill',
-          label: 'Fill',
-          placeholder: 'Gradient',
-          read: (l) => (typeof l.fill === 'string' ? l.fill : undefined),
-          write: (l, fill) => (fill === null ? l : { ...l, fill }),
-        },
         {
           control: 'number',
           key: 'cornerRadius',
@@ -301,7 +363,7 @@ function imageGroups(): FieldGroup<ImageLayer>[] {
 export const LAYER_FIELDS: { [T in LayerType]: FieldGroup<LayerOf<T>>[] } = {
   rect: [...commonGroups<RectLayer>(), ...rectGroups()],
   image: [...commonGroups<ImageLayer>(), ...imageGroups()],
-  text: commonGroups<TextLayer>(),
+  text: [...commonGroups<TextLayer>(), textFillGroup()],
 }
 
 /** Writes `value` into `field` of `layer`, rounded as the field rounds typed values. */

@@ -5,7 +5,16 @@
 // Group's Box): `x`/`y` move every Layer by the same delta, `width`/`height` are
 // disabled. Every write is a recipe for `editor.update`: all Layers change in one
 // step, or, when any result is not a valid Document, none does.
-import { boxExtent, validateDocument, type Document, type Layer, type LayerType, type Rect, type TextLayer } from '@bannerkit/core'
+import {
+  boxExtent,
+  validateDocument,
+  type Document,
+  type Layer,
+  type LayerType,
+  type LinearGradient,
+  type Rect,
+  type TextLayer,
+} from '@bannerkit/core'
 import { roundPx } from '../editor/rounding.ts'
 import {
   LAYER_FIELDS,
@@ -13,9 +22,11 @@ import {
   type ColorFieldSpec,
   type FieldGroup,
   type FieldSpec,
+  type GradientFieldSpec,
   type NumberFieldSpec,
   type SelectFieldSpec,
 } from './fields.ts'
+import type { GradientChange } from './gradient.ts'
 
 /** A value that differs between the Layers in the Inspector. */
 export const MIXED = Symbol('Mixed')
@@ -43,6 +54,17 @@ export type InspectedField =
   | { control: 'readonly'; field: FieldSpec; value: Shared<string> }
   | { control: 'select'; field: SelectFieldSpec; value: Shared<string>; write: (value: string) => Recipe }
   | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => Recipe }
+  | {
+      control: 'gradient'
+      field: GradientFieldSpec
+      angle: Shared<number>
+      /** The stops, when every Layer's are the same (colours and offsets, in order). */
+      stops: Shared<GradientStop[]>
+      /** `change` applied to each Layer's own gradient. */
+      write: (change: GradientChange) => Recipe
+    }
+
+type GradientStop = LinearGradient['stops'][number]
 
 type FieldTable = { [T in LayerType]: FieldGroup<Extract<Layer, { type: T }>>[] }
 
@@ -114,8 +136,31 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
       return { control: 'toggle', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
     case 'select':
       return { control: 'select', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
-    case 'color':
-      return { control: 'color', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
+    case 'color': {
+      // `undefined` is a value the field cannot show (a gradient fill). One Layer shows
+      // the field's placeholder for it; with several it is Mixed.
+      const value = sharedValue(layers, field.read)
+      return {
+        control: 'color',
+        field,
+        value: value === undefined && layers.length > 1 ? MIXED : value,
+        write: (value) => each((l) => field.write(l, value)),
+      }
+    }
+    case 'gradient': {
+      const stops = sharedValue(layers, (l) => JSON.stringify(field.read(l)?.stops))
+      return {
+        control: 'gradient',
+        field,
+        angle: sharedValue(layers, (l) => field.read(l)?.angle ?? 0),
+        stops: stops === MIXED ? MIXED : (JSON.parse(stops) as GradientStop[]),
+        write: (change) =>
+          each((l) => {
+            const gradient = field.read(l)
+            return gradient ? field.write(l, change(gradient)) : l
+          }),
+      }
+    }
     case 'number': {
       if (shared && field.box) {
         const side = field.box

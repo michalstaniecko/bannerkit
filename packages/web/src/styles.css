@@ -293,6 +293,40 @@ textarea {
   cursor: pointer;
 }
 
+/* The gradient editor: the angle, then one row per stop (colour, offset, remove), then Add stop. */
+.field-grid > .gradient-field {
+  grid-column: 1 / -1;
+}
+
+.gradient-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-control);
+}
+
+.gradient-stops {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  width: 100%;
+  margin: var(--pad-none);
+  padding: var(--pad-none);
+  list-style: none;
+}
+
+.gradient-stop {
+  display: grid;
+  grid-template-columns: 1fr 5rem auto;
+  align-items: center;
+  gap: var(--gap-control-icon);
+}
+
+.gradient-field-mixed {
+  margin: var(--pad-none);
+  color: var(--text-muted);
+}
+
 .readonly-field {
   display: flex;
   align-items: center;

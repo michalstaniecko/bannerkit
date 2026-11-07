@@ -16,6 +16,7 @@ import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
 import { Select } from '../ui/Select.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
+import { GradientField } from './GradientField.tsx'
 import { inspectField, MIXED, sharedFields, type InspectedField, type Recipe, type TextHeight } from './inspect.ts'
 import { useEdits } from './useEdits.ts'
 import { useInspected } from './useInspected.ts'
@@ -134,6 +135,18 @@ function Field({ inspected, resetKey, onWrite, onPreview, onCancel }: FieldProps
         />
       )
     }
+    case 'gradient':
+      return (
+        <GradientField
+          angle={inspected.angle}
+          stops={inspected.stops}
+          mixedLabel={MIXED_LABEL}
+          resetKey={resetKey}
+          onWrite={(change) => onWrite(inspected.write(change))}
+          onPreview={(change) => onPreview(inspected.write(change))}
+          onCancel={onCancel}
+        />
+      )
     case 'readonly':
       return <ReadOnly label={field.label} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
   }
