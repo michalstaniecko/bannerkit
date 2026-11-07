@@ -3,7 +3,7 @@
 // ADR 0007) only need teaching to these functions. Pure, no DOM or Node APIs.
 import type { Document, Layer } from './document.ts'
 
-/** Anything that holds Layers bottom to top: the Document (and, in v2, a Group). */
+/** Anything that holds Layers bottom to top: the Document or a Group. */
 export type LayerParent = { readonly layers: readonly Layer[] }
 
 /** One Layer as met in the tree. */
@@ -29,7 +29,7 @@ export function walkLayers(root: LayerParent): LayerVisit[] {
     parent.layers.forEach((layer, index) => {
       const at = [...indices, index]
       visits.push({ layer, parent, index, path: layerPath(at) })
-      // v2: a Group recurses here with `visit(layer, at)`.
+      if (layer.type === 'group') visit(layer, at)
     })
   visit(root, [])
   return visits
@@ -42,24 +42,48 @@ export function findLayer(root: LayerParent, id: string): LayerVisit | undefined
 
 /**
  * The Document with every Layer replaced by `replace(layer, visit)`, without
- * touching the input. Layers `replace` returns as is are kept by reference;
- * when nothing changes the Document itself is returned.
+ * touching the input. A Group's children are replaced first, so `replace`
+ * gets the Group holding its new children (`visit` still describes where the
+ * original sits). Layers `replace` returns as is are kept by reference; when
+ * nothing changes the Document (and every Group) itself is returned.
  */
 export function mapLayers(document: Document, replace: (layer: Layer, visit: LayerVisit) => Layer): Document {
   const visits = walkLayers(document)
-  let changed = false
-  const layers = document.layers.map((layer, i) => {
-    const next = replace(layer, visits[i]!)
-    if (next !== layer) changed = true
-    return next
-  })
-  return changed ? { ...document, layers } : document
+  let next = 0
+  const mapAll = (layers: Layer[]): Layer[] => {
+    let changed = false
+    const mapped = layers.map((layer) => {
+      const visit = visits[next++]!
+      let input = layer
+      if (layer.type === 'group') {
+        const children = mapAll(layer.layers)
+        if (children !== layer.layers) input = { ...layer, layers: children }
+      }
+      const output = replace(input, visit)
+      if (output !== layer) changed = true
+      return output
+    })
+    return changed ? mapped : layers
+  }
+  const layers = mapAll(document.layers)
+  return layers === document.layers ? document : { ...document, layers }
 }
 
-/** The Document without the Layers `ids`, wherever they sit, without touching the input. Unknown ids are ignored. */
+/**
+ * The Document without the Layers `ids`, wherever they sit, without touching
+ * the input. A Group left without children goes too, since an empty Group is
+ * invalid. Unknown ids are ignored.
+ */
 export function removeLayers(document: Document, ids: readonly string[]): Document {
-  // v2: also filters every Group's `layers`.
-  return { ...document, layers: document.layers.filter((l) => !ids.includes(l.id)) }
+  const keep = (layers: Layer[]): Layer[] =>
+    layers.flatMap((layer): Layer[] => {
+      if (ids.includes(layer.id)) return []
+      if (layer.type !== 'group') return [layer]
+      const children = keep(layer.layers)
+      if (children.length === 0) return []
+      return [children.length === layer.layers.length ? layer : { ...layer, layers: children }]
+    })
+  return { ...document, layers: keep(document.layers) }
 }
 
 /** The Document with the Layer `id` replaced by `replace(layer)`, without touching the input. Unknown ids change nothing. */

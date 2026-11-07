@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ANCHORS, resizeCanvas, type Document } from '../src/index.ts'
+import { ANCHORS, resizeCanvas, type Document, type LeafLayer } from '../src/index.ts'
 
 const doc = (width: number, height: number): Document => ({
   version: 2,
@@ -11,7 +11,7 @@ const doc = (width: number, height: number): Document => ({
   ],
 })
 
-const positions = (d: Document) => d.layers.map(({ x, y }) => [x, y])
+const positions = (d: Document) => (d.layers as LeafLayer[]).map(({ x, y }) => [x, y])
 
 describe('resizeCanvas', () => {
   it('sets the new Canvas size and keeps Layers put with the top-left Anchor', () => {
@@ -59,7 +59,7 @@ describe('resizeCanvas', () => {
 
   it('moves a rotated Layer by the same delta and keeps its size and rotation', () => {
     const original = doc(100, 50)
-    original.layers[0] = { ...original.layers[0]!, rotation: 33 }
+    original.layers[0] = { ...(original.layers[0] as LeafLayer), rotation: 33 }
 
     const resized = resizeCanvas(original, { width: 200, height: 150 }, 'bottom-right')
 

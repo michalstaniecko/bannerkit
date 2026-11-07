@@ -52,17 +52,7 @@
     "layers": {
       "type": "array",
       "items": {
-        "oneOf": [
-          {
-            "$ref": "#/$defs/RectLayer"
-          },
-          {
-            "$ref": "#/$defs/ImageLayer"
-          },
-          {
-            "$ref": "#/$defs/TextLayer"
-          }
-        ]
+        "$ref": "#/$defs/Layer"
       },
       "description": "Bottom to top"
     }
@@ -100,6 +90,22 @@
       ],
       "additionalProperties": false,
       "description": "Editor-only alignment lines; never rendered"
+    },
+    "Layer": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RectLayer"
+        },
+        {
+          "$ref": "#/$defs/ImageLayer"
+        },
+        {
+          "$ref": "#/$defs/TextLayer"
+        },
+        {
+          "$ref": "#/$defs/GroupLayer"
+        }
+      ]
     },
     "RectLayer": {
       "type": "object",
@@ -492,6 +498,52 @@
         "fontWeight",
         "fontSize",
         "fill"
+      ],
+      "additionalProperties": false
+    },
+    "GroupLayer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the Document; readable `<type>-<n>` when generated"
+        },
+        "type": {
+          "type": "string",
+          "const": "group"
+        },
+        "name": {
+          "description": "Shown in the Layer list instead of the id",
+          "type": "string"
+        },
+        "visible": {
+          "description": "Default true",
+          "type": "boolean"
+        },
+        "locked": {
+          "description": "Default false",
+          "type": "boolean"
+        },
+        "opacity": {
+          "description": "0-1, default 1; applies to the children composited together",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "layers": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Layer"
+          },
+          "description": "Children, bottom to top"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "layers"
       ],
       "additionalProperties": false
     }
