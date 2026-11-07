@@ -89,7 +89,8 @@ const demoAssets = join(repoRoot, 'examples/demo/assets')
 
 /** The demo Documents as committed, then one Document per Preset, each in its own Project. */
 const cases: { project: string; doc: string; document?: Document }[] = [
-  ...['hero', 'rectangle', 'square', 'story'].map((doc) => ({ project: 'demo', doc })),
+  // Not story yet: it has a Group, which the editor cannot show until #23.
+  ...['hero', 'rectangle', 'square'].map((doc) => ({ project: 'demo', doc })),
   ...Object.values(PRESETS).map(({ width, height }) => ({
     project: `s3-parity-${width}x${height}`,
     doc: 'banner',

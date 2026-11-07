@@ -79,31 +79,39 @@
       "fill": "#d4efe6"
     },
     {
-      "id": "rect-3",
-      "type": "rect",
-      "x": 390,
-      "y": 1640,
-      "width": 300,
-      "height": 120,
-      "fill": "#f6c453",
-      "cornerRadius": 60,
-      "shadow": { "color": "rgba(0,0,0,0.25)", "blur": 16, "offsetX": 0, "offsetY": 8 }
-    },
-    {
-      "id": "text-3",
-      "type": "text",
-      "x": 390,
-      "y": 1640,
-      "width": 300,
-      "height": 120,
-      "text": "$29",
-      "fontFamily": "Inter",
-      "fontWeight": 800,
-      "fontSize": 64,
-      "fill": "#0e3a32",
-      "align": "center",
-      "verticalAlign": "middle",
-      "autoFit": { "minFontSize": 32 }
+      "id": "group-1",
+      "type": "group",
+      "name": "Price badge",
+      "opacity": 0.85,
+      "layers": [
+        {
+          "id": "rect-3",
+          "type": "rect",
+          "x": 390,
+          "y": 1640,
+          "width": 300,
+          "height": 120,
+          "fill": "#f6c453",
+          "cornerRadius": 60,
+          "shadow": { "color": "rgba(0,0,0,0.25)", "blur": 16, "offsetX": 0, "offsetY": 8 }
+        },
+        {
+          "id": "text-3",
+          "type": "text",
+          "x": 390,
+          "y": 1640,
+          "width": 300,
+          "height": 120,
+          "text": "$29",
+          "fontFamily": "Inter",
+          "fontWeight": 800,
+          "fontSize": 64,
+          "fill": "#0e3a32",
+          "align": "center",
+          "verticalAlign": "middle",
+          "autoFit": { "minFontSize": 32 }
+        }
+      ]
     }
   ]
 }
