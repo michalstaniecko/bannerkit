@@ -148,7 +148,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
   let loads = 0
   let selected: string[] = []
   const history = createHistory()
-  let unmount = () => {}
+  /** Undoes `mount` and returns the <canvas> it added to the container. */
+  let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
     change: new Set(),
     selection: new Set(),
@@ -332,7 +333,10 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       c.on('selection:cleared', reportSelection)
       const keyTarget = container.ownerDocument
       keyTarget.addEventListener('keydown', onKeyDown)
-      unmount = () => keyTarget.removeEventListener('keydown', onKeyDown)
+      unmount = () => {
+        keyTarget.removeEventListener('keydown', onKeyDown)
+        return element
+      }
     },
 
     async load(document, { assetUrl = (src: string) => src } = {}) {
@@ -402,8 +406,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
 
     async destroy() {
       const c = canvas
-      unmount()
-      unmount = () => {}
+      const mounted = unmount()
+      unmount = () => undefined
       canvas = undefined
       current = undefined
       entries = []
@@ -411,6 +415,8 @@ export function createEditor({ loadFonts = loadBrowserFonts }: EditorOptions = {
       listeners.change.clear()
       listeners.selection.clear()
       await c?.dispose()
+      // Fabric's dispose puts the bare <canvas> back into the container; take it out too.
+      mounted?.remove()
     },
   }
 }

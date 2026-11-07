@@ -2,9 +2,11 @@
 // the open one onto a Preset's size (Layers copied unchanged), via REST over the
 // `createDocument` / `duplicateDocument` ops. The new Document is then opened.
 import { PRESET_IDS, type PresetId } from '@bannerkit/core'
+import { CopyPlus, FilePlus } from 'lucide-react'
 import { useState, type RefObject } from 'react'
 import { api } from './api.ts'
 import { SaveConflict } from './live-reload.ts'
+import { Button } from './ui/Button.tsx'
 
 type Props = {
   /**
@@ -55,7 +57,7 @@ export function DocumentActions({ saveNow, project, doc, loaded, disabled, onOpe
     })
 
   return (
-    <span className="document-actions">
+    <div className="toolbar-group document-actions" role="group" aria-label="Document actions">
       <select aria-label="Size" value={preset} onChange={(e) => setPreset(e.target.value as PresetId)} disabled={!project}>
         {PRESET_IDS.map((id) => (
           <option key={id} value={id}>
@@ -71,12 +73,12 @@ export function DocumentActions({ saveNow, project, doc, loaded, disabled, onOpe
         onChange={(e) => setName(e.target.value)}
         disabled={!project}
       />
-      <button type="button" onClick={() => void create()} disabled={!project || !name.trim() || busy || disabled}>
+      <Button icon={FilePlus} onClick={() => void create()} disabled={!project || !name.trim() || busy || disabled}>
         New
-      </button>
-      <button type="button" onClick={() => void duplicate()} disabled={!loaded || busy || disabled} title="Duplicate this Document to the chosen size">
+      </Button>
+      <Button icon={CopyPlus} onClick={() => void duplicate()} disabled={!loaded || busy || disabled} title="Duplicate this Document to the chosen size">
         Duplicate to size
-      </button>
-    </span>
+      </Button>
+    </div>
   )
 }

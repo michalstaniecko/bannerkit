@@ -1,4 +1,5 @@
-/* Editor layout. Colors, spacing and radii come from semantic tokens (tokens.css). */
+/* Editor window layout. Colors, spacing and radii come from semantic tokens (tokens.css);
+ * components (Button, IconButton, Panel/Section, Tabs) are styled in ui/ui.css. */
 html,
 body,
 #root {
@@ -8,6 +9,7 @@ body,
 
 body {
   font-family: var(--font-ui);
+  font-size: var(--text-size-ui);
   color: var(--text-default);
   background: var(--surface-app);
 }
@@ -18,6 +20,7 @@ input,
 select,
 textarea {
   font-family: inherit;
+  font-size: inherit;
 }
 
 .app {
@@ -26,11 +29,14 @@ textarea {
   height: 100%;
 }
 
+/* Top bar: groups of controls, wrapping when crowded. */
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-control);
   padding: var(--pad-bar-y) var(--pad-bar-x);
+  background: var(--surface-panel);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -38,9 +44,29 @@ textarea {
   flex: 1;
 }
 
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-tight);
+}
+
+/* Reserved for the Snapping switch (M3); takes no room while empty. */
+.topbar-snapping:empty {
+  display: none;
+}
+
 .topbar .zoom {
   min-width: 4em;
   text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.save {
+  color: var(--text-muted);
+}
+
+.save[data-state='failed'] {
+  color: var(--text-danger);
 }
 
 .error {
@@ -48,37 +74,26 @@ textarea {
   color: var(--text-danger);
 }
 
-.viewport {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  display: grid;
-  place-items: center;
-  background: var(--surface-canvas-area);
+.reload-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+  background: var(--surface-warning);
+  border-bottom: 1px solid var(--border-warning);
 }
 
-.canvas-host[hidden] {
-  display: none;
-}
-
-/* The top bar wraps when crowded. */
-.topbar {
-  flex-wrap: wrap;
-}
-
+/* Layer list | Canvas area | Inspector. */
 .editor-body {
   flex: 1;
   min-height: 0;
   display: flex;
 }
 
-.editor-body .viewport {
-  min-width: 0;
-}
-
-/* Layer list (left) beside the Canvas viewport. */
+/* Layer list (left). */
 .layer-list {
-  width: 200px;
+  width: var(--layer-list-width);
+  flex: none;
   overflow: auto;
   border-right: 1px solid var(--border-subtle);
 }
@@ -89,36 +104,132 @@ textarea {
   padding: var(--pad-list);
 }
 
-.layer-list li {
+.layer-list ol ol {
+  padding: var(--pad-none);
+}
+
+.layer-row {
   display: flex;
   align-items: center;
   gap: var(--gap-tight);
+  padding-inline-start: calc(var(--layer-depth, 0) * var(--indent-tree));
+  border-radius: var(--control-radius);
 }
 
-.layer-list li[aria-selected='true'] {
+.layer-row:hover {
+  background: var(--surface-hover);
+}
+
+.layer-list li[aria-selected='true'] > .layer-row {
   background: var(--surface-selected);
 }
 
 .layer-list .layer-name {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: left;
+  padding: var(--pad-control-y) var(--pad-control-x);
   border: none;
   background: none;
+  color: inherit;
   cursor: grab;
 }
 
-.json-panel {
-  width: 360px;
+/* Canvas area (centre): ruler gutters (M3) around the scrolling viewport. */
+.canvas-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--ruler-size) minmax(0, 1fr);
+  grid-template-rows: var(--ruler-size) minmax(0, 1fr);
+  grid-template-areas:
+    'corner top'
+    'left viewport';
+  background: var(--surface-canvas-area);
+}
+
+.ruler-corner {
+  grid-area: corner;
+}
+
+.ruler-top {
+  grid-area: top;
+  overflow: hidden;
+}
+
+.ruler-left {
+  grid-area: left;
+  overflow: hidden;
+}
+
+.viewport {
+  grid-area: viewport;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: safe center;
+}
+
+/* The Canvas and, stacked exactly over it, the overlay (DOM outside Fabric). */
+.canvas-stage {
+  position: relative;
+}
+
+.canvas-stage[hidden] {
+  display: none;
+}
+
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hint {
+  color: var(--text-muted);
+}
+
+/* Inspector (right). */
+.inspector {
+  width: var(--inspector-width);
+  flex: none;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   border-left: 1px solid var(--border-subtle);
+}
+
+.inspector-tabs {
+  flex: 1;
+  min-height: 0;
+}
+
+.inspector-properties {
+  overflow: auto;
+}
+
+/* JSON tab. */
+.json-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .json-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--gap-control);
   padding: var(--pad-bar-y) var(--pad-bar-x);
+}
+
+.json-stale {
+  color: var(--text-muted);
 }
 
 .json-errors {
@@ -130,17 +241,10 @@ textarea {
 .json-code {
   flex: 1;
   min-height: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .json-code .cm-editor {
   height: 100%;
-}
-
-.reload-banner {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-control);
-  padding: var(--pad-bar-y) var(--pad-bar-x);
-  background: var(--surface-warning);
-  border-bottom: 1px solid var(--border-warning);
+  font-family: var(--font-code);
 }

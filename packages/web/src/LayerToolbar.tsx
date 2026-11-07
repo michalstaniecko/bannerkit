@@ -1,10 +1,12 @@
 // The top bar's Layer toolbar: add a text, rect or image Layer (images are picked with
 // the file picker and added as Assets first), and delete or duplicate the selected
 // Layers. Each action is one undo step and leaves its result selected.
+import { Copy, ImagePlus, Square, Trash2, Type } from 'lucide-react'
 import { useRef, type RefObject } from 'react'
 import { api } from './api.ts'
 import type { Editor } from './editor/index.ts'
 import { addLayer, deleteLayers, duplicateLayers, type NewLayer } from './layer-actions.ts'
+import { IconButton } from './ui/IconButton.tsx'
 import { useLayers } from './useLayers.ts'
 
 type Props = {
@@ -44,16 +46,10 @@ export function LayerToolbar({ editor, project, loaded, onError }: Props) {
 
   const none = !loaded || selection.length === 0
   return (
-    <span className="layer-toolbar">
-      <button type="button" disabled={!loaded} onClick={() => void add([{ type: 'text' }])}>
-        Add text
-      </button>
-      <button type="button" disabled={!loaded} onClick={() => void add([{ type: 'rect' }])}>
-        Add rect
-      </button>
-      <button type="button" disabled={!loaded} onClick={() => picker.current?.click()}>
-        Add image
-      </button>
+    <div className="toolbar-group layer-toolbar" role="group" aria-label="Layer actions">
+      <IconButton icon={Type} label="Add text" disabled={!loaded} onClick={() => void add([{ type: 'text' }])} />
+      <IconButton icon={Square} label="Add rect" disabled={!loaded} onClick={() => void add([{ type: 'rect' }])} />
+      <IconButton icon={ImagePlus} label="Add image" disabled={!loaded} onClick={() => picker.current?.click()} />
       <input
         ref={picker}
         type="file"
@@ -67,11 +63,9 @@ export function LayerToolbar({ editor, project, loaded, onError }: Props) {
           void addAssets(files)
         }}
       />
-      <button type="button" disabled={none} onClick={() => void run((d) => ({ document: deleteLayers(d, selection), select: [] }))}>
-        Delete
-      </button>
-      <button
-        type="button"
+      <IconButton
+        icon={Copy}
+        label="Duplicate"
         disabled={none}
         onClick={() =>
           void run((d) => {
@@ -79,9 +73,13 @@ export function LayerToolbar({ editor, project, loaded, onError }: Props) {
             return { document, select: ids }
           })
         }
-      >
-        Duplicate
-      </button>
-    </span>
+      />
+      <IconButton
+        icon={Trash2}
+        label="Delete"
+        disabled={none}
+        onClick={() => void run((d) => ({ document: deleteLayers(d, selection), select: [] }))}
+      />
+    </div>
   )
 }
