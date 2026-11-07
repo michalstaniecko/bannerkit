@@ -479,6 +479,15 @@
             "minFontSize"
           ],
           "additionalProperties": false
+        },
+        "textTransform": {
+          "description": "Drawn case, default \"none\". `text` keeps what was typed; layout, AutoFit and inspect lines use the transformed text",
+          "type": "string",
+          "enum": [
+            "none",
+            "uppercase",
+            "lowercase"
+          ]
         }
       },
       "required": [
