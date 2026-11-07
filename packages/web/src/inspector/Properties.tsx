@@ -9,7 +9,7 @@
 // Selection it shows the Document (DocumentFields); the Anchor it resizes from is held
 // by the caller for the session.
 import { inheritedFlags, type Anchor, type Document, type GroupLayer, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
-import type { RefObject } from 'react'
+import { useState, type RefObject } from 'react'
 import type { DocumentRecipe, Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
 import { ColorField } from '../ui/ColorField.tsx'
@@ -40,6 +40,8 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
   const { document, selection, reloads } = useInspected(editor, loaded)
   const layers = document ? selectedLayers(document, selection) : []
   const edits = useEdits(editor)
+  // The Align section's Gap: UI state for the session (Properties stays mounted).
+  const [gap, setGap] = useState<number | undefined>(undefined)
   // Text Layout (used font size, Auto height) as the editor lays it out: core
   // `layoutText` with the Canvas's measure, never read back from Fabric.
   const textLayout = (layer: TextLayer): TextLayout => {
@@ -61,7 +63,9 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
 
   return (
     <div className="inspector-properties">
-      {document && <AlignSection document={document} selection={selection} measure={measure} onWrite={edits.commit} />}
+      {document && (
+        <AlignSection document={document} selection={selection} measure={measure} gap={gap} onGapChange={setGap} onWrite={edits.commit} />
+      )}
       {sharedFields(layers).map((group) => (
         <Section key={group.key} title={group.title}>
           {group.key === 'appearance' && <InheritedFlags document={document!} layers={layers} />}

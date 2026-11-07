@@ -337,6 +337,22 @@ textarea {
   grid-column: 1 / -1;
 }
 
+/* The Align section: six Align buttons in a row, then Distribute and its Gap. */
+.align-buttons,
+.align-distribute {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+}
+
+.align-distribute {
+  margin-top: var(--gap-control);
+}
+
+.align-distribute > .text-field {
+  flex: 1;
+}
+
 /* "Locked by Group …": a Group around the Layer locks or hides it. */
 .inherited-flag {
   margin: 0 0 var(--gap-control);
