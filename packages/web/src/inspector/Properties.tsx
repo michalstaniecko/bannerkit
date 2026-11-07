@@ -18,6 +18,7 @@ import { Section } from '../ui/Panel.tsx'
 import { Segmented } from '../ui/Segmented.tsx'
 import { Select } from '../ui/Select.tsx'
 import { TextField } from '../ui/TextField.tsx'
+import { AlignSection } from './AlignSection.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
 import { inspectField, MIXED, selectedLayers, sharedFields, type InspectedField } from './inspect.ts'
@@ -60,6 +61,7 @@ export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
 
   return (
     <div className="inspector-properties">
+      {document && <AlignSection document={document} selection={selection} measure={measure} onWrite={edits.commit} />}
       {sharedFields(layers).map((group) => (
         <Section key={group.key} title={group.title}>
           {group.key === 'appearance' && <InheritedFlags document={document!} layers={layers} />}
