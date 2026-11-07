@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { FONT_WEIGHTS } from './document.ts'
 import { closest } from './suggest.ts'
 import { layoutText, type MeasureText } from './textLayout.ts'
+import { walkLayers } from './tree.ts'
 import type { DocumentRule, RuleIssue } from './validate.ts'
 
 // Font manifest (ADR 0003): `fonts/fonts.json` lists every font face both
@@ -42,11 +43,11 @@ export function parseFontManifest(value: unknown): FontManifest {
 export function textOverflow(manifest: FontManifest, measure: MeasureText): DocumentRule {
   const faces = new Set(manifest.map((f) => `${f.family}/${f.weight}`))
   return (document) =>
-    document.layers.flatMap((layer, i): RuleIssue[] => {
+    walkLayers(document).flatMap(({ layer, path }): RuleIssue[] => {
       if (layer.type !== 'text' || !faces.has(`${layer.fontFamily}/${layer.fontWeight}`)) return []
       if (!layoutText(layer, measure).overflow) return []
       const at = layer.autoFit ? `even at autoFit.minFontSize ${layer.autoFit.minFontSize}px` : `at fontSize ${layer.fontSize}px`
-      return [{ path: `layers[${i}].text`, message: `text overflows its Box ${at}; it renders clipped`, severity: 'warning' }]
+      return [{ path: `${path}.text`, message: `text overflows its Box ${at}; it renders clipped`, severity: 'warning' }]
     })
 }
 
@@ -57,12 +58,12 @@ export function fontsInManifest(manifest: FontManifest): DocumentRule {
   const families = [...weights.keys()]
 
   return (document) =>
-    document.layers.flatMap((layer, i): RuleIssue[] => {
+    walkLayers(document).flatMap(({ layer, path }): RuleIssue[] => {
       if (layer.type !== 'text') return []
       const available = weights.get(layer.fontFamily)
       if (available === undefined) {
         const issue: RuleIssue = {
-          path: `layers[${i}].fontFamily`,
+          path: `${path}.fontFamily`,
           message: `font family "${layer.fontFamily}" is not in the font manifest (available: ${families.join(', ')})`,
         }
         const suggestion = closest(layer.fontFamily, families)
@@ -71,7 +72,7 @@ export function fontsInManifest(manifest: FontManifest): DocumentRule {
       if (available.includes(layer.fontWeight)) return []
       return [
         {
-          path: `layers[${i}].fontWeight`,
+          path: `${path}.fontWeight`,
           message: `font "${layer.fontFamily}" has no weight ${layer.fontWeight} in the font manifest (available: ${[...available].sort((a, b) => a - b).join(', ')})`,
         },
       ]
