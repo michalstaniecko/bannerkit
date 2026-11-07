@@ -57,6 +57,20 @@ const rect = (over: Partial<Extract<Layer, { type: 'rect' }>> = {}): Layer => ({
   ...over,
 })
 
+describe('mount / destroy', () => {
+  it('destroy leaves the container as mount found it, so a remount shows one Canvas', async () => {
+    const { editor: first, container } = await open(doc([]))
+    await first.destroy()
+    expect(container.children).toHaveLength(0)
+
+    editor = createEditor()
+    editor.mount(container)
+    await editor.load(doc([]))
+    expect(container.querySelectorAll('canvas.lower-canvas')).toHaveLength(1)
+    expect(container.querySelectorAll('canvas')).toHaveLength(2)
+  })
+})
+
 describe('rect Layers on the Canvas', () => {
   it('places the Box by its top-left', async () => {
     const { container } = await open(doc([rect()]))
