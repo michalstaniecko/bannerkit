@@ -37,6 +37,12 @@ export type NumberFieldSpec<L extends Layer = Layer> = FieldBase & {
   round?: (value: number) => number
   /** Shown in place of a missing value. */
   placeholder?: string
+  /**
+   * The field is this side of the Layer's Box. With several Layers in the Inspector
+   * it stands for their shared Box instead (see `inspectField`): `x`/`y` move every
+   * Layer by one delta, `width`/`height` are shown but disabled.
+   */
+  box?: 'x' | 'y' | 'width' | 'height'
   read: (layer: L) => number | undefined
   write: (layer: L, value: number) => L
 }
@@ -84,13 +90,14 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
       key: 'layout',
       title: 'Layout',
       fields: [
-        { control: 'number', key: 'x', label: 'X', round: roundPx, read: (l) => l.x, write: (l, x) => ({ ...l, x }) },
-        { control: 'number', key: 'y', label: 'Y', round: roundPx, read: (l) => l.y, write: (l, y) => ({ ...l, y }) },
+        { control: 'number', key: 'x', label: 'X', box: 'x', round: roundPx, read: (l) => l.x, write: (l, x) => ({ ...l, x }) },
+        { control: 'number', key: 'y', label: 'Y', box: 'y', round: roundPx, read: (l) => l.y, write: (l, y) => ({ ...l, y }) },
         {
           control: 'number',
           key: 'width',
           label: 'W',
           name: 'Width',
+          box: 'width',
           min: shape.width.minValue ?? undefined,
           round: roundPx,
           read: (l) => l.width,
@@ -101,6 +108,7 @@ function commonGroups<L extends Layer>(): FieldGroup<L>[] {
           key: 'height',
           label: 'H',
           name: 'Height',
+          box: 'height',
           min: shape.height.minValue ?? undefined,
           round: roundPx,
           // A text Layer without `height` grows with its text (shown as Auto).

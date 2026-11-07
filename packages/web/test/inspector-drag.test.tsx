@@ -109,3 +109,50 @@ describe('dragging a number field label', () => {
     expect(changes.map((c) => c.cause)).toEqual(['reload'])
   })
 })
+
+describe('dragging a number field label with several Layers', () => {
+  const a = rect({ id: 'a', x: 10, y: 20, opacity: 0.5 })
+  const b = rect({ id: 'b', x: 200, y: 120, opacity: 0.5 })
+
+  it('dragging X moves the Selection Box: every Layer by one delta, one step on release', async () => {
+    const original = doc([a, b, rect({ id: 'c' })])
+    const { editor, field, changes } = await openInspector(original, { select: ['a', 'b'] })
+
+    await mouse(labelOf(field('X')), 'mousedown', { clientX: 50 })
+    await mouse(document.body, 'mousemove', { clientX: 60 })
+    await mouse(document.body, 'mousemove', { clientX: 75 })
+
+    expect(editor.getDocument().layers.map((l) => l.x)).toEqual([35, 225, 100])
+    expect(field('X').value).toBe('35')
+    expect(changes).toEqual([])
+    expect(editor.canUndo()).toBe(false)
+
+    await mouse(document.body, 'mouseup', { clientX: 75 })
+
+    expect(changes.map((c) => c.cause)).toEqual(['inspector'])
+    expect(editor.getDocument().layers.map((l) => [l.x, l.y])).toEqual([
+      [35, 20],
+      [225, 120],
+      [100, 100],
+    ])
+    expect(field('X').value).toBe('35')
+    expect(editor.getSelection()).toEqual(['a', 'b'])
+    await act(() => editor.undo())
+    expect(editor.getDocument()).toEqual(original)
+  })
+
+  it('dragging a shared field sets it on every Layer; Escape restores them all', async () => {
+    const original = doc([a, b])
+    const { editor, field, changes } = await openInspector(original, { select: ['a', 'b'] })
+
+    await mouse(labelOf(field('Opacity')), 'mousedown', { clientX: 50 })
+    await mouse(document.body, 'mousemove', { clientX: 60 })
+    expect(editor.getDocument().layers.map((l) => l.opacity)).toEqual([0.6, 0.6])
+    await key('Escape')
+    await mouse(document.body, 'mouseup', { clientX: 60 })
+
+    expect(editor.getDocument()).toEqual(original)
+    expect(field('Opacity').value).toBe('0.5')
+    expect(changes).toEqual([])
+  })
+})
