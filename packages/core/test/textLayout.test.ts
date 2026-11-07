@@ -63,7 +63,16 @@ describe('layoutText: wrapping (Fabric Textbox rules)', () => {
       calls.push([font, ls])
       return t.length
     })
-    expect(calls).toContainEqual([{ family: 'Inter', weight: 700, size: 30 }, 1.5])
+    expect(calls).toContainEqual([{ family: 'Inter', weight: 700, style: 'normal', size: 30 }, 1.5])
+  })
+
+  it('measures an italic Layer with the italic face', () => {
+    const styles = new Set<string>()
+    layoutText(text({ text: 'Hi there', fontStyle: 'italic' }), (font, t, ls) => {
+      styles.add(font.style)
+      return mono(font, t, ls)
+    })
+    expect([...styles]).toEqual(['italic'])
   })
 })
 

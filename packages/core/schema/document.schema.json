@@ -479,6 +479,14 @@
             "minFontSize"
           ],
           "additionalProperties": false
+        },
+        "fontStyle": {
+          "description": "Default \"normal\". \"italic\" needs an italic font file for this family and weight; never synthesised",
+          "type": "string",
+          "enum": [
+            "normal",
+            "italic"
+          ]
         }
       },
       "required": [

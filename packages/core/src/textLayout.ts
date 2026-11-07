@@ -1,11 +1,11 @@
-import type { TextLayer } from './document.ts'
+import type { FontStyle, TextLayer } from './document.ts'
 
 // Text Layout (ADR 0004): core decides line breaks, font size and line
 // positions; renderers only draw the lines. Wrapping copies Fabric 7 `Textbox`
 // (`_wrapLine`) exactly so the editor and the server break at the same words.
 // No DOM or Node APIs: text is measured through the injected `measure`.
 
-export type FontSpec = { family: string; weight: TextLayer['fontWeight']; size: number }
+export type FontSpec = { family: string; weight: TextLayer['fontWeight']; style: FontStyle; size: number }
 
 /**
  * Width in px of `text` drawn in `font` with canvas `letterSpacing` semantics:
@@ -141,5 +141,5 @@ function fits(layer: TextLayer, { size, lines, largestWordWidth }: Wrapped): boo
 }
 
 function fontOf(layer: TextLayer, size: number): FontSpec {
-  return { family: layer.fontFamily, weight: layer.fontWeight, size }
+  return { family: layer.fontFamily, weight: layer.fontWeight, style: layer.fontStyle ?? 'normal', size }
 }
