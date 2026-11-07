@@ -7,7 +7,7 @@
 // Colours are CSS tokens read from the editor's container at `mount` (`--snap`, …).
 // A new Mark kind adds its colour to `OverlayColors` and a case to `drawMark`.
 import type { Canvas } from 'fabric'
-import type { Mark } from './snapping/marks.ts'
+import type { GapMark, Mark } from './snapping/marks.ts'
 
 export type OverlayColors = { snap: string }
 
@@ -72,5 +72,35 @@ function drawMark(ctx: CanvasRenderingContext2D, mark: Mark, zoom: number, color
       ctx.stroke()
       return
     }
+    case 'gap':
+      drawGap(ctx, mark, zoom, colors)
+      return
   }
+}
+
+/** Half the length of the ticks closing a gap, in screen px. */
+const GAP_TICK = 4
+
+/** An equal gap: a segment closed by ticks, its px label beside its middle. */
+function drawGap(ctx: CanvasRenderingContext2D, mark: GapMark, zoom: number, colors: OverlayColors): void {
+  const at = crisp(mark.at, zoom)
+  const from = mark.from * zoom
+  const to = mark.to * zoom
+  // Along the gap's axis (u) and across it (v), whichever way the gap runs.
+  const point = (u: number, v: number): [number, number] => (mark.axis === 'x' ? [u, v] : [v, u])
+  ctx.strokeStyle = colors.snap
+  ctx.fillStyle = colors.snap
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(...point(from, at))
+  ctx.lineTo(...point(to, at))
+  for (const end of [crisp(mark.from, zoom), crisp(mark.to, zoom)]) {
+    ctx.moveTo(...point(end, at - GAP_TICK))
+    ctx.lineTo(...point(end, at + GAP_TICK))
+  }
+  ctx.stroke()
+  ctx.font = '11px sans-serif'
+  ctx.textAlign = mark.axis === 'x' ? 'center' : 'left'
+  ctx.textBaseline = mark.axis === 'x' ? 'bottom' : 'middle'
+  ctx.fillText(mark.label, ...point((from + to) / 2, mark.axis === 'x' ? at - GAP_TICK - 2 : at + GAP_TICK + 2))
 }
