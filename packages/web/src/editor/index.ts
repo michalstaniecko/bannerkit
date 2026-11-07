@@ -12,7 +12,8 @@
 // hits a Group only where one of its Layers is hit). Moving it moves every Layer in it
 // by the same delta; its corner handles scale and its rotation handle turns every
 // Layer in it (core `scaleGroup` / `rotateGroup`). Either way the Group is laid out
-// again around its Layers, as an axis-aligned Box.
+// again around its Layers, as an axis-aligned Box. Ctrl/Cmd+G and Ctrl/Cmd+Shift+G
+// group and ungroup the Selection (layer-actions.ts), one step each.
 //
 // Direct manipulation: Fabric runs the drag, scale, rotate and text editing. When
 // one *logical modification* ends (a transform's `object:modified`, a text edit's
@@ -45,6 +46,7 @@ import { groupControls, textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
 import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
 import { createHistory } from './history.ts'
+import { groupSelection, ungroupSelection, type LayerActionResult } from '../layer-actions.ts'
 import { roundAngle, roundPx } from './rounding.ts'
 import { DocumentGroup } from './group.ts'
 import { applyLayer, isFrozen, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
@@ -558,6 +560,26 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     return true
   }
 
+  /**
+   * Ctrl/Cmd+G groups the Selection, Ctrl/Cmd+Shift+G ungroups every selected Group
+   * (layer-actions.ts): one step, then the result is selected. The browser's own
+   * shortcut is blocked even when the action is unavailable.
+   */
+  const groupKeys = (event: KeyboardEvent): boolean => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'g') return false
+    event.preventDefault()
+    const result = (event.shiftKey ? ungroupSelection : groupSelection)(documentNow(), selected)
+    if (result) void applyLayers(result)
+    return true
+  }
+
+  /** Shows a Layer action's Document as one 'layers' step, then selects its result. */
+  const applyLayers = async ({ document, select }: LayerActionResult) => {
+    finishTextEdit()
+    await dropPreview()
+    if (await showStep(document, 'layers')) selectIds(select)
+  }
+
   const onKeyDown = (event: KeyboardEvent) => {
     if (!canvas || !current) return
     const target = event.target as HTMLElement | null
@@ -565,6 +587,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     // A gesture is previewing; its owner handles keys (Escape cancels it).
     if (previewing) return
     if (undoKeys(event)) return
+    if (groupKeys(event)) return
     nudge(event)
   }
 
