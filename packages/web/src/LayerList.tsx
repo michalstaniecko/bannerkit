@@ -8,8 +8,9 @@
 // middle of a Group row, on top of the Group's Layers. Every action is one undo step.
 import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, type LucideIcon } from 'lucide-react'
 import { useEffect, useState, type DragEvent, type ReactNode, type RefObject } from 'react'
-import { walkLayers, type Document, type Layer } from '@bannerkit/core'
+import { ancestorsOf, inheritedFlags, type Document, type Layer } from '@bannerkit/core'
 import type { Editor } from './editor/index.ts'
+import { toggleRelated } from './editor/picking.ts'
 import { dropLayer, layerFlag, setLayerFlag, type DropPosition } from './layer-actions.ts'
 import { ICON_SIZE } from './ui/Button.tsx'
 import { Panel } from './ui/Panel.tsx'
@@ -36,7 +37,7 @@ export function LayerList({ editor, loaded, onError }: Props) {
   // A Layer selected on the Canvas is shown: its ancestors expand.
   useEffect(() => {
     if (!document) return
-    const shown = new Set(selection.flatMap((id) => ancestorsOf(document, id)))
+    const shown = new Set(selection.flatMap((id) => ancestorsOf(document, id).map((g) => g.id)))
     setCollapsed((c) => ([...c].some((id) => shown.has(id)) ? new Set([...c].filter((id) => !shown.has(id))) : c))
   }, [document, selection])
 
@@ -52,14 +53,12 @@ export function LayerList({ editor, loaded, onError }: Props) {
     setOver(null)
   }
 
-  const rows = (layers: readonly Layer[], depth: number, inherited: Inherited): ReactNode =>
+  const rows = (doc: Document, layers: readonly Layer[], depth: number): ReactNode =>
     [...layers].reverse().map((layer) => {
       const isGroup = layer.type === 'group'
       const expanded = isGroup && !collapsed.has(layer.id)
-      const inside = {
-        hidden: inherited.hidden || !layerFlag(layer, 'visible'),
-        locked: inherited.locked || layerFlag(layer, 'locked'),
-      }
+      const flags = inheritedFlags(doc, layer.id)
+      const inherited: Inherited = { hidden: flags?.hiddenBy !== undefined, locked: flags?.lockedBy !== undefined }
       return (
         <LayerRow
           key={layer.id}
@@ -93,29 +92,16 @@ export function LayerList({ editor, loaded, onError }: Props) {
             onEnd: endDrag,
           }}
         >
-          {expanded && rows(layer.layers, depth + 1, inside)}
+          {expanded && rows(doc, layer.layers, depth + 1)}
         </LayerRow>
       )
     })
 
   return (
     <Panel label="Layers" className="layer-list">
-      {document && <ol>{rows(document.layers, 0, NOT_INHERITED)}</ol>}
+      {document && <ol>{rows(document, document.layers, 0)}</ol>}
     </Panel>
   )
-}
-
-const NOT_INHERITED: Inherited = { hidden: false, locked: false }
-
-/** The ids of the Groups holding Layer `id`, innermost first. */
-function ancestorsOf(document: Document, id: string): string[] {
-  const parents = new Map<string, string>()
-  for (const { layer, parent } of walkLayers(document)) {
-    if (parent !== document) parents.set(layer.id, (parent as Layer).id)
-  }
-  const ancestors: string[] = []
-  for (let p = parents.get(id); p !== undefined; p = parents.get(p)) ancestors.push(p)
-  return ancestors
 }
 
 /**
@@ -124,10 +110,7 @@ function ancestorsOf(document: Document, id: string): string[] {
  * a Layer inside it).
  */
 export function toggleSelected(document: Document, selection: readonly string[], id: string): string[] {
-  if (selection.includes(id)) return selection.filter((s) => s !== id)
-  const ancestors = ancestorsOf(document, id)
-  const related = (s: string) => ancestors.includes(s) || ancestorsOf(document, s).includes(id)
-  return [...selection.filter((s) => !related(s)), id]
+  return toggleRelated(selection, id, (ancestor, item) => ancestorsOf(document, item).some((g) => g.id === ancestor))
 }
 
 type RowProps = {

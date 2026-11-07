@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findLayer, inheritedFlags, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer, type LeafLayer } from '../src/index.ts'
+import { ancestorsOf, findLayer, inheritedFlags, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer, type LeafLayer } from '../src/index.ts'
 
 const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000' })
 
@@ -164,5 +164,20 @@ describe('inheritedFlags', () => {
 
   it('is undefined for an unknown id', () => {
     expect(inheritedFlags(document, 'nope')).toBeUndefined()
+  })
+})
+
+describe('ancestorsOf', () => {
+  const group = (id: string, ...layers: Layer[]): Layer => ({ id, type: 'group', layers })
+  const document = doc(group('outer', rect('b'), group('inner', rect('a'))), rect('c'))
+
+  it('names the Groups holding a Layer, innermost first', () => {
+    expect(ancestorsOf(document, 'a').map((g) => g.id)).toEqual(['inner', 'outer'])
+    expect(ancestorsOf(document, 'inner').map((g) => g.id)).toEqual(['outer'])
+  })
+
+  it('is empty for a top-level Layer or an unknown id', () => {
+    expect(ancestorsOf(document, 'c')).toEqual([])
+    expect(ancestorsOf(document, 'nope')).toEqual([])
   })
 })

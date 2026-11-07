@@ -99,22 +99,22 @@ export function replaceLayer(document: Document, id: string, replace: (layer: La
 export type InheritedFlags = { locked: boolean; hidden: boolean; lockedBy?: GroupLayer; hiddenBy?: GroupLayer }
 
 export function inheritedFlags(root: LayerParent, id: string): InheritedFlags | undefined {
-  const find = (layers: readonly Layer[], groups: readonly GroupLayer[]): InheritedFlags | undefined => {
-    for (const layer of layers) {
-      if (layer.id === id) {
-        const lockedBy = groups.findLast((g) => g.locked === true)
-        const hiddenBy = groups.findLast((g) => g.visible === false)
-        const flags: InheritedFlags = { locked: layer.locked === true || lockedBy !== undefined, hidden: layer.visible === false || hiddenBy !== undefined }
-        if (lockedBy) flags.lockedBy = lockedBy
-        if (hiddenBy) flags.hiddenBy = hiddenBy
-        return flags
-      }
-      if (layer.type === 'group') {
-        const found = find(layer.layers, [...groups, layer])
-        if (found) return found
-      }
-    }
-    return undefined
-  }
-  return find(root.layers, [])
+  const layer = findLayer(root, id)?.layer
+  if (!layer) return undefined
+  const groups = ancestorsOf(root, id)
+  const lockedBy = groups.find((g) => g.locked === true)
+  const hiddenBy = groups.find((g) => g.visible === false)
+  const flags: InheritedFlags = { locked: layer.locked === true || lockedBy !== undefined, hidden: layer.visible === false || hiddenBy !== undefined }
+  if (lockedBy) flags.lockedBy = lockedBy
+  if (hiddenBy) flags.hiddenBy = hiddenBy
+  return flags
+}
+
+/** The Groups under `root` holding the Layer `id`, innermost first (none for a top-level Layer or an unknown id). */
+export function ancestorsOf(root: LayerParent, id: string): GroupLayer[] {
+  const parents = new Map<string, GroupLayer>()
+  for (const { layer, parent } of walkLayers(root)) if (parent !== root) parents.set(layer.id, parent as GroupLayer)
+  const ancestors: GroupLayer[] = []
+  for (let group = parents.get(id); group; group = parents.get(group.id)) ancestors.push(group)
+  return ancestors
 }

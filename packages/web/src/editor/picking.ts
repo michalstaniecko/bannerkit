@@ -41,8 +41,17 @@ export function escapeSelection(selected: readonly Entry[]): Entry[] | undefined
 
 /** The Selection after Shift+click on `target`: toggled, and its ancestors and descendants dropped. */
 export function toggleSelection(selected: readonly Entry[], target: Entry): Entry[] {
-  if (selected.includes(target)) return selected.filter((e) => e !== target)
-  return [...selected.filter((e) => !isAncestor(e, target) && !isAncestor(target, e)), target]
+  return toggleRelated(selected, target, isAncestor)
+}
+
+/**
+ * The rule behind every Shift+click (Canvas and Layer list), for Entries or ids alike:
+ * `target` leaves `selected` if it was in it, else it joins it in place of its selected
+ * ancestors and descendants. `holds(a, b)`: whether `a` is an ancestor of `b`.
+ */
+export function toggleRelated<T>(selected: readonly T[], target: T, holds: (ancestor: T, item: T) => boolean): T[] {
+  if (selected.includes(target)) return selected.filter((s) => s !== target)
+  return [...selected.filter((s) => !holds(s, target) && !holds(target, s)), target]
 }
 
 /** `entries` without any that has an ancestor among them (an ancestor wins). */
