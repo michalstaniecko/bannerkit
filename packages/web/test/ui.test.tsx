@@ -4,6 +4,7 @@ import { Undo2 } from 'lucide-react'
 import { act } from 'react'
 import { describe, expect, it } from 'vitest'
 import { Button } from '../src/ui/Button.tsx'
+import { Checkbox } from '../src/ui/Checkbox.tsx'
 import { IconButton } from '../src/ui/IconButton.tsx'
 import { Panel, Section } from '../src/ui/Panel.tsx'
 import { render } from './render.tsx'
@@ -69,5 +70,17 @@ describe('Panel and Section', () => {
       </Section>,
     )
     expect(host.querySelector('.section-header [aria-label="Remove shadow"]')).not.toBeNull()
+  })
+})
+
+describe('Checkbox', () => {
+  it('shows Mixed as indeterminate; a click turns it on', () => {
+    const changes: boolean[] = []
+    const host = render(<Checkbox label="Visible" checked mixed onChange={(value) => changes.push(value)} />)
+    const input = host.querySelector('input')!
+
+    expect([input.indeterminate, input.checked, input.getAttribute('aria-checked')]).toEqual([true, false, 'mixed'])
+    act(() => input.click())
+    expect(changes).toEqual([true])
   })
 })

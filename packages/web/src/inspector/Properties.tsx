@@ -1,15 +1,16 @@
-// The Inspector's "Properties" tab: the fields (fields.ts) of the selected Layer.
+// The Inspector's "Properties" tab: the fields (fields.ts) of the selected Layers, as
+// inspect.ts resolves them for one Layer or several (Mixed values, the Selection Box).
 // Every committed field is one `editor.update` with cause `inspector`: one undo step,
 // one `change`, the Selection kept. A reload from disk drops a value being typed and
-// shows the reloaded one. The Document (empty Selection) and several Layers come with
-// later tickets.
-import type { Layer } from '@bannerkit/core'
+// shows the reloaded one. The Document (empty Selection) comes with a later ticket.
+import { layoutText } from '@bannerkit/core'
 import type { RefObject } from 'react'
+import { measureText } from '../editor/fonts.ts'
 import type { Editor } from '../editor/index.ts'
 import { Checkbox } from '../ui/Checkbox.tsx'
 import { NumberField } from '../ui/NumberField.tsx'
 import { Section } from '../ui/Panel.tsx'
-import { editLayer, fieldsFor, writeNumber, type FieldSpec } from './fields.ts'
+import { inspectField, MIXED, sharedFields, type InspectedField, type Recipe, type TextHeight } from './inspect.ts'
 import { useInspected } from './useInspected.ts'
 
 type Props = {
@@ -17,56 +18,69 @@ type Props = {
   loaded: boolean
 }
 
+/** Shown for a value that differs between the selected Layers. */
+const MIXED_LABEL = 'Mixed'
+
+const textHeight: TextHeight = (layer) => layoutText(layer, measureText).height
+
 export function Properties({ editor, loaded }: Props) {
   const { document, selection, reloads } = useInspected(editor, loaded)
-  const layer = document && selection.length === 1 ? document.layers.find((l) => l.id === selection[0]) : undefined
+  const layers = document ? document.layers.filter((l) => selection.includes(l.id)) : []
 
-  const write = (id: string, change: (layer: Layer) => Layer) =>
-    void editor.current?.update((d) => editLayer(d, id, change), { cause: 'inspector' })
+  const write = (recipe: Recipe) => void editor.current?.update(recipe, { cause: 'inspector' })
 
   return (
     <div className="inspector-properties">
-      {layer &&
-        fieldsFor(layer).map((group) => (
-          <Section key={group.key} title={group.title}>
-            <div className="field-grid">
-              {group.fields.map((field) => (
-                <Field key={field.key} field={field} layer={layer} resetKey={reloads} onWrite={(change) => write(layer.id, change)} />
-              ))}
-            </div>
-          </Section>
-        ))}
+      {sharedFields(layers).map((group) => (
+        <Section key={group.key} title={group.title}>
+          <div className="field-grid">
+            {group.fields.map((field) => (
+              <Field key={field.key} inspected={inspectField(field, layers, { textHeight })} resetKey={reloads} onWrite={write} />
+            ))}
+          </div>
+        </Section>
+      ))}
     </div>
   )
 }
 
 type FieldProps = {
-  field: FieldSpec
-  layer: Layer
+  inspected: InspectedField
   resetKey: unknown
-  onWrite: (change: (layer: Layer) => Layer) => void
+  onWrite: (recipe: Recipe) => void
 }
 
-function Field({ field, layer, resetKey, onWrite }: FieldProps) {
-  switch (field.control) {
-    case 'number':
+function Field({ inspected, resetKey, onWrite }: FieldProps) {
+  const { field } = inspected
+  switch (inspected.control) {
+    case 'number': {
+      const { field, value } = inspected
       return (
         <NumberField
           label={field.label}
           name={field.name}
-          value={field.read(layer)}
+          value={value === MIXED ? undefined : value}
           min={field.min}
           max={field.max}
           step={field.step}
-          placeholder={field.placeholder}
+          placeholder={value === MIXED ? MIXED_LABEL : field.placeholder}
+          disabled={inspected.disabled}
           resetKey={resetKey}
-          onCommit={(value) => onWrite((l) => writeNumber(field, l, value))}
+          onCommit={(value) => onWrite(inspected.write(value))}
         />
       )
+    }
     case 'toggle':
-      return <Checkbox label={field.label} checked={field.read(layer)} onChange={(value) => onWrite((l) => field.write(l, value))} />
+      return (
+        <Checkbox
+          label={field.label}
+          checked={inspected.value === true}
+          mixed={inspected.value === MIXED}
+          onChange={(value) => onWrite(inspected.write(value))}
+        />
+      )
     case 'readonly':
-      return <ReadOnly label={field.label} value={field.read(layer)} />
+      return <ReadOnly label={field.label} value={inspected.value === MIXED ? MIXED_LABEL : inspected.value} />
   }
 }
 

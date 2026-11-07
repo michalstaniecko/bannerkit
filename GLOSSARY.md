@@ -74,6 +74,14 @@ _Avoid_: properties panel, sidebar
 **Selection**:
 The Layers currently selected in the browser editor, recorded so an agent can refer to "what's selected".
 
+**Selection Box**:
+The axis-aligned union of the rotated extents (`boxExtent`) of the Layers in the Selection. With several Layers selected, the Inspector's `x`/`y` are its top-left, and typing one moves every Layer by the same delta; its size is shown but not editable.
+_Avoid_: bounding box, group box
+
+**Mixed**:
+What the Inspector shows for a property whose value differs between the selected Layers: an empty field or an indeterminate switch. Setting a value there gives it to all of them.
+_Avoid_: multiple values, varies
+
 ### Output
 
 **Render**:
