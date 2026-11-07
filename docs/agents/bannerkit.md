@@ -76,6 +76,7 @@ Exit codes are 0 for success, 1 for an operation error or invalid Documents, and
 | `project new <name>` | `{ name, path }` |
 | `doc new <project> <name> (--preset WxH \| --size WxH)` | `{ project, name, path, document, warnings, hash }` |
 | `doc duplicate <project> <from> [<name>] (--preset WxH \| --size WxH)` | same as `doc new`. The Layers are copied unchanged, so rearrange them for the new size. The default name is `<from>-<W>x<H>` |
+| `doc resize <project> <doc> (--preset WxH \| --size WxH) [--anchor top-left\|top\|top-right\|left\|center\|right\|bottom-left\|bottom\|bottom-right]` | same as `doc new`. Resizes the Canvas in place, keeping the Anchor point put (default `top-left`). Layers are not scaled: they all move by the same delta and may stick out past the Canvas, so check `placement` with `inspect` afterwards |
 | `asset add <project> <files…>` | `{ project, assets: [{ src, path, format, width, height }] }`. Use `src` verbatim. If the name is taken, ingest adds a suffix (`bottle-1.png`) |
 | `validate <project \| path/to/doc.json>` | `{ ok, documents: [{ project, name, path, ok, errors, warnings }] }` |
 | `inspect <project> [<doc>]` | `{ project, name, path, canvas, selection, layers, warnings }` (see below) |

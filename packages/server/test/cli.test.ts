@@ -87,6 +87,113 @@ describe('bannerkit doc new / duplicate', () => {
   })
 })
 
+describe('bannerkit doc resize', () => {
+  /** A Project `p` with a 100x50 Document `hero` holding one rect at 10,20. */
+  async function heroProject() {
+    const root = await tempRoot()
+    await cli(['project', 'new', 'p', '--root', root])
+    await cli(['doc', 'new', 'p', 'hero', '--size', '100x50', '--root', root])
+    const path = join(root, 'p', 'documents', 'hero.json')
+    const document = JSON.parse(await readFile(path, 'utf8'))
+    document.layers = [{ id: 'rect-1', type: 'rect', x: 10, y: 20, width: 30, height: 40, fill: '#000000' }]
+    await writeFile(path, JSON.stringify(document))
+    return { root, path }
+  }
+
+  it('resizes the Canvas around an Anchor, writes the file and reports it like doc new', async () => {
+    const { root, path } = await heroProject()
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', '--size', '300x80', '--anchor', 'center', '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(0)
+    const result = run.json().result
+    expect(Object.keys(result).sort()).toEqual(['document', 'hash', 'name', 'path', 'project', 'warnings'])
+    expect(result).toMatchObject({
+      project: 'p',
+      name: 'hero',
+      path,
+      document: { canvas: { width: 300, height: 80 }, layers: [{ id: 'rect-1', x: 110, y: 35, width: 30, height: 40 }] },
+      warnings: [],
+    })
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(result.document)
+  })
+
+  it('takes a Preset and anchors at the top-left by default', async () => {
+    const { root } = await heroProject()
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', '--preset', '300x250', '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(0)
+    expect(run.json().result.document).toMatchObject({ canvas: { width: 300, height: 250 }, layers: [{ x: 10, y: 20 }] })
+  })
+
+  it.each([
+    ['bottom-right', 190, 50],
+    ['top', 100, 20],
+    ['left', 10, 35],
+  ])('shifts Layers for the %s Anchor', async (anchor, x, y) => {
+    const { root } = await heroProject()
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', '--size', '280x80', '--anchor', anchor, '--root', root, '--json'])
+
+    expect(run.json().result.document.layers[0]).toMatchObject({ x, y })
+  })
+
+  it('prints a human-readable line without --json', async () => {
+    const { root, path } = await heroProject()
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', '--size', '200x100', '--root', root])
+
+    expect(run.exitCode).toBe(0)
+    expect(run.stdout).toBe(`Resized Document hero to 200x100 at ${path}\n`)
+  })
+
+  it('rejects an unknown Anchor as a usage error suggesting the closest one, and leaves the file alone', async () => {
+    const { root, path } = await heroProject()
+    const before = await readFile(path, 'utf8')
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', '--size', '200x100', '--anchor', 'centre', '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(2)
+    expect(run.json().error).toMatchObject({ code: 'USAGE', message: expect.stringContaining('did you mean "center"?') })
+    expect(await readFile(path, 'utf8')).toBe(before)
+  })
+
+  it.each([
+    [['--size', '200x100', '--preset', '300x250']],
+    [[]],
+    [['--size', '200x100', '--size', '300x100']],
+    [['--size', 'big']],
+  ])('needs exactly one well-formed size: %j is a usage error', async (flags) => {
+    const { root } = await heroProject()
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', ...flags, '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(2)
+    expect(run.json().error.code).toBe('USAGE')
+  })
+
+  it('rejects a size beyond the Canvas limits without writing', async () => {
+    const { root, path } = await heroProject()
+    const before = await readFile(path, 'utf8')
+
+    const run = await cli(['doc', 'resize', 'p', 'hero', '--size', '8193x100', '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(1)
+    expect(run.json().error.code).toBe('INVALID_INPUT')
+    expect(await readFile(path, 'utf8')).toBe(before)
+  })
+
+  it('fails with NOT_FOUND for a missing Document', async () => {
+    const { root } = await heroProject()
+
+    const run = await cli(['doc', 'resize', 'p', 'ghost', '--size', '200x100', '--root', root, '--json'])
+
+    expect(run.exitCode).toBe(1)
+    expect(run.json().error.code).toBe('NOT_FOUND')
+  })
+})
+
 describe('bannerkit preview', () => {
   it('renders a Preview and prints its path', async () => {
     const root = await tempRoot()
