@@ -8,11 +8,13 @@ export {
   duplicateDocument,
   listDocuments,
   readDocument,
+  resizeDocument,
   writeDocument,
   type CreateDocumentInput,
   type DocumentRef,
   type DocumentResult,
   type DuplicateDocumentInput,
+  type ResizeDocumentInput,
 } from './documents.ts'
 export {
   SERVER_DOCUMENT_RULES,

@@ -4,11 +4,14 @@
 import { isAbsolute, resolve } from 'node:path'
 import { parseArgs, type ParseArgsConfig } from 'node:util'
 import {
+  ANCHORS,
   EXPORT_FORMATS,
+  closest,
   EXPORT_SCALES,
   isExportFormat,
   isExportScale,
   parseSize,
+  type Anchor,
   type ExportFormat,
   type ExportScale,
   type Issue,
@@ -24,6 +27,7 @@ import {
   inspect,
   preview,
   render,
+  resizeDocument,
   resolveProjectsRoot,
   type RenderResult,
   validate,
@@ -77,6 +81,8 @@ const SIZE_OPTIONS: Options = {
   size: { type: 'string', multiple: true },
 }
 
+const RESIZE_OPTIONS: Options = { ...SIZE_OPTIONS, anchor: { type: 'string' } }
+
 const RENDER_OPTIONS: Options = {
   doc: { type: 'string', multiple: true },
   size: { type: 'string', multiple: true },
@@ -98,6 +104,16 @@ function sizeChoice(values: Values): { preset?: PresetId; size?: Size } {
   if ((preset === undefined) === (sizes.length === 0)) throw new UsageError('give exactly one of --preset or --size')
   if (preset !== undefined) return { preset: preset as PresetId }
   return { size: parseSizeFlag(sizes[0]!) }
+}
+
+/** `--anchor`, when given; anything but one of the nine Anchors is a usage error with the closest one. */
+function anchorFlag(values: Values): Anchor | undefined {
+  const text = values.anchor as string | undefined
+  if (text === undefined || (ANCHORS as readonly string[]).includes(text)) return text as Anchor | undefined
+  const suggestion = closest(text, ANCHORS)
+  throw new UsageError(
+    `--anchor must be one of ${ANCHORS.join(', ')}, got "${text}"${suggestion ? ` (did you mean "${suggestion}"?)` : ''}`,
+  )
 }
 
 /** A numeric flag; range and allowed values are checked by the op. */
@@ -201,6 +217,17 @@ const COMMANDS: Record<string, Command> = {
     run: ({ root, args: [project, from, name], values }) =>
       duplicateDocument({ root, project: project!, from: from!, ...(name ? { name } : {}), ...sizeChoice(values) }),
     human: (r) => `Created Document ${r.name} (${r.document.canvas.width}x${r.document.canvas.height}) at ${r.path}`,
+  },
+  'doc resize': {
+    usage: `bannerkit doc resize <project> <doc> (--preset WxH | --size WxH) [--anchor ${ANCHORS.join('|')}]`,
+    summary: 'Resize the Canvas around an Anchor (default top-left); Layers move but are never scaled',
+    positionals: [2, 2],
+    options: RESIZE_OPTIONS,
+    run: ({ root, args: [project, name], values }) => {
+      const anchor = anchorFlag(values)
+      return resizeDocument({ root, project: project!, name: name!, ...sizeChoice(values), ...(anchor ? { anchor } : {}) })
+    },
+    human: (r) => `Resized Document ${r.name} to ${r.document.canvas.width}x${r.document.canvas.height} at ${r.path}`,
   },
   'asset add': {
     usage: 'bannerkit asset add <project> <files...>',
