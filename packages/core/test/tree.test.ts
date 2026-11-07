@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findLayer, layerPath, mapLayers, replaceLayer, walkLayers, type Document, type Layer } from '../src/index.ts'
+import { findLayer, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer } from '../src/index.ts'
 
 const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000' })
 
@@ -74,6 +74,18 @@ describe('mapLayers', () => {
 
     expect(seen).toEqual(['layers[0]', 'layers[1]'])
     expect(next.layers.map((l) => l.x)).toEqual([100, 101])
+    expect(document).toEqual(before)
+  })
+})
+
+describe('removeLayers', () => {
+  it('removes the Layers with the ids and leaves the input untouched', () => {
+    const document = doc(rect('a'), rect('b'), rect('c'))
+    const before = structuredClone(document)
+
+    const next = removeLayers(document, ['a', 'c', 'zzz'])
+
+    expect(next.layers.map((l) => l.id)).toEqual(['b'])
     expect(document).toEqual(before)
   })
 })

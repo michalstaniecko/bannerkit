@@ -56,6 +56,12 @@ export function mapLayers(document: Document, replace: (layer: Layer, visit: Lay
   return changed ? { ...document, layers } : document
 }
 
+/** The Document without the Layers `ids`, wherever they sit, without touching the input. Unknown ids are ignored. */
+export function removeLayers(document: Document, ids: readonly string[]): Document {
+  // v2: also filters every Group's `layers`.
+  return { ...document, layers: document.layers.filter((l) => !ids.includes(l.id)) }
+}
+
 /** The Document with the Layer `id` replaced by `replace(layer)`, without touching the input. Unknown ids change nothing. */
 export function replaceLayer(document: Document, id: string, replace: (layer: Layer) => Layer): Document {
   return mapLayers(document, (layer) => (layer.id === id ? replace(layer) : layer))
