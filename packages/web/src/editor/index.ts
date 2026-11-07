@@ -49,6 +49,13 @@
 // held, or `setSnapping(false)`, moves freely. `marks()` gives what is drawn. A reload
 // from disk during a gesture abandons it (no step), dropping the active object.
 //
+// Guides (guides.ts): drawn by the overlay across the Canvas, hit within 3 screen px
+// (after the active object's handles, before the Layers: the cursor turns `ew-resize` /
+// `ns-resize` and the Guide lights up) and dragged by `dragGuide`, which the Rulers use
+// too. A drag is a Gesture preview of `guides` only, which lays no Layer out again;
+// its value snaps onto Layers and the Canvas (snapping/guide.ts) on whole px; released
+// over a Ruler (`addRuler`) the Guide is removed; the release is one `guides` step.
+//
 // `export` renders the shown Canvas offscreen (export.ts).
 import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, selectionBox, translateLayer, walkLayers, type Document, type GroupLayer, type Layer, type LeafLayer, type MeasureText, type Rect, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject, type TPointerEvent } from 'fabric'
@@ -64,7 +71,9 @@ import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesO
 import { fitZoom, type Size } from './zoom.ts'
 import { attachOverlay, readOverlayColors } from './overlay.ts'
 import { attachSnapAdapter, type SnapAdapter } from './snap-adapter.ts'
-import type { Mark } from './snapping/marks.ts'
+import type { GuideMark, Mark } from './snapping/marks.ts'
+import { guideTargets, snapGuide } from './snapping/guide.ts'
+import { guideAt, setGuide, type GuideAxis } from './guides.ts'
 import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
 
 export type EditorOptions = {
@@ -152,7 +161,30 @@ export type CanvasEvent = Size
  */
 export type SelectionBoxEvent = { box: Rect | null }
 
-export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent; canvas: CanvasEvent; selectionBox: SelectionBoxEvent }
+/** Where a Guide gesture's pointer is: client px, with the keys held (a `MouseEvent` is one). */
+export type GuidePointer = { clientX: number; clientY: number; metaKey?: boolean; ctrlKey?: boolean }
+
+/**
+ * A Guide being dragged (`dragGuide`). Each method resolves once the Canvas shows it;
+ * after `end` or `cancel` (or Escape, or any other step dropping its preview) every
+ * method does nothing.
+ */
+export type GuideDrag = {
+  /** Moves the Guide under `pointer` (snapped unless Cmd/Ctrl or Snapping off); over a Ruler it is shown removed. */
+  move(pointer: GuidePointer): Promise<void>
+  /** Releases at `pointer`: one `guides` step (none without a move, or for a new Guide released over a Ruler). */
+  end(pointer: GuidePointer): Promise<void>
+  /** Shows the Guides from before the gesture again, without a step. */
+  cancel(): Promise<void>
+}
+
+/** The Guide being dragged: `value` in Canvas px, undefined while it is over a Ruler (to be removed). */
+export type DraggedGuide = { axis: GuideAxis; index: number | 'new'; value: number | undefined }
+
+/** The Guides shown changed (any step, preview or load), or the one being dragged did. */
+export type GuidesEvent = { guides: { x: number[]; y: number[] }; dragging: DraggedGuide | null }
+
+export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent; canvas: CanvasEvent; selectionBox: SelectionBoxEvent; guides: GuidesEvent }
 
 export type Editor = {
   /** Creates the Fabric canvas inside `container`. Call once, before `load`. */
@@ -222,6 +254,13 @@ export type Editor = {
    * Canvas coordinates, for adapters and tests (like `objectFor`). Empty outside a gesture.
    */
   marks(): Mark[]
+  /**
+   * Starts dragging the Guide `index` on `axis` (`x`: a vertical Guide, in `guides.x`),
+   * or a new one at the end of that axis (`'new'`). Escape cancels it.
+   */
+  dragGuide(axis: GuideAxis, index: number | 'new'): GuideDrag
+  /** Registers a Ruler: a Guide released over `element` is removed. Returns the unregister function. */
+  addRuler(element: Element): () => void
   /** Canvas px per Document px. The canvas element is resized to the zoomed Canvas size. */
   setZoom(zoom: number): void
   getZoom(): number
@@ -244,6 +283,9 @@ const ARROWS: Record<string, [number, number]> = {
   ArrowUp: [0, -1],
   ArrowDown: [0, 1],
 }
+
+/** How near a Guide the pointer hits it, in screen px. */
+const GUIDE_HIT = 3
 
 /** Keys typed into these go to the field, not the editor. */
 const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
@@ -289,7 +331,16 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     selection: new Set(),
     canvas: new Set(),
     selectionBox: new Set(),
+    guides: new Set(),
   }
+  /** The Guide drag running, if any (`dragGuide`). */
+  let guideDrag: { dragging: DraggedGuide; marks: Mark[]; settle: () => void } | undefined
+  /** The Guide under the pointer on the Canvas (lit up). */
+  let hoveredGuide: { axis: GuideAxis; index: number } | undefined
+  /** Elements a Guide released over is removed on (`addRuler`). */
+  const rulers = new Set<Element>()
+  /** The last `guides` event sent (as JSON). */
+  let sentGuides: string | undefined
   /** The last `selectionBox` sent (as JSON), so an unchanged Box is not sent again. */
   let sentBox: string | undefined
   /** The Canvas size last reported by a `canvas` event. */
@@ -432,6 +483,170 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     emit('selectionBox', { box })
   }
 
+  /** Sends the Guides shown and the one dragged when they differ from the ones last sent (see `GuidesEvent`). */
+  const reportGuides = () => {
+    if (!current) return
+    const event: GuidesEvent = { guides: { x: [...(current.guides?.x ?? [])], y: [...(current.guides?.y ?? [])] }, dragging: guideDrag ? { ...guideDrag.dragging } : null }
+    const key = JSON.stringify(event)
+    if (key === sentGuides) return
+    sentGuides = key
+    emit('guides', event)
+  }
+
+  /** The Guides as the overlay draws them, the hovered or dragged one lit up. */
+  const guideMarks = (): GuideMark[] => {
+    const guides = current?.guides
+    if (!current || !guides) return []
+    const { width, height } = current.canvas
+    const drag = guideDrag?.dragging
+    const lit = (axis: GuideAxis, index: number, count: number) =>
+      (hoveredGuide?.axis === axis && hoveredGuide.index === index) ||
+      (drag !== undefined && drag.value !== undefined && drag.axis === axis && (drag.index === 'new' ? index === count - 1 : drag.index === index))
+    return (['x', 'y'] as const).flatMap((axis) =>
+      guides[axis].map((at, index, all): GuideMark => ({ kind: 'guide', axis, at, from: 0, to: axis === 'x' ? height : width, active: lit(axis, index, all.length) })),
+    )
+  }
+
+  /** Whether `pointer` is over a Ruler (`addRuler`). */
+  const overRuler = ({ clientX, clientY }: GuidePointer) =>
+    [...rulers].some((element) => {
+      const r = element.getBoundingClientRect()
+      return clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom
+    })
+
+  /** `pointer` in Canvas px. */
+  const canvasPoint = ({ clientX, clientY }: GuidePointer) => {
+    const r = requireCanvas().lowerCanvasEl.getBoundingClientRect()
+    return { x: (clientX - r.left) / zoom, y: (clientY - r.top) / zoom }
+  }
+
+  const dragGuide = (axis: GuideAxis, index: number | 'new'): GuideDrag => {
+    const c = requireCanvas()
+    if (!current) throw new Error('No Document loaded')
+    guideDrag?.settle()
+    finishTextEdit()
+    const base = previewing?.base ?? documentNow()
+    const list = base.guides?.[axis] ?? []
+    if (index !== 'new' && !(Number.isInteger(index) && index >= 0 && index < list.length)) throw new Error(`No Guide ${index} on ${axis}`)
+    const preview = startPreview(base, dropPreview())
+    const targets = guideTargets(base, env.measure)
+    const keys = c.lowerCanvasEl.ownerDocument
+    let moved = false
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      keys.removeEventListener('keydown', onKey)
+      if (guideDrag === state) guideDrag = undefined
+      reportGuides()
+      canvas?.requestRenderAll()
+    }
+    const state = {
+      dragging: { axis, index, value: index === 'new' ? undefined : list[index] } as DraggedGuide,
+      marks: [] as Mark[],
+      settle: () => {
+        if (preview.ended()) finish()
+      },
+    }
+    guideDrag = state
+    const live = () => {
+      if (!done && preview.ended()) finish()
+      return !done
+    }
+    const cancel = async () => {
+      if (!live()) return
+      finish()
+      await preview.cancel()
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      void cancel()
+    }
+    keys.addEventListener('keydown', onKey)
+    const move = (pointer: GuidePointer): Promise<void> => {
+      if (!live()) return Promise.resolve()
+      moved = true
+      let value: number | undefined
+      state.marks = []
+      if (!overRuler(pointer)) {
+        const raw = canvasPoint(pointer)[axis]
+        if (!snapping || pointer.metaKey || pointer.ctrlKey) value = Math.round(raw) || 0
+        else ({ value, marks: state.marks } = snapGuide(targets, axis, raw, zoom))
+      }
+      state.dragging.value = value
+      reportGuides()
+      c.requestRenderAll()
+      return preview.show((d) => setGuide(d, axis, index, value))
+    }
+    return {
+      move,
+      async end(pointer) {
+        if (!live()) return
+        if (!moved) return cancel()
+        await move(pointer)
+        finish()
+        await preview.commit({ cause: 'guides' })
+      },
+      cancel,
+    }
+  }
+
+  /**
+   * Guides on the Canvas: the pointer over one (within GUIDE_HIT screen px, not over a
+   * handle of the active object, no gesture running) lights it up and shows a resize
+   * cursor, and a press there drags it (`dragGuide`) instead of reaching Fabric, so it
+   * wins over the Layers below. Listens in the capture phase on Fabric's wrapper.
+   */
+  const attachGuideHits = (c: DocumentCanvas): (() => void) => {
+    const wrapper = c.wrapperEl
+    const page = wrapper.ownerDocument
+    const under = (e: MouseEvent) => {
+      if (!current?.guides || guideDrag || c._currentTransform || c.selecting) return undefined
+      const active = c.getActiveObject()
+      if (active?.findControl(c.getViewportPoint(e))) return undefined
+      return guideAt(current.guides, c.getScenePoint(e), GUIDE_HIT / zoom)
+    }
+    const hover = (hit: { axis: GuideAxis; index: number } | undefined) => {
+      if (hit?.axis === hoveredGuide?.axis && hit?.index === hoveredGuide?.index) return
+      hoveredGuide = hit
+      c.requestRenderAll()
+    }
+    const onMove = (e: MouseEvent) => {
+      const hit = under(e)
+      hover(hit)
+      if (!hit) return
+      e.stopPropagation()
+      c.upperCanvasEl.style.cursor = hit.axis === 'x' ? 'ew-resize' : 'ns-resize'
+    }
+    const onOut = () => hover(undefined)
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return
+      const hit = under(e)
+      if (!hit) return
+      e.stopPropagation()
+      e.preventDefault()
+      hover(undefined)
+      const drag = dragGuide(hit.axis, hit.index)
+      const move = (event: MouseEvent) => void drag.move(event)
+      const up = (event: MouseEvent) => {
+        page.removeEventListener('mousemove', move)
+        page.removeEventListener('mouseup', up)
+        void drag.end(event)
+      }
+      page.addEventListener('mousemove', move)
+      page.addEventListener('mouseup', up)
+    }
+    wrapper.addEventListener('mousemove', onMove, true)
+    wrapper.addEventListener('mousedown', onDown, true)
+    wrapper.addEventListener('mouseout', onOut)
+    return () => {
+      wrapper.removeEventListener('mousemove', onMove, true)
+      wrapper.removeEventListener('mousedown', onDown, true)
+      wrapper.removeEventListener('mouseout', onOut)
+    }
+  }
+
   /** Ends a logical modification of `objects`: bakes each into its Layer and emits one `change`. */
   const commit = (objects: FabricObject[], cause: ChangeCause) => {
     const c = requireCanvas()
@@ -496,6 +711,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     c.add(...roots.map((e) => e.object))
     applyZoom()
     c.renderAll()
+    reportGuides()
     return true
   }
 
@@ -520,6 +736,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     const layers = current!.layers
     current = { ...structuredClone({ ...next, layers: [] }), layers }
     canvas?.requestRenderAll()
+    reportGuides()
   }
 
   /**
@@ -557,6 +774,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       c.backgroundColor = current.canvas.background ?? ''
       if (group) c.setActiveObject(new ActiveSelection(group, { canvas: c }))
       applyZoom()
+      reportGuides()
       return true
     } finally {
       holdSelection = false
@@ -607,6 +825,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   /** Drops a preview in progress, so any other step starts from the Document before it. */
   const dropPreview = async () => {
     await previewing?.drop()
+    guideDrag?.settle()
   }
 
   /**
@@ -816,7 +1035,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       })
       adapter.setEnabled(snapping)
       snap = adapter
-      const detachOverlay = attachOverlay(c, () => adapter.marks(), () => zoom, readOverlayColors(container))
+      const detachOverlay = attachOverlay(c, () => [...guideMarks(), ...(guideDrag?.marks ?? []), ...adapter.marks()], () => zoom, readOverlayColors(container))
+      const detachGuides = attachGuideHits(c)
       c.on('selection:created', reportSelection)
       c.on('selection:updated', reportSelection)
       c.on('selection:created', groupSelectionControls)
@@ -833,6 +1053,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       unmount = () => {
         keyTarget.removeEventListener('keydown', onKeyDown)
         detachOverlay()
+        detachGuides()
         adapter.detach()
         snap = undefined
         return element
@@ -841,6 +1062,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
 
     async load(document, { assetUrl = (src: string) => src } = {}) {
       previewing?.end()
+      guideDrag?.settle()
       if (!(await show(document, { assetUrl, measure }))) return
       history.reset(document)
       settleSize()
@@ -929,7 +1151,14 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       snap?.setEnabled(on)
     },
 
-    marks: () => [...(snap?.marks() ?? [])],
+    marks: () => [...(guideDrag?.marks ?? []), ...(snap?.marks() ?? [])],
+
+    dragGuide,
+
+    addRuler(element) {
+      rulers.add(element)
+      return () => rulers.delete(element)
+    },
 
     zoomToFit(viewport) {
       if (!current) throw new Error('No Document loaded')
@@ -958,7 +1187,12 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       listeners.selection.clear()
       listeners.canvas.clear()
       listeners.selectionBox.clear()
+      listeners.guides.clear()
+      rulers.clear()
+      guideDrag = undefined
+      hoveredGuide = undefined
       sentBox = undefined
+      sentGuides = undefined
       settledSize = undefined
       await c?.dispose()
       // Fabric's dispose puts the bare <canvas> back into the container; take it out too.
@@ -986,6 +1220,10 @@ class DocumentCanvas extends Canvas {
   pick: (path: FabricObject[], e: TPointerEvent) => FabricObject = (path) => path[0]!
   /** Shift+click on `target`: adds it to the Selection or takes it out; false when not handled. */
   toggleSelected: (target: FabricObject) => boolean = () => false
+  /** Whether a selection rectangle is being dragged out. */
+  get selecting(): boolean {
+    return Boolean(this._groupSelector)
+  }
   /** The event `findTarget` runs for, so `searchPossibleTargets` can pick by its modifier keys. */
   private finding: TPointerEvent | undefined
 

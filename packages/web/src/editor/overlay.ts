@@ -4,21 +4,26 @@
 // what it drew on `before:render`, draw on `after:render` (also fired by `renderTop`),
 // in screen px with 1 px lines whatever the zoom.
 //
-// Colours are CSS tokens read from the editor's container at `mount` (`--snap`, …).
+// Colours are CSS tokens read from the editor's container at `mount` (`--snap`,
+// `--guide`, `--guide-active`, …).
 // A new Mark kind adds its colour to `OverlayColors` and a case to `drawMark`.
 import type { Canvas } from 'fabric'
 import type { Mark } from './snapping/marks.ts'
 
-export type OverlayColors = { snap: string }
+export type OverlayColors = { snap: string; guide: string; guideActive: string }
 
 /** Used when the container's stylesheet has no token (tests, a host page without tokens.css). */
-const FALLBACK: OverlayColors = { snap: '#f24822' }
+const FALLBACK: OverlayColors = { snap: '#f24822', guide: '#0d99ff', guideActive: '#0a6dc2' }
 
 /** Reads the overlay's colour tokens from `container`'s computed style. */
 export function readOverlayColors(container: HTMLElement): OverlayColors {
   const style = container.ownerDocument.defaultView?.getComputedStyle(container)
   const token = (name: string, fallback: string) => style?.getPropertyValue(name).trim() || fallback
-  return { snap: token('--snap', FALLBACK.snap) }
+  return {
+    snap: token('--snap', FALLBACK.snap),
+    guide: token('--guide', FALLBACK.guide),
+    guideActive: token('--guide-active', FALLBACK.guideActive),
+  }
 }
 
 /**
@@ -58,19 +63,28 @@ const crisp = (value: number, zoom: number) => Math.round(value * zoom) + 0.5
 function drawMark(ctx: CanvasRenderingContext2D, mark: Mark, zoom: number, colors: OverlayColors): void {
   switch (mark.kind) {
     case 'snap-line': {
-      ctx.strokeStyle = colors.snap
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      const at = crisp(mark.at, zoom)
-      if (mark.axis === 'x') {
-        ctx.moveTo(at, mark.from * zoom)
-        ctx.lineTo(at, mark.to * zoom)
-      } else {
-        ctx.moveTo(mark.from * zoom, at)
-        ctx.lineTo(mark.to * zoom, at)
-      }
-      ctx.stroke()
+      line(ctx, mark, zoom, colors.snap)
+      return
+    }
+    case 'guide': {
+      line(ctx, mark, zoom, mark.active ? colors.guideActive : colors.guide)
       return
     }
   }
+}
+
+/** A 1 screen-px line on `axis` (`x`: vertical) at `at`, from `from` to `to` (Canvas px). */
+function line(ctx: CanvasRenderingContext2D, mark: { axis: 'x' | 'y'; at: number; from: number; to: number }, zoom: number, color: string): void {
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  const at = crisp(mark.at, zoom)
+  if (mark.axis === 'x') {
+    ctx.moveTo(at, mark.from * zoom)
+    ctx.lineTo(at, mark.to * zoom)
+  } else {
+    ctx.moveTo(mark.from * zoom, at)
+    ctx.lineTo(mark.to * zoom, at)
+  }
+  ctx.stroke()
 }

@@ -11,4 +11,10 @@ import type { Axis, TargetSource } from './targets.ts'
  */
 export type SnapLineMark = { kind: 'snap-line'; axis: Axis; at: number; from: number; to: number; source: TargetSource }
 
-export type Mark = SnapLineMark
+/**
+ * A Guide (`axis` `x`: vertical at x = `at`), drawn across the Canvas from `from` to
+ * `to`; `active` while the pointer is over it or drags it.
+ */
+export type GuideMark = { kind: 'guide'; axis: Axis; at: number; from: number; to: number; active: boolean }
+
+export type Mark = SnapLineMark | GuideMark

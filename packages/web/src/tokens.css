@@ -86,8 +86,11 @@
   --accent: var(--color-blue-600);
   --accent-hover: var(--color-blue-700);
   --focus-ring: var(--color-blue-600);
-  /* Precision overlay on the Canvas (read by the editor at mount): snap lines. */
+  /* Precision overlay on the Canvas (read by the editor at mount): snap lines, Guides. */
   --snap: var(--color-red-500);
+  /* Guides over the Canvas, and the one under the pointer or dragged. */
+  --guide: var(--color-blue-600);
+  --guide-active: var(--color-blue-700);
 
   --gap-none: var(--space-0);
   --gap-tight: var(--space-1);
