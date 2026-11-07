@@ -279,6 +279,12 @@ describe('alignLayers and distributeLayers refuse bad input', () => {
     }
   })
 
+  it('fails with INVALID_INPUT for a gap that is not whole px', () => {
+    for (const gap of [0.5, 2.25]) {
+      expect(code(distributeLayers(document, ['a', 'b'], 'x', measure, { gap })), String(gap)).toBe('INVALID_INPUT')
+    }
+  })
+
   it('fails with INVALID_INPUT for no edge, or two edges on one axis', () => {
     expect(code(alignLayers(document, ['a'], [], measure))).toBe('INVALID_INPUT')
     expect(code(alignLayers(document, ['a'], ['left', 'right'], measure))).toBe('INVALID_INPUT')

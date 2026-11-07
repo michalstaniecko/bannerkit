@@ -83,7 +83,7 @@ export type DistributeAxis = (typeof DISTRIBUTE_AXES)[number]
  * start of the extent, then its centre, then draw order. Without `gap`
  * (at least three Layers) the first and the last stay and the rest get equal
  * space between them (negative when they overlap), each position worked out
- * from the first and rounded on its own. With `gap` px (at least two Layers)
+ * from the first and rounded on its own. With `gap` whole px (at least two Layers)
  * the first stays and each next one goes `gap` after where the previous one
  * landed. Moves like `alignLayers`; answers the moved ids in input order.
  */
@@ -94,8 +94,8 @@ export function distributeLayers(
   measure: MeasureText,
   { gap }: { gap?: number } = {},
 ): TreeEditResult<{ moved: string[] }> {
-  if (gap !== undefined && !(Number.isFinite(gap) && gap >= 0)) {
-    return fail('INVALID_INPUT', `gap must be a number of px >= 0, got ${gap}`)
+  if (gap !== undefined && !(Number.isInteger(gap) && gap >= 0)) {
+    return fail('INVALID_INPUT', `gap must be a whole number of px >= 0, got ${gap}`)
   }
   const chosen =
     gap === undefined
