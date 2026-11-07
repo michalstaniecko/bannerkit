@@ -223,7 +223,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
   let holdSelection = false
   const history = createHistory()
   /** The preview running, if any; `drop` ends it and shows the Document from before it again. */
-  let previewing: { drop: () => Promise<void>; end: () => void } | undefined
+  let previewing: { base: Document; drop: () => Promise<void>; end: () => void } | undefined
   /** Undoes `mount` and returns the <canvas> it added to the container. */
   let unmount = (): HTMLCanvasElement | undefined => undefined
   const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
@@ -392,11 +392,14 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     await previewing?.drop()
   }
 
-  const startPreview = (): Preview => {
-    const base = documentNow()
+  /**
+   * Starts a preview of `base` once `ready` (a dropped preview's restore) settles:
+   * its shows queue behind `ready`, so they never race that restore.
+   */
+  const startPreview = (base: Document, ready: Promise<unknown>): Preview => {
     let ended = false
     let shows = 0
-    let pending: Promise<unknown> = Promise.resolve()
+    let pending: Promise<unknown> = ready
     const end = () => {
       ended = true
       if (previewing === state) previewing = undefined
@@ -407,7 +410,7 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
       // Synchronous when laid out in place, so a step right after starts from `base`.
       if (current && JSON.stringify(documentNow()) !== JSON.stringify(base)) await relayout(base)
     }
-    const state = { drop: restore, end }
+    const state = { base, drop: restore, end }
     previewing = state
 
     const showNow = async (recipe: DocumentRecipe, token: number) => {
@@ -597,8 +600,10 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     preview() {
       if (!current) throw new Error('No Document loaded')
       finishTextEdit()
-      void dropPreview()
-      return startPreview()
+      // A dropped preview that changed the Layers restores asynchronously, so what
+      // shows now is not yet the Document from before it: start from that one instead.
+      const base = previewing?.base ?? documentNow()
+      return startPreview(base, dropPreview())
     },
 
     undo: () => travel('undo'),
