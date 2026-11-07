@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ancestorsOf, findLayer, inheritedFlags, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer, type LeafLayer } from '../src/index.ts'
+import { ancestorsOf, findLayer, flatMapLayers, mapLeaves, translateLayer, withoutEmptyGroups, inheritedFlags, layerPath, mapLayers, removeLayers, replaceLayer, walkLayers, type Document, type Layer, type LeafLayer } from '../src/index.ts'
 
 const rect = (id: string): Layer => ({ id, type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000' })
 
@@ -164,6 +164,77 @@ describe('inheritedFlags', () => {
 
   it('is undefined for an unknown id', () => {
     expect(inheritedFlags(document, 'nope')).toBeUndefined()
+  })
+})
+
+describe('flatMapLayers', () => {
+  const group = (id: string, ...layers: Layer[]): Layer => ({ id, type: 'group', layers })
+
+  it('replaces each Layer with any number of Layers, children before their Group', () => {
+    const document = doc(group('g', rect('a'), rect('b')), rect('c'))
+    const before = structuredClone(document)
+
+    const next = flatMapLayers(document, (l) => (l.id === 'a' ? [] : l.id === 'b' ? [l, rect('b2')] : [l]))
+
+    expect(walkLayers(next).map((v) => v.layer.id)).toEqual(['g', 'b', 'b2', 'c'])
+    expect(next.layers[1]).toBe(document.layers[1])
+    expect(document).toEqual(before)
+  })
+
+  it('returns the root itself when nothing changes', () => {
+    const document = doc(group('g', rect('a')))
+    expect(flatMapLayers(document, (l) => [l])).toBe(document)
+  })
+})
+
+describe('withoutEmptyGroups', () => {
+  const group = (id: string, ...layers: Layer[]): Layer => ({ id, type: 'group', layers })
+
+  it('drops Groups with no children, and a Group holding only those', () => {
+    const kept = group('k', rect('a'))
+    const document = doc(kept, group('g', group('h')), rect('b'))
+
+    const next = withoutEmptyGroups(document)
+
+    expect(walkLayers(next).map((v) => v.layer.id)).toEqual(['k', 'a', 'b'])
+    expect(next.layers[0]).toBe(kept)
+  })
+})
+
+describe('mapLeaves', () => {
+  const group = (id: string, ...layers: Layer[]): Layer => ({ id, type: 'group', layers })
+
+  it('replaces every leaf in a Group, at any depth', () => {
+    const layer = group('g', rect('a'), group('h', rect('b')))
+
+    const next = mapLeaves(layer, (leaf) => ({ ...leaf, x: 3 }))
+
+    expect(walkLayers({ layers: [next] }).map((v) => [v.layer.id, 'x' in v.layer ? v.layer.x : '-'])).toEqual([
+      ['g', '-'],
+      ['a', 3],
+      ['h', '-'],
+      ['b', 3],
+    ])
+    expect(layer).toEqual(group('g', rect('a'), group('h', rect('b'))))
+  })
+
+  it('replaces a leaf itself', () => {
+    expect(mapLeaves(rect('a'), (leaf) => ({ ...leaf, x: 3 }))).toMatchObject({ id: 'a', x: 3 })
+  })
+})
+
+describe('translateLayer', () => {
+  it('moves a leaf by dx, dy', () => {
+    expect(translateLayer(rect('a'), 5, -2)).toMatchObject({ x: 5, y: -2, width: 10 })
+  })
+
+  it('moves a Group by moving every Layer in it', () => {
+    const moved = translateLayer({ id: 'g', type: 'group', layers: [rect('a'), { id: 'h', type: 'group', layers: [rect('b')] }] }, 1, 2)
+
+    expect(walkLayers({ layers: [moved] }).flatMap((v) => (v.layer.type === 'group' ? [] : [[v.layer.x, v.layer.y]]))).toEqual([
+      [1, 2],
+      [1, 2],
+    ])
   })
 })
 
