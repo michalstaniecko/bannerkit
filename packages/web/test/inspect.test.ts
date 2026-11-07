@@ -32,18 +32,6 @@ describe('sharedFields', () => {
     expect(keys(sharedFields([rect(), text(), image()], table as never))).toEqual([['layout', ['x']]])
   })
 
-  it('a field key shared by types is shown even when the types keep it in different groups', () => {
-    const own = {
-      rect: groups(['layout', ['x']], ['rect', ['fill', 'cornerRadius']]),
-      text: groups(['layout', ['x']], ['text', ['fontSize', 'fill']]),
-      image: [],
-    }
-    expect(keys(sharedFields([rect(), text()], own as never))).toEqual([
-      ['layout', ['x']],
-      ['rect', ['fill']],
-    ])
-  })
-
   it('no Layers show no fields', () => {
     expect(sharedFields([], table as never)).toEqual([])
   })

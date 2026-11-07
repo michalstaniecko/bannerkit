@@ -5,7 +5,15 @@
 // Group's Box): `x`/`y` move every Layer by the same delta, `width`/`height` are
 // disabled. Every write is a recipe for `editor.update`: all Layers change in one
 // step, or, when any result is not a valid Document, none does.
-import { boxExtent, validateDocument, type Document, type Layer, type Rect, type TextLayer } from '@bannerkit/core'
+import {
+  boxExtent,
+  validateDocument,
+  type Document,
+  type Layer,
+  type LinearGradient,
+  type Rect,
+  type TextLayer,
+} from '@bannerkit/core'
 import { roundPx } from '../editor/rounding.ts'
 import type { SelectOption } from '../ui/Select.tsx'
 import {
@@ -15,9 +23,11 @@ import {
   type FieldGroup,
   type FieldTable,
   type FieldSpec,
+  type GradientFieldSpec,
   type NumberFieldSpec,
   type SelectFieldSpec,
 } from './fields.ts'
+import type { GradientChange } from './gradient.ts'
 
 /** A value that differs between the Layers in the Inspector. */
 export const MIXED = Symbol('Mixed')
@@ -52,13 +62,23 @@ export type InspectedField =
       write: (value: string) => Recipe
     }
   | { control: 'color'; field: ColorFieldSpec; value: Shared<string | null | undefined>; write: (value: string | null) => Recipe }
+  | {
+      control: 'gradient'
+      field: GradientFieldSpec
+      angle: Shared<number>
+      /** The stops, when every Layer's are the same (colours and offsets, in order). */
+      stops: Shared<GradientStop[]>
+      /** `change` applied to each Layer's own gradient. */
+      write: (change: GradientChange) => Recipe
+    }
+
+type GradientStop = LinearGradient['stops'][number]
 
 /**
- * The field groups shown for `layers`: the groups of the first Layer type, holding
- * only the fields (by key, in whichever group) every other type has too, less a field
- * whose `when` fails for any of the Layers (e.g. shadow blur while some Layer has no
- * shadow). So a rect's and a text's `fill` show as one field although each sits in
- * its type's own group. A group left without fields is dropped.
+ * The field groups shown for `layers`: the groups and fields every Layer type in it
+ * has, in the order of the first one, less a field whose `when` fails for any of the
+ * Layers (e.g. shadow blur while some Layer has no shadow). A group left without
+ * fields is dropped.
  */
 export function sharedFields(layers: readonly Layer[], table: FieldTable = LAYER_FIELDS): FieldGroup[] {
   const types = [...new Set(layers.map((l) => l.type))]
@@ -68,7 +88,7 @@ export function sharedFields(layers: readonly Layer[], table: FieldTable = LAYER
     .map((group) => ({
       ...group,
       fields: group.fields.filter((field) =>
-        rest.every((groups) => groups.some((g) => g.fields.some((f) => f.key === field.key))) &&
+        rest.every((groups) => groups.find((g) => g.key === group.key)?.fields.some((f) => f.key === field.key)) &&
         layers.every((layer) => field.when?.(layer) ?? true),
       ),
     }))
@@ -136,8 +156,31 @@ export function inspectField(field: FieldSpec, layers: readonly Layer[], options
         value: sharedValue(layers, field.read),
         write: (value) => each((l) => field.write(l, value)),
       }
-    case 'color':
-      return { control: 'color', field, value: sharedValue(layers, field.read), write: (value) => each((l) => field.write(l, value)) }
+    case 'color': {
+      // `undefined` is a value the field cannot show (a gradient fill). One Layer shows
+      // the field's placeholder for it; with several it is Mixed.
+      const value = sharedValue(layers, field.read)
+      return {
+        control: 'color',
+        field,
+        value: value === undefined && layers.length > 1 ? MIXED : value,
+        write: (value) => each((l) => field.write(l, value)),
+      }
+    }
+    case 'gradient': {
+      const stops = sharedValue(layers, (l) => JSON.stringify(field.read(l)?.stops))
+      return {
+        control: 'gradient',
+        field,
+        angle: sharedValue(layers, (l) => field.read(l)?.angle ?? 0),
+        stops: stops === MIXED ? MIXED : (JSON.parse(stops) as GradientStop[]),
+        write: (change) =>
+          each((l) => {
+            const gradient = field.read(l)
+            return gradient ? field.write(l, change(gradient)) : l
+          }),
+      }
+    }
     case 'number': {
       if (shared && field.box) {
         const side = field.box
