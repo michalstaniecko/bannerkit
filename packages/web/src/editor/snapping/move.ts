@@ -8,7 +8,12 @@
 // offset is always whole px, snapped or not: snapping picks the whole offset that
 // brings the line nearest its target, so a fractional target lands on the nearest
 // whole px and its line is drawn all the same.
+//
+// Equal gaps (gaps.ts) join the same search on each axis: a place where the box sits
+// with equal spaces to its neighbours is a target for its start line, the last in a tie.
+// The row of the box on one axis is taken where the raw offset puts it on the other.
 import { selectionBox, walkLayers, type Document, type MeasureText, type Rect } from '@bannerkit/core'
+import { gapCandidates, gapMarks, type GapCandidate } from './gaps.ts'
 import type { Mark, SnapLineMark } from './marks.ts'
 import { buildTargets, lines, type Axis, type TargetLine, type Targets, type TargetSource } from './targets.ts'
 
@@ -26,6 +31,9 @@ export type MoveSnap = {
 
 /** Tie-break order of equally near targets: lower wins. */
 const RANK: Record<TargetSource, number> = { guide: 0, canvas: 1, layer: 2 }
+
+/** An equal gap loses a tie to every target line. */
+const GAP_RANK = 3
 
 /** Rounding to whole px, never −0. */
 const whole = (value: number) => Math.round(value) || 0
@@ -51,12 +59,19 @@ export function startMove(document: Document, ids: readonly string[], measure: M
 /** Snaps the start's Selection Box moved by `offset` (Canvas px) at `zoom`. */
 export function snapMove({ box, targets }: MoveStart, offset: Offset, zoom: number): MoveSnap {
   const threshold = SNAP_DISTANCE / zoom
-  const x = snapAxis(box, offset.x, targets.x, 'x', threshold)
-  const y = snapAxis(box, offset.y, targets.y, 'y', threshold)
+  const rects = targets.rects.map((t) => t.rect)
+  const raw = { ...box, x: box.x + whole(offset.x), y: box.y + whole(offset.y) }
+  const x = snapAxis(box, offset.x, targets.x, gapCandidates(raw, rects, 'x'), 'x', threshold)
+  const y = snapAxis(box, offset.y, targets.y, gapCandidates(raw, rects, 'y'), 'y', threshold)
   const moved = { x: box.x + x.offset, y: box.y + y.offset, width: box.width, height: box.height }
   return {
     offset: { x: x.offset, y: y.offset },
-    marks: [...snapLines(moved, x.matched, 'x', targets), ...snapLines(moved, y.matched, 'y', targets)],
+    marks: [
+      ...snapLines(moved, x.matched, 'x', targets),
+      ...snapLines(moved, y.matched, 'y', targets),
+      ...(x.gaps.length > 0 ? gapMarks(moved, rects, 'x', x.gaps) : []),
+      ...(y.gaps.length > 0 ? gapMarks(moved, rects, 'y', y.gaps) : []),
+    ],
   }
 }
 
@@ -65,24 +80,38 @@ export function freeMove(offset: Offset): MoveSnap {
   return { offset: { x: whole(offset.x), y: whole(offset.y) }, marks: [] }
 }
 
-function snapAxis(box: Rect, raw: number, targets: readonly TargetLine[], axis: Axis, threshold: number): { offset: number; matched: TargetLine[] } {
+type AxisSnap = {
+  offset: number
+  /** The target lines lined up with the result. */
+  matched: TargetLine[]
+  /** The equal gaps the result sits at, and how far it is off them (whole px). */
+  gaps: { gap: number; slack: number }[]
+}
+
+function snapAxis(box: Rect, raw: number, targets: readonly TargetLine[], gaps: readonly GapCandidate[], axis: Axis, threshold: number): AxisSnap {
   const starts = lines(box, axis)
+  // Every place the box can snap to: a target line for any of its lines, an equal gap for its start.
+  const options = [
+    ...starts.flatMap((start) => targets.map((target) => ({ start, at: target.at, rank: RANK[target.source] }))),
+    ...gaps.map((gap) => ({ start: starts[0], at: gap.at, rank: GAP_RANK })),
+  ]
   let best: { distance: number; rank: number; offset: number } | undefined
-  for (const start of starts) {
-    for (const target of targets) {
-      const distance = Math.abs(target.at - (start + raw))
-      if (distance > threshold + EPSILON) continue
-      const rank = RANK[target.source]
-      if (best && (distance > best.distance + EPSILON || (distance > best.distance - EPSILON && rank >= best.rank))) continue
-      best = { distance, rank, offset: whole(target.at - start) }
-    }
+  for (const { start, at, rank } of options) {
+    const distance = Math.abs(at - (start + raw))
+    if (distance > threshold + EPSILON) continue
+    if (best && (distance > best.distance + EPSILON || (distance > best.distance - EPSILON && rank >= best.rank))) continue
+    best = { distance, rank, offset: whole(at - start) }
   }
-  if (!best) return { offset: whole(raw), matched: [] }
+  if (!best) return { offset: whole(raw), matched: [], gaps: [] }
   const offset = best.offset
-  // Every target as near the result as the winner (exactly on it, for a whole-px target).
-  const residual = Math.min(...starts.flatMap((s) => targets.map((t) => Math.abs(t.at - (s + offset)))))
-  const matched = targets.filter((t) => starts.some((s) => Math.abs(t.at - (s + offset)) <= residual + EPSILON))
-  return { offset, matched }
+  // Everything as near the result as the winner (exactly on it, for a whole-px target).
+  const off = (start: number, at: number) => Math.abs(at - (start + offset))
+  const residual = Math.min(...options.map((o) => off(o.start, o.at)))
+  return {
+    offset,
+    matched: targets.filter((t) => starts.some((s) => off(s, t.at) <= residual + EPSILON)),
+    gaps: gaps.filter((g) => off(starts[0], g.at) <= residual + EPSILON).map((g) => ({ gap: g.gap, slack: off(starts[0], g.at) })),
+  }
 }
 
 /** One snap line per position and source among `matched` (see `SnapLineMark`). */

@@ -11,4 +11,11 @@ import type { Axis, TargetSource } from './targets.ts'
  */
 export type SnapLineMark = { kind: 'snap-line'; axis: Axis; at: number; from: number; to: number; source: TargetSource }
 
-export type Mark = SnapLineMark
+/**
+ * An equal gap: the space on `axis` from `from` to `to` (`x`: between two x's, drawn
+ * at y = `at`; `y`: between two y's, at x = `at`), as long as another gap in the row,
+ * labelled with its length in px (`label`, to 0.1 px).
+ */
+export type GapMark = { kind: 'gap'; axis: Axis; from: number; to: number; at: number; label: string }
+
+export type Mark = SnapLineMark | GapMark
