@@ -75,7 +75,7 @@ describe('scaleGroup', () => {
 })
 
 describe('rotateGroup', () => {
-  it("turns each child's centre around the Group Box centre and adds the angle to its rotation", () => {
+  it("turns each child's centre around the centre of the Group's Box and adds the angle to its rotation", () => {
     const g = group([rect('a'), rect('b', { x: 30, rotation: 10 })])
 
     const turned = rotateGroup(g, 90, measure)
@@ -100,7 +100,7 @@ describe('rotateGroup', () => {
     expect(t).toEqual({ ...text, rotation: 180 })
   })
 
-  it('turns the Layers of nested Groups around the outer Group Box centre', () => {
+  it("turns the Layers of nested Groups around the centre of the outer Group's Box", () => {
     const g = group([rect('a'), group([rect('b', { x: 30 })], { id: 'group-2' })])
 
     const turned = rotateGroup(g, -90, measure)

@@ -4,7 +4,16 @@
 // `layer ungroup`) both go through here.
 import type { Document, GroupLayer, Layer } from './document.ts'
 import { nextLayerId } from './schema.ts'
-import { findLayer, walkLayers, type LayerParent, type LayerVisit } from './tree.ts'
+import {
+  findLayer,
+  flatMapLayers,
+  mapLayers,
+  translateLayer,
+  walkLayers,
+  withoutEmptyGroups,
+  type LayerParent,
+  type LayerVisit,
+} from './tree.ts'
 
 /** Why a tree operation was refused; the codes match the server's OpError codes. */
 export type TreeEditError = { ok: false; code: 'NOT_FOUND' | 'INVALID_INPUT'; message: string }
@@ -134,46 +143,31 @@ export function duplicateLayers(
   { offset = 0 }: { offset?: number } = {},
 ): { document: Document; ids: string[] } {
   const originals = walkLayers(document).filter(({ layer }) => ids.includes(layer.id))
-  // Ids first, bottom to top, each one clear of the ids given before it.
+  // Ids first, bottom to top (a Group's before its children's), each one clear of the ids given before it.
   const given: Layer[] = []
-  const fresh = (layer: Layer): Layer => {
-    const id = nextLayerId({ layers: [...document.layers, ...given] }, layer.type)
-    given.push({ ...layer, id })
-    if (layer.type === 'group') return { ...layer, id, layers: layer.layers.map(fresh) }
-    return { ...layer, id, x: layer.x + offset, y: layer.y + offset }
+  const fresh = (original: Layer): Layer => {
+    const tree = { layers: [original] }
+    const ids = new Map(
+      walkLayers(tree).map(({ layer, path }) => {
+        const id = nextLayerId({ layers: [...document.layers, ...given] }, layer.type)
+        given.push({ ...layer, id })
+        return [path, id]
+      }),
+    )
+    const renamed = mapLayers(tree, (layer, { path }) => ({ ...layer, id: ids.get(path)! })).layers[0]!
+    return translateLayer(renamed, offset, offset)
   }
   const copies = new Map(originals.map(({ layer }) => [layer.id, fresh(layer)]))
   // Then each copy right above its original.
-  const insert = (layers: readonly Layer[]): Layer[] =>
-    layers.flatMap((layer) => {
-      const kept = layer.type === 'group' ? { ...layer, layers: insert(layer.layers) } : layer
-      const copy = copies.get(layer.id)
-      return copy ? [kept, copy] : [kept]
-    })
-  return { document: { ...document, layers: insert(document.layers) }, ids: [...copies.values()].map((l) => l.id) }
-}
-
-/** The Document without Groups that have no children (only a move can leave one). */
-function withoutEmptyGroups(document: Document): Document {
-  const prune = (layers: readonly Layer[]): Layer[] =>
-    layers.flatMap((layer): Layer[] => {
-      if (layer.type !== 'group') return [layer]
-      const children = prune(layer.layers)
-      if (children.length === 0) return []
-      return [children.length === layer.layers.length && children.every((c, i) => c === layer.layers[i]) ? layer : { ...layer, layers: children }]
-    })
-  return { ...document, layers: prune(document.layers) }
+  const next = flatMapLayers(document, (layer) => {
+    const copy = copies.get(layer.id)
+    return copy ? [layer, copy] : [layer]
+  })
+  return { document: next, ids: [...copies.values()].map((l) => l.id) }
 }
 
 /** The Document with `parent`'s (the Document's or a Group's) children replaced by `layers`. */
 function withChildren(document: Document, parent: LayerParent, layers: Layer[]): Document {
   if (parent === document) return { ...document, layers }
-  const rebuild = (siblings: readonly Layer[]): Layer[] =>
-    siblings.map((layer) => {
-      if (layer.type !== 'group') return layer
-      if (layer === parent) return { ...layer, layers }
-      const children = rebuild(layer.layers)
-      return children.every((c, i) => c === layer.layers[i]) ? layer : { ...layer, layers: children }
-    })
-  return { ...document, layers: rebuild(document.layers) }
+  return mapLayers(document, (layer, visit) => (layer.type === 'group' && visit.layer === parent ? { ...layer, layers } : layer))
 }

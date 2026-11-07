@@ -7,9 +7,10 @@
 // Rounding, so the edit stays readable in the JSON: Box fields (`x`, `y`,
 // `width`, `height`) land on whole px, every other size (font size, letter
 // spacing, corner radius, shadow) and `rotation` on 0.1.
-import type { GroupLayer, Layer, LeafLayer, Shadow } from './document.ts'
+import type { GroupLayer, LeafLayer, Shadow } from './document.ts'
 import { layerExtent } from './extent.ts'
 import { layoutText, type MeasureText } from './textLayout.ts'
+import { mapLeaves } from './tree.ts'
 
 /** A point in Canvas px. */
 export type CanvasPoint = { x: number; y: number }
@@ -21,11 +22,10 @@ export type CanvasPoint = { x: number; y: number }
  * alike. Rotations stay.
  */
 export function scaleGroup(group: GroupLayer, factor: number, anchor: CanvasPoint): GroupLayer {
-  return { ...group, layers: group.layers.map((layer) => scaleLayer(layer, factor, anchor)) }
+  return mapLeaves(group, (leaf) => scaleLeaf(leaf, factor, anchor))
 }
 
-function scaleLayer(layer: Layer, factor: number, anchor: CanvasPoint): Layer {
-  if (layer.type === 'group') return scaleGroup(layer, factor, anchor)
+function scaleLeaf(layer: LeafLayer, factor: number, anchor: CanvasPoint): LeafLayer {
   const px = (value: number) => wholePx(value * factor)
   const tenth = (value: number) => toTenth(value * factor)
   const scaled: LeafLayer = {
@@ -58,8 +58,7 @@ export function rotateGroup(group: GroupLayer, degrees: number, measure: Measure
   const rad = (degrees * Math.PI) / 180
   const cos = Math.cos(rad)
   const sin = Math.sin(rad)
-  const rotate = (layer: Layer): Layer => {
-    if (layer.type === 'group') return { ...layer, layers: layer.layers.map(rotate) }
+  return mapLeaves(group, (layer) => {
     const height = layer.height ?? (layer.type === 'text' ? layoutText(layer, measure).height : 0)
     const dx = layer.x + layer.width / 2 - around.x
     const dy = layer.y + height / 2 - around.y
@@ -70,8 +69,7 @@ export function rotateGroup(group: GroupLayer, degrees: number, measure: Measure
       y: wholePx(centre.y - height / 2),
       rotation: toTenth((layer.rotation ?? 0) + degrees),
     }
-  }
-  return { ...group, layers: group.layers.map(rotate) }
+  })
 }
 
 function scaleShadow(shadow: Shadow, tenth: (value: number) => number): Shadow {

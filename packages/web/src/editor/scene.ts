@@ -3,6 +3,9 @@
 // object (a DocumentGroup, group.ts) holds their objects in the same order, so the
 // Entry tree and the Fabric object tree have the same shape.
 //
+// "Scene" here means only this: the editor's Fabric object tree and its Entries. It is
+// not a name for the Document (GLOSSARY lists "scene" under the Document's Avoid).
+//
 // An Entry's `base` is the Layer as last laid out (load, a committed modification, an
 // in-place relayout). For a leaf, the Layer it shows now is read back from its object
 // (`objectToLayer`); a Group shows `layerOf` its children, its own fields from `base`.

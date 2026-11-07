@@ -1,7 +1,7 @@
 // The Layer tree: walking, finding and replacing Layers. Every place that goes
 // over all Layers of a Document goes through here, so Groups (Document v2,
 // ADR 0007) only need teaching to these functions. Pure, no DOM or Node APIs.
-import type { Document, GroupLayer, Layer } from './document.ts'
+import type { Document, GroupLayer, Layer, LeafLayer } from './document.ts'
 
 /** Anything that holds Layers bottom to top: the Document or a Group. */
 export type LayerParent = { readonly layers: readonly Layer[] }
@@ -41,32 +41,47 @@ export function findLayer(root: LayerParent, id: string): LayerVisit | undefined
 }
 
 /**
- * The Document with every Layer replaced by `replace(layer, visit)`, without
- * touching the input. A Group's children are replaced first, so `replace`
- * gets the Group holding its new children (`visit` still describes where the
- * original sits). Layers `replace` returns as is are kept by reference; when
- * nothing changes the Document (and every Group) itself is returned.
+ * `root` (the Document or a Group) with every Layer under it replaced by
+ * `replace(layer, visit)`, without touching the input. A Group's children are
+ * replaced first, so `replace` gets the Group holding its new children (`visit`
+ * still describes where the original sits). Layers `replace` returns as is are
+ * kept by reference; when nothing changes `root` (and every Group) itself is
+ * returned.
  */
-export function mapLayers(document: Document, replace: (layer: Layer, visit: LayerVisit) => Layer): Document {
-  const visits = walkLayers(document)
+export function mapLayers<P extends LayerParent>(root: P, replace: (layer: Layer, visit: LayerVisit) => Layer): P {
+  return flatMapLayers(root, (layer, visit) => [replace(layer, visit)])
+}
+
+/**
+ * Like `mapLayers`, but each Layer is replaced by any number of Layers in its
+ * place: none removes it, several go there bottom to top. A Group left without
+ * children stays (see `withoutEmptyGroups`).
+ */
+export function flatMapLayers<P extends LayerParent>(root: P, replace: (layer: Layer, visit: LayerVisit) => Layer[]): P {
+  const visits = walkLayers(root)
   let next = 0
-  const mapAll = (layers: Layer[]): Layer[] => {
+  const mapAll = (layers: readonly Layer[]): readonly Layer[] => {
     let changed = false
-    const mapped = layers.map((layer) => {
+    const mapped = layers.flatMap((layer) => {
       const visit = visits[next++]!
       let input = layer
       if (layer.type === 'group') {
         const children = mapAll(layer.layers)
-        if (children !== layer.layers) input = { ...layer, layers: children }
+        if (children !== layer.layers) input = { ...layer, layers: [...children] }
       }
       const output = replace(input, visit)
-      if (output !== layer) changed = true
+      if (output.length !== 1 || output[0] !== layer) changed = true
       return output
     })
     return changed ? mapped : layers
   }
-  const layers = mapAll(document.layers)
-  return layers === document.layers ? document : { ...document, layers }
+  const layers = mapAll(root.layers)
+  return layers === root.layers ? root : { ...root, layers: [...layers] }
+}
+
+/** `root` without Groups that have no children, nor Groups left empty by dropping them. */
+export function withoutEmptyGroups<P extends LayerParent>(root: P): P {
+  return flatMapLayers(root, (layer) => (layer.type === 'group' && layer.layers.length === 0 ? [] : [layer]))
 }
 
 /**
@@ -75,15 +90,17 @@ export function mapLayers(document: Document, replace: (layer: Layer, visit: Lay
  * invalid. Unknown ids are ignored.
  */
 export function removeLayers(document: Document, ids: readonly string[]): Document {
-  const keep = (layers: Layer[]): Layer[] =>
-    layers.flatMap((layer): Layer[] => {
-      if (ids.includes(layer.id)) return []
-      if (layer.type !== 'group') return [layer]
-      const children = keep(layer.layers)
-      if (children.length === 0) return []
-      return [children.length === layer.layers.length ? layer : { ...layer, layers: children }]
-    })
-  return { ...document, layers: keep(document.layers) }
+  return withoutEmptyGroups(flatMapLayers(document, (layer) => (ids.includes(layer.id) ? [] : [layer])))
+}
+
+/** `layer` with every leaf in it (itself, for a leaf) replaced by `replace(leaf)`, at any depth. */
+export function mapLeaves<L extends Layer>(layer: L, replace: (leaf: LeafLayer) => LeafLayer): L {
+  return mapLayers({ layers: [layer] }, (l) => (l.type === 'group' ? l : replace(l))).layers[0] as L
+}
+
+/** `layer` moved by `dx`, `dy` Canvas px: a leaf's Box, or every Layer in a Group. */
+export function translateLayer<L extends Layer>(layer: L, dx: number, dy: number): L {
+  return mapLeaves(layer, (leaf) => ({ ...leaf, x: leaf.x + dx, y: leaf.y + dy }))
 }
 
 /** The Document with the Layer `id` replaced by `replace(layer)`, without touching the input. Unknown ids change nothing. */
@@ -99,22 +116,22 @@ export function replaceLayer(document: Document, id: string, replace: (layer: La
 export type InheritedFlags = { locked: boolean; hidden: boolean; lockedBy?: GroupLayer; hiddenBy?: GroupLayer }
 
 export function inheritedFlags(root: LayerParent, id: string): InheritedFlags | undefined {
-  const find = (layers: readonly Layer[], groups: readonly GroupLayer[]): InheritedFlags | undefined => {
-    for (const layer of layers) {
-      if (layer.id === id) {
-        const lockedBy = groups.findLast((g) => g.locked === true)
-        const hiddenBy = groups.findLast((g) => g.visible === false)
-        const flags: InheritedFlags = { locked: layer.locked === true || lockedBy !== undefined, hidden: layer.visible === false || hiddenBy !== undefined }
-        if (lockedBy) flags.lockedBy = lockedBy
-        if (hiddenBy) flags.hiddenBy = hiddenBy
-        return flags
-      }
-      if (layer.type === 'group') {
-        const found = find(layer.layers, [...groups, layer])
-        if (found) return found
-      }
-    }
-    return undefined
-  }
-  return find(root.layers, [])
+  const layer = findLayer(root, id)?.layer
+  if (!layer) return undefined
+  const groups = ancestorsOf(root, id)
+  const lockedBy = groups.find((g) => g.locked === true)
+  const hiddenBy = groups.find((g) => g.visible === false)
+  const flags: InheritedFlags = { locked: layer.locked === true || lockedBy !== undefined, hidden: layer.visible === false || hiddenBy !== undefined }
+  if (lockedBy) flags.lockedBy = lockedBy
+  if (hiddenBy) flags.hiddenBy = hiddenBy
+  return flags
+}
+
+/** The Groups under `root` holding the Layer `id`, innermost first (none for a top-level Layer or an unknown id). */
+export function ancestorsOf(root: LayerParent, id: string): GroupLayer[] {
+  const parents = new Map<string, GroupLayer>()
+  for (const { layer, parent } of walkLayers(root)) if (parent !== root) parents.set(layer.id, parent as GroupLayer)
+  const ancestors: GroupLayer[] = []
+  for (let group = parents.get(id); group; group = parents.get(group.id)) ancestors.push(group)
+  return ancestors
 }

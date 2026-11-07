@@ -2,7 +2,7 @@
 import { z } from 'zod'
 import { CanvasSchema, type Document } from './document.ts'
 import type { Size } from './presets.ts'
-import { mapLayers } from './tree.ts'
+import { mapLayers, translateLayer } from './tree.ts'
 
 /** A new Canvas size is checked by the same rules as the Document's own `canvas`. */
 const CanvasSizeSchema = CanvasSchema.pick({ width: true, height: true })
@@ -47,7 +47,7 @@ export function resizeCanvas(document: Document, size: Size, anchor: Anchor = 't
   const dy = Math.floor(fy * (height - document.canvas.height)) + 0
   // Every leaf in the tree moves: Layers hold Canvas coordinates at every depth,
   // and a Group has no position of its own (its Box follows its children).
-  const moved = mapLayers(document, (layer) => (layer.type === 'group' ? layer : { ...layer, x: layer.x + dx, y: layer.y + dy }))
+  const moved = mapLayers(document, (layer) => (layer.type === 'group' ? layer : translateLayer(layer, dx, dy)))
   // Guides stay where they were relative to the Layers.
   const guides = document.guides && { x: document.guides.x.map((x) => x + dx), y: document.guides.y.map((y) => y + dy) }
   return { ...moved, canvas: { ...document.canvas, width, height }, ...(guides && { guides }) }
