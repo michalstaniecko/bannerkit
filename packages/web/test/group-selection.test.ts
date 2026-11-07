@@ -167,7 +167,7 @@ describe('changing a selected Layer in a Group', () => {
     return d
   }
 
-  it('a drag moves only that Layer, as one change, and the Group Box follows', async () => {
+  it("a drag moves only that Layer, as one change, and the Group's Box follows", async () => {
     const { editor, upper, changes } = await openEditor(nested())
     editor.select(['rect-2'])
 

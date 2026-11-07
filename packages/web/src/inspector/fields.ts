@@ -638,8 +638,8 @@ function autoFitGroup(): FieldGroup<TextLayer> {
   }
 }
 
-/** A Group Box side: shown for the Group's Box (see `inspectField`), never read from the Layer. */
-function groupBox(key: 'x' | 'y' | 'width' | 'height', label: string, name?: string): NumberFieldSpec<GroupLayer> {
+/** A side of a Group's Box: shown for it (see `inspectField`), never read from the Layer. */
+function groupBoxSide(key: 'x' | 'y' | 'width' | 'height', label: string, name?: string): NumberFieldSpec<GroupLayer> {
   return { control: 'number', key, label, name, box: key, round: roundPx, read: () => undefined, write: (l) => l }
 }
 
@@ -667,7 +667,7 @@ function groupGroups(): FieldGroup<GroupLayer>[] {
     {
       key: 'layout',
       title: 'Layout',
-      fields: [groupBox('x', 'X'), groupBox('y', 'Y'), groupBox('width', 'W', 'Width'), groupBox('height', 'H', 'Height')],
+      fields: [groupBoxSide('x', 'X'), groupBoxSide('y', 'Y'), groupBoxSide('width', 'W', 'Width'), groupBoxSide('height', 'H', 'Height')],
     },
     appearanceGroup(),
   ]

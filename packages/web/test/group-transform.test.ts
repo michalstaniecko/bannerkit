@@ -125,7 +125,7 @@ describe('scaling a Group', () => {
 })
 
 describe('rotating a Group', () => {
-  it('the rotation handle turns every Layer in it around the Group Box centre, as one change', async () => {
+  it("the rotation handle turns every Layer in it around the centre of the Group's Box, as one change", async () => {
     const { editor, upper, changes } = await openEditor(badge())
     click(upper, [150, 125])
 
