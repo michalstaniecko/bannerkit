@@ -31,7 +31,7 @@
 // reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
 //
 // `export` renders the shown Canvas offscreen (export.ts).
-import { layoutText, type Document, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { layoutText, walkLayers, type Document, type Layer, type MeasureText, type TextLayer, type TextLayout } from '@bannerkit/core'
 import { ActiveSelection, Canvas, Textbox, type FabricObject, type Point } from 'fabric'
 import { textControls } from './controls.ts'
 import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
@@ -205,10 +205,11 @@ const sameDocument = (a: Document, b: Document): boolean => JSON.stringify(a) ==
 
 /** Ids of the Layers that differ between two Documents, in `after` order then removed ones. */
 function changedLayerIds(before: Document, after: Document): string[] {
-  const old = new Map(before.layers.map((l) => [l.id, JSON.stringify(l)]))
-  const ids = after.layers.filter((l) => old.get(l.id) !== JSON.stringify(l)).map((l) => l.id)
-  const kept = new Set(after.layers.map((l) => l.id))
-  return [...ids, ...before.layers.filter((l) => !kept.has(l.id)).map((l) => l.id)]
+  const all = (document: Document) => walkLayers(document).map((v) => v.layer)
+  const old = new Map(all(before).map((l) => [l.id, JSON.stringify(l)]))
+  const ids = all(after).filter((l) => old.get(l.id) !== JSON.stringify(l)).map((l) => l.id)
+  const kept = new Set(all(after).map((l) => l.id))
+  return [...ids, ...all(before).filter((l) => !kept.has(l.id)).map((l) => l.id)]
 }
 
 export function createEditor({ loadFonts = loadBrowserFonts, measure = measureText }: EditorOptions = {}): Editor {

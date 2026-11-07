@@ -16,7 +16,7 @@ import { Section } from '../ui/Panel.tsx'
 import { Select } from '../ui/Select.tsx'
 import { DocumentFields } from './DocumentFields.tsx'
 import { GradientField } from './GradientField.tsx'
-import { inspectField, MIXED, sharedFields, type InspectedField } from './inspect.ts'
+import { inspectField, MIXED, selectedLayers, sharedFields, type InspectedField } from './inspect.ts'
 import { useEdits } from './useEdits.ts'
 import { useInspected } from './useInspected.ts'
 
@@ -33,7 +33,7 @@ const MIXED_LABEL = 'Mixed'
 
 export function Properties({ editor, loaded, anchor, onAnchorChange }: Props) {
   const { document, selection, reloads } = useInspected(editor, loaded)
-  const layers = document ? document.layers.filter((l) => selection.includes(l.id)) : []
+  const layers = document ? selectedLayers(document, selection) : []
   const edits = useEdits(editor)
   // Text Layout (used font size, Auto height) as the editor lays it out: core
   // `layoutText` with the Canvas's measure, never read back from Fabric.
