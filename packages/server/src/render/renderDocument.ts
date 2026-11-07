@@ -4,7 +4,9 @@ import {
   boxTransform,
   type ExportFormat,
   type Document,
+  type GroupLayer,
   type Layer,
+  type LeafLayer,
   layoutText,
   linearGradientLine,
   type RectLayer,
@@ -45,7 +47,8 @@ export async function renderDocument(doc: Document, options: RenderOptions = {})
     ctx.fillStyle = background
     ctx.fillRect(0, 0, width, height)
   }
-  for (const layer of doc.layers) drawLayer(ctx, layer, drawScale, images)
+  const scene: Scene = { width, height, drawScale, images }
+  for (const layer of doc.layers) drawLayer(ctx, layer, scene)
 
   const raw = await canvas.toBuffer('raw', { colorType: 'rgba', premultiplied: false })
   const resized = sharp(raw, { raw: { width: canvas.width, height: canvas.height, channels: 4 } }).resize(
@@ -68,13 +71,46 @@ function encode(image: Sharp, format: ExportFormat, quality: number, background:
   }
 }
 
-/**
- * Draws one Layer with the effects every Layer type shares: visibility, opacity and shadow.
- * `drawScale` is the device pixels per Canvas pixel; shadows ignore the transform, so their
- * blur and offsets are scaled by hand.
- */
-function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, drawScale: number, images: LayerImages): void {
+/** What drawing any Layer needs besides the context: the Canvas size, the device pixels per Canvas pixel, the loaded images. */
+type Scene = { width: number; height: number; drawScale: number; images: LayerImages }
+
+/** Draws one Layer of any type; a hidden one (with everything in it, for a Group) is skipped. */
+function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, scene: Scene): void {
   if (layer.visible === false) return
+  if (layer.type === 'group') drawGroup(ctx, layer, scene)
+  else drawLeaf(ctx, layer, scene)
+}
+
+/**
+ * Draws a Group's children, bottom to top. With opacity below 1 they are drawn
+ * onto a Canvas-sized surface at the same draw scale first, which is then laid
+ * on with the Group's opacity: CSS opacity, where overlapping children do not
+ * show through each other (ADR 0007). At opacity 1 that surface would change
+ * nothing, so the children are drawn directly.
+ */
+function drawGroup(ctx: CanvasRenderingContext2D, group: GroupLayer, scene: Scene): void {
+  const opacity = group.opacity ?? 1
+  if (opacity >= 1) {
+    for (const child of group.layers) drawLayer(ctx, child, scene)
+    return
+  }
+  const { width, height, drawScale } = scene
+  const surface = new Canvas(width * drawScale, height * drawScale, { gpu: false })
+  const sctx = surface.getContext('2d')
+  sctx.scale(drawScale, drawScale)
+  for (const child of group.layers) drawLayer(sctx, child, scene)
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalAlpha = opacity
+  ctx.drawImage(surface, 0, 0)
+  ctx.restore()
+}
+
+/**
+ * Draws one leaf Layer with the effects every leaf type shares: opacity and shadow.
+ * Shadows ignore the transform, so their blur and offsets are scaled by `drawScale` by hand.
+ */
+function drawLeaf(ctx: CanvasRenderingContext2D, layer: LeafLayer, { drawScale, images }: Scene): void {
   ctx.save()
   ctx.globalAlpha = layer.opacity ?? 1
   if (layer.shadow) {

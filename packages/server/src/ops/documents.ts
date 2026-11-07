@@ -110,12 +110,16 @@ async function readCurrent(path: string): Promise<ConflictCurrent | undefined> {
 /** A missing Asset is a warning only where that image Layer id already had that `src` in `current`. */
 function missingWhereUnchanged(current: unknown): MissingAssets {
   const known = new Set<string>()
-  const layers = (current as { layers?: unknown } | null | undefined)?.layers
-  if (Array.isArray(layers)) {
-    for (const layer of layers as { type?: unknown; id?: unknown; src?: unknown }[]) {
+  // `current` is unvalidated JSON, so walk it (Groups included) without trusting its shape.
+  const collect = (parent: unknown): void => {
+    const layers = (parent as { layers?: unknown } | null | undefined)?.layers
+    if (!Array.isArray(layers)) return
+    for (const layer of layers as ({ type?: unknown; id?: unknown; src?: unknown } | null)[]) {
       if (layer?.type === 'image' && typeof layer.id === 'string' && typeof layer.src === 'string') known.add(`${layer.id}\0${layer.src}`)
+      if (layer?.type === 'group') collect(layer)
     }
   }
+  collect(current)
   return (layer) => (known.has(`${layer.id}\0${layer.src}`) ? 'warning' : 'error')
 }
 
