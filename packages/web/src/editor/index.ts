@@ -186,6 +186,11 @@ export type Editor = {
    * never read back from Fabric.
    */
   textLayout(layer: TextLayer): TextLayout
+  /**
+   * The measure the Canvas lays text out with (ADR 0004), for core functions that need
+   * one (`layerExtent`, `selectionBox`) so they agree with what the Canvas draws.
+   */
+  measureText: MeasureText
   /** The Fabric object showing a Layer, for adapters that need it (Selection, tests). */
   objectFor(layerId: string): FabricObject | undefined
   /** Canvas px per Document px. The canvas element is resized to the zoomed Canvas size. */
@@ -773,6 +778,8 @@ export function createEditor({ loadFonts = loadBrowserFonts, measure = measureTe
     },
 
     textLayout: (layer) => layoutText(layer, measure),
+
+    measureText: measure,
 
     objectFor(layerId) {
       return allEntries(roots).find((e) => e.base.id === layerId)?.object

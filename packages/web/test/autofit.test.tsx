@@ -2,7 +2,7 @@
 // Text Layout of a text Layer (core `layoutText` with the measure the Canvas draws
 // with); here that measure is injected and deterministic: every character is half the
 // font size wide, so the expected sizes and heights below are worked out by hand.
-import type { MeasureText } from '@bannerkit/core'
+import { selectionBox, type MeasureText } from '@bannerkit/core'
 import { act, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { doc, openEditor, rect, text } from './editor-harness.ts'
@@ -20,6 +20,16 @@ describe('the Text Layout the editor gives', () => {
     expect(editor.textLayout(text({ height: 20, autoFit: { minFontSize: 10 } })).fontSize).toBe(17)
     expect(editor.textLayout(text()).fontSize).toBe(20)
     expect(editor.textLayout(text()).height).toBeCloseTo(22.6)
+  })
+
+  it('is measured by the editor’s measureText, which core functions needing a measure can take', async () => {
+    const { editor } = await openEditor(doc([text()]), { measure })
+    const font = { family: 'Inter', weight: 400, style: 'normal', size: 20 } as const
+
+    // 'Summer' is 6 characters of 20 / 2 + 2 px.
+    expect(editor.measureText(font, 'Summer', 2)).toBe(72)
+    // A 70 px Box breaks 'Summer sale' (110 px) into two 22.6 px lines (lineHeight 1).
+    expect(selectionBox([text({ x: 5, y: 6, width: 70, lineHeight: 1 })], editor.measureText)!.height).toBeCloseTo(45.2)
   })
 })
 
