@@ -12,3 +12,5 @@ packages/server/test/__snapshots__/__diff__/
 # Playwright (S3) output
 test-results/
 playwright-report/
+# JetBrains IDE settings
+.idea/
