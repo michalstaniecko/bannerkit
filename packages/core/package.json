@@ -1,0 +1,22 @@
+{
+  "name": "@bannerkit/core",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json",
+    "./document.schema.json": "./schema/document.schema.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p . && tsc -p tsconfig.node.json",
+    "schema": "tsx scripts/generate-schema.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}

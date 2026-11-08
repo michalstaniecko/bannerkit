@@ -1,0 +1,388 @@
+/* Components: Button, IconButton, icon toggles, labelled inline fields, Panel/Section,
+ * Tabs. Semantic tokens only (tokens.css). */
+
+/* Button and IconButton share the control look. */
+.button,
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-control-icon);
+  height: var(--control-size);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  color: var(--text-default);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.button {
+  padding: var(--pad-none) var(--pad-control-x);
+}
+
+.icon-button {
+  width: var(--control-size);
+  padding: var(--pad-none);
+}
+
+.button:hover:not(:disabled),
+.icon-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.button:focus-visible,
+.icon-button:focus-visible,
+.tabs-tab:focus-visible,
+.icon-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.button:disabled,
+.icon-button:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.button[data-variant='primary'],
+.icon-button[data-variant='primary'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.button[data-variant='primary']:hover:not(:disabled),
+.icon-button[data-variant='primary']:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button[data-variant='primary']:disabled,
+.icon-button[data-variant='primary']:disabled {
+  background: var(--surface-control);
+  border-color: var(--border-subtle);
+  color: var(--text-disabled);
+}
+
+.button[data-variant='ghost'],
+.icon-button[data-variant='ghost'] {
+  background: transparent;
+  border-color: transparent;
+}
+
+.icon-button[aria-pressed='true'] {
+  background: var(--surface-selected);
+}
+
+/* A checkbox drawn as an icon: the input lies transparent over the icon. */
+.icon-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-size);
+  height: var(--control-size);
+  border-radius: var(--control-radius);
+  color: var(--text-muted);
+}
+
+.icon-toggle[data-checked='false'] {
+  color: var(--text-disabled);
+}
+
+.icon-toggle:hover {
+  color: var(--text-default);
+}
+
+.icon-toggle input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* A label with its control on one line (top bar pickers). */
+.field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  color: var(--text-muted);
+}
+
+.field-inline select,
+.field-inline input,
+.toolbar-group > select,
+.toolbar-group > input {
+  height: var(--control-size);
+  padding: var(--pad-none) var(--pad-control-y);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  color: var(--text-default);
+}
+
+/* Panel and Section. */
+.panel {
+  background: var(--surface-panel);
+}
+
+.section {
+  padding: var(--pad-section);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-control);
+  margin-bottom: var(--gap-control);
+}
+
+.section-title {
+  margin: 0;
+  font-size: var(--text-size-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-tight);
+}
+
+/* Tabs. */
+.tabs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabs-list {
+  display: flex;
+  gap: var(--gap-tight);
+  padding: var(--pad-none) var(--pad-bar-x);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tabs-tab {
+  padding: var(--pad-bar-y) var(--pad-control-x);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tabs-tab:hover {
+  color: var(--text-default);
+}
+
+.tabs-tab[aria-selected='true'] {
+  color: var(--text-default);
+  border-bottom-color: var(--accent);
+}
+
+.tabs-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabs-panel[hidden] {
+  display: none;
+}
+
+/* NumberField and TextField: a short label (NumberField's drags) beside a compact input. */
+.number-field,
+.text-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.number-field-label,
+.text-field-label {
+  flex: none;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* Dragging the label left/right changes the value. */
+.number-field-label-drag {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.number-field-input,
+.text-field-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-size);
+  padding: var(--pad-none) var(--pad-control-y);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  color: var(--text-default);
+  font: inherit;
+}
+
+.number-field-input:focus-visible,
+.text-field-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.number-field-input:disabled,
+.text-field-input:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-sunken);
+}
+
+.number-field-input::placeholder {
+  color: var(--text-disabled);
+}
+
+/* Select and ColorField: a label beside a full-width control (a row of their own in a field grid). */
+.field-grid > .select-field,
+.field-grid > .text-field,
+.field-grid > .color-field {
+  grid-column: 1 / -1;
+}
+
+.select-field,
+.color-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.select-field-label,
+.color-field-label {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.select-field-input,
+.color-field-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-size);
+  padding: var(--pad-none) var(--pad-control-y);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  color: var(--text-default);
+  font: inherit;
+}
+
+.color-field-swatch {
+  flex: none;
+  width: var(--control-size);
+  height: var(--control-size);
+  padding: var(--pad-none);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  cursor: pointer;
+}
+
+.select-field-input:focus-visible,
+.color-field-input:focus-visible,
+.color-field-swatch:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.select-field-input:disabled,
+.color-field-input:disabled,
+.color-field-swatch:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-sunken);
+  cursor: default;
+}
+
+.color-field-input::placeholder {
+  color: var(--text-disabled);
+}
+
+.color-field-none {
+  flex: none;
+}
+
+/* Segmented. */
+.field-grid > .segmented-field {
+  grid-column: 1 / -1;
+}
+
+.segmented-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.segmented-field-label {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.segmented-field-options {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.segmented-field-option {
+  height: var(--control-size);
+  padding: var(--pad-none) var(--pad-control-y);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-control);
+  color: var(--text-default);
+  font: inherit;
+  cursor: pointer;
+}
+
+.segmented-field-option[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.segmented-field-option:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.segmented-field-option:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-sunken);
+  cursor: default;
+}
+
+.segmented-field-placeholder {
+  color: var(--text-disabled);
+}
+
+/* Checkbox. */
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  color: var(--text-default);
+  cursor: pointer;
+}
+
+.checkbox input {
+  margin: var(--pad-none);
+  accent-color: var(--accent);
+}

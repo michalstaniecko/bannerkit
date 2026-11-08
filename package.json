@@ -1,0 +1,28 @@
+{
+  "name": "bannerkit",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -F @bannerkit/web build",
+    "start": "pnpm build && pnpm -F @bannerkit/server serve",
+    "bannerkit": "bannerkit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:update": "UPDATE_SNAPSHOTS=1 vitest run",
+    "test:e2e": "pnpm -F @bannerkit/web test:e2e",
+    "typecheck": "pnpm -r typecheck",
+    "schema": "pnpm -F @bannerkit/core schema"
+  },
+  "devDependencies": {
+    "@bannerkit/server": "workspace:*",
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

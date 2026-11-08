@@ -1,0 +1,3 @@
+# Core owns text layout; renderers draw pre-broken lines
+
+Fabric `Textbox` and skia-canvas `textWrap` each wrap text with their own algorithm, so the same text could break at different words in the browser and on the server. That would break the pixel-match requirement and make AutoFit differ between renderers. Instead, `@bannerkit/core` computes Text Layout: greedy word wrapping that matches Fabric's rules, letter spacing and AutoFit. It does this through an injected `measureText` function, which each renderer implements with its own canvas. The server draws one `fillText` per line and does *not* use `textWrap`. The browser keeps `Textbox` for inline editing, and a test asserts that Fabric's line breaks equal core's.

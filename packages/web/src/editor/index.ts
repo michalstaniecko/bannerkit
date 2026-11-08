@@ -1,0 +1,1165 @@
+// The editor module: framework-agnostic, owns one fabric.Canvas. React (or anything
+// else) renders chrome around it and talks to it only through `Editor`; Fabric
+// objects never leave this module as state.
+//
+// Model: `load` keeps the Document and lays each Layer out as one Fabric object,
+// bottom → top, in a parallel `Entry` tree (scene.ts): a Group is one DocumentGroup
+// holding its children's objects (group.ts). `getDocument` rebuilds the Document from
+// the objects via the mapper, so whatever Fabric shows is what you get back.
+//
+// A Group is selected and moved as a whole: a click on any of its Layers takes the
+// top-level Group (`DocumentCanvas` hits a Group only where one of its Layers is hit).
+// Moving it moves every Layer in it by the same delta; its corner handles scale and its
+// rotation handle turns every Layer in it (core `scaleGroup` / `rotateGroup`). Either way
+// the Group is laid out again around its Layers, as an axis-aligned Box. Ctrl/Cmd+G and
+// Ctrl/Cmd+Shift+G group and ungroup the Selection (layer-actions.ts), one step each.
+// A double click, Cmd+click or a click in the context of a selected child selects a
+// Layer inside a Group instead (picking.ts); it then moves, resizes, rotates and edits
+// like any Layer, and its Group is laid out again around it on commit. A Layer in a
+// locked or hidden Group is never hit and, selected from the list, has no handles.
+//
+// Direct manipulation: Fabric runs the drag, scale, rotate and text editing. When
+// one *logical modification* ends (a transform's `object:modified`, a text edit's
+// exit with changed text, an arrow-key nudge) the editor commits it: each touched
+// Layer is read back with `objectToLayer`, stored as its Entry's base, and applied
+// again with `applyLayer`, which bakes scale into `width`/`height` (ADR 0001). Then
+// exactly one `change` event carries the new Document. Autosave and anything else
+// that follows edits hang on `change`.
+//
+// Undo (history.ts): every step ends with a Document snapshot. A direct
+// manipulation records one when it is committed; any other action that replaces
+// the Document (Layer list actions, JSON apply, reload from disk) goes through
+// `apply(document, { cause })`, which shows it and records exactly one step.
+// The Inspector and reloads from disk use `update(recipe, { cause })` instead: also
+// one step, but the Selection stays and unchanged Layers are laid out in place.
+// `undo` / `redo` show a snapshot again and emit `change` like any other edit, so
+// autosave follows them. `load` starts a fresh history.
+//
+// A gesture that changes a value continuously (dragging a field's label, a Canvas
+// resize handle) runs as a transient `preview()`: shown in place, no step, no
+// `change`; its `commit` is the one step. Any other step drops it first.
+//
+// A different Canvas size left by a step, an undo/redo, a reload or a `load` is also
+// reported once as a `canvas` event (never during a preview), so Fit mode can zoom again.
+//
+// Snapping (ADR 0008): while a Layer, a Group, a Layer in a Group or several Layers are
+// dragged, the adapter (snap-adapter.ts) pulls their Selection Box onto other Layers,
+// the Canvas and Guides (snapping/), on whole px, and the overlay (overlay.ts) draws
+// the snap lines on Fabric's top context, never in a Render or an Export. Cmd/Ctrl
+// held, or `setSnapping(false)`, moves freely. `marks()` gives what is drawn. A reload
+// from disk during a gesture abandons it (no step), dropping the active object.
+// Resizing one unrotated leaf Layer snaps the dragged edge of its Box the same way
+// (snap-resize-adapter.ts); with Shift the rotation handle turns by 15°, Snapping on or off.
+//
+// Measurement (measure-adapter.ts): with Alt held over the Canvas and no gesture
+// running, the distances from the Selection Box to the Layer a click would select
+// there, or to the Canvas, are Marks too.
+//
+// Guides (guide-adapter.ts, guides.ts): drawn by the overlay across the Canvas, hit within 3 screen px
+// (after the active object's handles, before the Layers: the cursor turns `ew-resize` /
+// `ns-resize` and the Guide lights up) and dragged by `dragGuide`, which the Rulers use
+// too. A drag is a Gesture preview of `guides` only, which lays no Layer out again;
+// its value snaps onto Layers and the Canvas (snapping/guide.ts) on whole px; released
+// over a Ruler (`addRuler`) the Guide is removed; the release is one `guides` step.
+//
+// `export` renders the shown Canvas offscreen (export.ts).
+import { faceKey, layerExtent, layoutText, rotateGroup, scaleGroup, selectionBox, translateLayer, walkLayers, type Document, type GroupLayer, type Layer, type LeafLayer, type MeasureText, type Rect, type TextLayer, type TextLayout } from '@bannerkit/core'
+import { ActiveSelection, Canvas, Point, Textbox, util, type FabricObject, type TPointerEvent } from 'fabric'
+import { groupControls, textControls } from './controls.ts'
+import { facesUsed, loadBrowserFonts, measureText, type LoadFonts } from './fonts.ts'
+import { exportCanvas, type ExportOptions, type ExportResult } from './export.ts'
+import { createHistory } from './history.ts'
+import { groupSelection, ungroupSelection, type LayerActionResult } from '../layer-actions.ts'
+import { roundAngle, roundPx } from './rounding.ts'
+import { DocumentGroup } from './group.ts'
+import { applyLayer, layerToObject, objectToLayer, resizeTextLayer, type MapperEnv, type TextEdge } from './mapper.ts'
+import { allEntries, buildEntries, isFrozenEntry, isGroupEntry, layerOf, leavesOf, rebase, rootOf, sameShape, syncBase, type Entry, type GroupEntry } from './scene.ts'
+import { fitZoom, type Size } from './zoom.ts'
+import { attachOverlay, readOverlayColors } from './overlay.ts'
+import { attachSnapAdapter, type SnapAdapter } from './snap-adapter.ts'
+import { attachResizeSnap, type ResizeSnap } from './snap-resize-adapter.ts'
+import { attachMeasurement, type MeasureAdapter } from './measure-adapter.ts'
+import type { Mark } from './snapping/marks.ts'
+import type { Axis } from './snapping/targets.ts'
+import { createGuideAdapter, type GuideDrag, type GuidesEvent } from './guide-adapter.ts'
+import { clickTarget, doubleClickTarget, escapeSelection, toggleSelection, withoutDescendants } from './picking.ts'
+
+export type EditorOptions = {
+  /**
+   * Loads the fonts a Document uses before any text is created. Defaults to the
+   * browser loader (`@font-face` from the font manifest + `document.fonts.load`);
+   * tests without a FontFaceSet inject their own.
+   */
+  loadFonts?: LoadFonts
+  /**
+   * Measures text for its Text Layout (what the Canvas draws and `textLayout` gives).
+   * Defaults to the browser's canvas `measureText`; tests inject a deterministic one.
+   */
+  measure?: MeasureText
+}
+
+export type LoadOptions = {
+  /** The URL an image Layer's project-relative `src` loads from. Defaults to `src` itself. */
+  assetUrl?: (src: string) => string
+}
+
+/** What ended a direct manipulation. */
+export type ManipulationCause = 'transform' | 'text' | 'nudge'
+
+/**
+ * An action that replaces the whole Document through `apply` or `update`; `resize`
+ * is a change of the Canvas size (Inspector fields, Canvas resize handles); `guides`
+ * a Guide created, moved or removed (`dragGuide`).
+ */
+export type ApplyCause = 'layers' | 'json' | 'reload' | 'inspector' | 'resize' | 'guides'
+
+/** What made one undo step (or moved through the history). */
+export type ChangeCause = ManipulationCause | ApplyCause | 'undo' | 'redo'
+
+/**
+ * The shown Document changed by one step: a move, resize or rotate is released, a
+ * text edit is left with new text, an arrow key nudged, an `apply`, an `undo` or a
+ * `redo`. Fired once per step, never for `load`. `layerIds` are the Layers that
+ * changed, appeared or disappeared.
+ */
+export type ChangeEvent = { document: Document; cause: ChangeCause; layerIds: string[] }
+
+export type ApplyOptions = { cause: ApplyCause }
+
+/** A pure edit of the Document: gets a copy of the shown one, returns the next one (already valid). */
+export type DocumentRecipe = (document: Document) => Document
+
+/**
+ * A Gesture preview (not a Preview Render): a transient change of the shown Document while a gesture runs (dragging a field's
+ * label, a Canvas resize handle): shown on the Canvas with the Selection kept, but no
+ * undo step, no `change` and so no autosave. It ends with exactly one of `commit`,
+ * `cancel`, or being dropped by any other step (an edit, undo/redo, a reload from
+ * disk, `load`, another preview), which shows the Document from before it again.
+ * Once ended, every method does nothing.
+ */
+export type Preview = {
+  /**
+   * Shows `recipe` applied to the Document from before the gesture (not to the
+   * previous preview). Resolves once it shows.
+   */
+  show(recipe: DocumentRecipe): Promise<void>
+  /** Makes what is shown one undo step and one `change` with `cause` (nothing when it equals the start). */
+  commit(options: ApplyOptions): Promise<void>
+  /** Shows the Document from before the gesture again, without a step. */
+  cancel(): Promise<void>
+  /** Whether it ended (committed, cancelled or dropped). */
+  ended(): boolean
+}
+
+/** The selected Layers changed. Ids are bottom → top; empty when nothing is selected. */
+export type SelectionEvent = { layerIds: string[] }
+
+/**
+ * The Canvas size shown changed: by a step (a resize, its undo or redo), a reload from
+ * disk or a `load`. Fired once per such change, never while a preview runs (only when
+ * it is committed), so Fit mode can zoom to the new size and stays put during a gesture.
+ */
+export type CanvasEvent = Size
+
+/**
+ * The Selection Box (core `selectionBox`: the union of the selected Layers' `layerExtent`,
+ * never a Fabric outline, ADR 0008), in Canvas px; null with nothing selected. Sent when
+ * it changes: with the Selection, after a step or a preview's show, and in every frame of
+ * a move, resize or rotation (the Ruler follows it).
+ */
+export type SelectionBoxEvent = { box: Rect | null }
+
+export type { DraggedGuide, GuideDrag, GuidePointer, GuidesEvent } from './guide-adapter.ts'
+
+export type EditorEvents = { change: ChangeEvent; selection: SelectionEvent; canvas: CanvasEvent; selectionBox: SelectionBoxEvent; guides: GuidesEvent }
+
+export type Editor = {
+  /** Creates the Fabric canvas inside `container`. Call once, before `load`. */
+  mount(container: HTMLElement): void
+  /**
+   * Replaces whatever is shown with `document`, once its fonts and Assets have
+   * loaded. A missing Asset shows as a hatched placeholder; a font that cannot be
+   * loaded rejects, since text is never laid out in a fallback font.
+   */
+  load(document: Document, options?: LoadOptions): Promise<void>
+  /** The Document as currently shown. */
+  getDocument(): Document
+  /**
+   * Shows `document` (already valid) in place of the current one, keeping the
+   * Asset URLs of `load`, records it as one undo step and emits one `change`.
+   * Resolves once it shows; does nothing when it equals the shown Document.
+   */
+  apply(document: Document, options: ApplyOptions): Promise<void>
+  /**
+   * Changes the shown Document by `recipe` (the Inspector's edits): one undo step and
+   * one `change`, like `apply`, but the Selection stays and every Layer that keeps its
+   * id, type and `src` is laid out again in place, so images are not loaded again.
+   * Resolves once it shows; does nothing when the recipe changes nothing.
+   */
+  update(recipe: DocumentRecipe, options: ApplyOptions): Promise<void>
+  /**
+   * Starts a transient preview (see `Preview`) of the Document as shown now, ending a
+   * text edit and dropping any preview already running.
+   */
+  preview(): Preview
+  /** Steps back one undo step (ending a text edit first). Resolves false when there is none. */
+  undo(): Promise<boolean>
+  /** Steps forward one undone step. Resolves false when there is none. */
+  redo(): Promise<boolean>
+  canUndo(): boolean
+  canRedo(): boolean
+  /** The ids of the selected Layers, bottom → top. */
+  getSelection(): string[]
+  /**
+   * Selects the Layers `ids` (none for `[]`), skipping unknown ones. Locked and hidden
+   * Layers are selected too (the Layer list picks them for the Inspector), but on the
+   * Canvas they have no handles and do not move.
+   */
+  select(ids: readonly string[]): void
+  /** Subscribes to an editor event; returns the unsubscribe function. */
+  on<K extends keyof EditorEvents>(type: K, listener: (event: EditorEvents[K]) => void): () => void
+  /**
+   * The Text Layout of `layer` (its lines, height and the font size used after
+   * AutoFit), from core `layoutText` with the measure the Canvas draws with (ADR 0004),
+   * never read back from Fabric.
+   */
+  textLayout(layer: TextLayer): TextLayout
+  /**
+   * The measure the Canvas lays text out with (ADR 0004), for core functions that need
+   * one (`layerExtent`, `selectionBox`) so they agree with what the Canvas draws.
+   */
+  measureText: MeasureText
+  /** The Fabric object showing a Layer, for adapters that need it (Selection, tests). */
+  objectFor(layerId: string): FabricObject | undefined
+  /**
+   * Turns Snapping on or off (a session setting, like the Anchor; on by default). Off, a
+   * drag moves freely, still by whole px.
+   */
+  setSnapping(on: boolean): void
+  /**
+   * What the precision tools draw over the Canvas now (snap lines while a drag snaps), in
+   * Canvas coordinates, for adapters and tests (like `objectFor`). Empty outside a gesture,
+   * except for the Measurement while Alt is held.
+   */
+  marks(): Mark[]
+  /**
+   * Starts dragging the Guide `index` on `axis` (`x`: a vertical Guide, in `guides.x`),
+   * or a new one at the end of that axis (`'new'`). Escape cancels it.
+   */
+  dragGuide(axis: Axis, index: number | 'new'): GuideDrag
+  /** Registers a Ruler: a Guide released over `element` is removed. Returns the unregister function. */
+  addRuler(element: Element): () => void
+  /** Canvas px per Document px. The canvas element is resized to the zoomed Canvas size. */
+  setZoom(zoom: number): void
+  getZoom(): number
+  /** Sets the zoom so the whole Canvas fits `viewport`, and returns it. */
+  zoomToFit(viewport: Size): number
+  /**
+   * Exports the shown Document at exactly Canvas size × scale (whatever the zoom or
+   * `devicePixelRatio`), supersampled 2× like the server, once its fonts and images are loaded.
+   */
+  export(options?: ExportOptions): Promise<ExportResult>
+  destroy(): Promise<void>
+}
+
+/** Arrow-key nudge in Document px; Shift multiplies it. */
+const NUDGE = 1
+const NUDGE_SHIFT = 10
+const ARROWS: Record<string, [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+}
+
+/** Keys typed into these go to the field, not the editor. */
+const FIELD = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
+
+/** Whether two Documents are the same (as JSON: same keys, in the same order). */
+const sameDocument = (a: Document, b: Document): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/** Whether `next` differs from `shown` by nothing the Canvas draws (only `guides`, the name, …), so no Layer is laid out again. */
+const sameScene = (shown: Document, next: Document): boolean =>
+  JSON.stringify(shown.canvas) === JSON.stringify(next.canvas) && JSON.stringify(shown.layers) === JSON.stringify(next.layers)
+
+/** Ids of the Layers that differ between two Documents, in `after` order then removed ones. */
+function changedLayerIds(before: Document, after: Document): string[] {
+  const all = (document: Document) => walkLayers(document).map((v) => v.layer)
+  const old = new Map(all(before).map((l) => [l.id, JSON.stringify(l)]))
+  const ids = all(after).filter((l) => old.get(l.id) !== JSON.stringify(l)).map((l) => l.id)
+  const kept = new Set(all(after).map((l) => l.id))
+  return [...ids, ...all(before).filter((l) => !kept.has(l.id)).map((l) => l.id)]
+}
+
+export function createEditor({ loadFonts = loadBrowserFonts, measure = measureText }: EditorOptions = {}): Editor {
+  let canvas: DocumentCanvas | undefined
+  let current: Document | undefined
+  /** The top-level Layers' Entries, bottom → top (scene.ts). */
+  let roots: Entry[] = []
+  let env: MapperEnv = { assetUrl: (src) => src, measure }
+  let zoom = 1
+  /** Bumped by every `load`, so only the latest one shows its Document. */
+  let loads = 0
+  let selected: string[] = []
+  /** While true, Fabric's selection events are not reported (the editor reselects what it dissolved). */
+  let holdSelection = false
+  const history = createHistory()
+  /** The preview running, if any; `drop` ends it and shows the Document from before it again. */
+  let previewing: { base: Document; drop: () => Promise<void>; end: () => void } | undefined
+  let snapping = true
+  /** The Snapping adapter, from `mount`. */
+  let snap: SnapAdapter | undefined
+  /** The adapter snapping resizes (and stepping rotations), from `mount`. */
+  let resizeSnap: ResizeSnap | undefined
+  /** The Measurement adapter, from `mount`. */
+  let measurement: MeasureAdapter | undefined
+  /** Undoes `mount` and returns the <canvas> it added to the container. */
+  let unmount = (): HTMLCanvasElement | undefined => undefined
+  const listeners: { [K in keyof EditorEvents]: Set<(event: EditorEvents[K]) => void> } = {
+    change: new Set(),
+    selection: new Set(),
+    canvas: new Set(),
+    selectionBox: new Set(),
+    guides: new Set(),
+  }
+  /** The last `selectionBox` sent (as JSON), so an unchanged Box is not sent again. */
+  let sentBox: string | undefined
+  /** The Canvas size last reported by a `canvas` event. */
+  let settledSize: Size | undefined
+
+  const emit = <K extends keyof EditorEvents>(type: K, event: EditorEvents[K]) => {
+    for (const listener of [...listeners[type]]) listener(event)
+  }
+
+  /** Guides: their drag, their hits on the Canvas, the Rulers and the `guides` events. */
+  const guides = createGuideAdapter({
+    canvas: () => requireCanvas(),
+    document: () => current,
+    base: () => previewing?.base ?? documentNow(),
+    startPreview: (base) => startPreview(base, dropPreview()),
+    finishTextEdit: () => finishTextEdit(),
+    measure: () => env.measure,
+    zoom: () => zoom,
+    snapping: () => snapping,
+    requestRender: () => canvas?.requestRenderAll(),
+    emit: (event) => emit('guides', event),
+  })
+
+  /** Reports the shown Canvas size when it differs from the one last reported (see `CanvasEvent`). */
+  const settleSize = () => {
+    if (!current) return
+    const { width, height } = current.canvas
+    if (settledSize && settledSize.width === width && settledSize.height === height) return
+    settledSize = { width, height }
+    emit('canvas', { width, height })
+  }
+
+  const requireCanvas = (): DocumentCanvas => {
+    if (!canvas) throw new Error('Editor is not mounted; call mount(container) first')
+    return canvas
+  }
+
+  const entryOf = (object: FabricObject) => allEntries(roots).find((e) => e.object === object)
+
+  /** The selected Entries, in draw order. */
+  const selectedEntries = (): Entry[] => {
+    const active = canvas?.getActiveObjects() ?? []
+    return allEntries(roots).filter((e) => active.includes(e.object))
+  }
+
+  /** The Entries of a hit path of objects (see `DocumentCanvas.hitPath`). */
+  const entriesOf = (path: readonly FabricObject[]): Entry[] | undefined => {
+    const entries = path.map(entryOf)
+    return entries.every((e) => e !== undefined) && entries.length > 0 ? (entries as Entry[]) : undefined
+  }
+
+  /** The object a click on `path` targets (picking.ts). */
+  const pick = (path: FabricObject[], e: TPointerEvent): FabricObject => {
+    const entries = entriesOf(path)
+    if (!entries) return path[0]!
+    return clickTarget(entries, selectedEntries(), e.metaKey || e.ctrlKey).object
+  }
+
+  /** A double click on a selected Group selects its Layer under the pointer. */
+  const onDoubleClick = (e: TPointerEvent) => {
+    const c = requireCanvas()
+    const path = entriesOf(c.hitPath(e))
+    const target = path && doubleClickTarget(path, selectedEntries())
+    if (target) selectIds([target.base.id])
+  }
+
+  /** Shift+click on `object`: adds it to the Selection or takes it out (picking.ts). */
+  const toggle = (object: FabricObject): boolean => {
+    const entry = entryOf(object)
+    if (!entry) return false
+    selectIds(toggleSelection(selectedEntries(), entry).map((e) => e.base.id))
+    return true
+  }
+
+  /**
+   * The extent of the Layer a click at `e` would select (picking.ts), measured to with
+   * Alt; none over the empty Canvas, a selected Layer or one a click cannot hit.
+   */
+  const measuredLayerAt = (e: TPointerEvent): Rect | undefined => {
+    const path = canvas?.hitPath(e) ?? []
+    const entry = path.length > 0 ? entryOf(pick(path, e)) : undefined
+    if (!entry || selectedEntries().includes(entry)) return undefined
+    return layerExtent(liveLayer(entry), env.measure)
+  }
+
+  /** Everything the overlay draws now: snap lines of a Guide drag, then of a drag or a resize (with equal gaps), then the Measurement. */
+  const allMarks = (): Mark[] => [...guides.marks(), ...(snap?.marks() ?? []), ...(resizeSnap?.marks() ?? []), ...(measurement?.marks() ?? [])]
+
+  /** Escape with a Layer in a Group selected selects its Group instead. */
+  const escapeKey = (event: KeyboardEvent): boolean => {
+    if (event.key !== 'Escape' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false
+    const next = escapeSelection(selectedEntries())
+    if (!next) return false
+    event.preventDefault()
+    selectIds(next.map((e) => e.base.id))
+    return true
+  }
+
+  const documentNow = (): Document => {
+    if (!current) throw new Error('No Document loaded')
+    return { ...structuredClone(current), layers: roots.map(layerOf) }
+  }
+
+  /**
+   * The Group a gesture made of a Group's object, from its Layers as last laid out.
+   * Before the gesture the object had the identity transform around the Group's Box
+   * (centre `c`), so now it maps every point p to t + R·s·(p − c): a scale `s` (corner
+   * handles, always proportional), a rotation R (the rotation handle) and a move to `t`.
+   * - A move alone: every leaf moves by t − c (whole px when `whole`, like any
+   *   transform), so they all move alike.
+   * - A scale alone: core `scaleGroup` around the point the gesture kept fixed (the
+   *   opposite corner, or the centre with Alt).
+   * - Otherwise (a rotation, or a whole Selection turned): core `scaleGroup` and
+   *   `rotateGroup` around `c`, then the move.
+   */
+  const transformedGroup = (entry: GroupEntry, whole: boolean): GroupLayer => {
+    const before = syncBase(entry) as GroupLayer
+    const box = layerExtent(before, env.measure)
+    const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    const { scaleX, scaleY, translateX, translateY } = util.qrDecompose(entry.object.calcTransformMatrix())
+    const scale = Math.sqrt(Math.abs(scaleX * scaleY))
+    // The angle as a leaf reads it (`objectToLayer`), so Layers turned together get the same rotation.
+    const angle = entry.object.getTotalAngle()
+    const turn = Math.abs(angle) < 1e-9 ? 0 : angle
+    const scaled = Math.abs(scale - 1) > 1e-9
+    if (scaled && turn === 0) {
+      const fixed = { x: c.x + (translateX - c.x) / (1 - scale), y: c.y + (translateY - c.y) / (1 - scale) }
+      return scaleGroup(before, scale, fixed)
+    }
+    let layer = before
+    if (scaled) layer = scaleGroup(layer, scale, c)
+    if (turn !== 0) layer = rotateGroup(layer, turn, env.measure, c)
+    let dx = translateX - c.x
+    let dy = translateY - c.y
+    if (whole) [dx, dy] = [roundPx(dx), roundPx(dy)]
+    return dx === 0 && dy === 0 ? layer : translateLayer(layer, dx, dy)
+  }
+
+  /** Bakes what a gesture did to a Group's object into its Layers; the caller lays the Group out again. */
+  const bakeGroup = (entry: GroupEntry, cause: ChangeCause) => rebase(entry, transformedGroup(entry, cause === 'transform'))
+
+  /**
+   * The Layer `entry` shows right now, also in the middle of a gesture: a Group as
+   * `transformedGroup`, a leaf read back from its object (inside an ActiveSelection
+   * being scaled, its size scaled with it).
+   */
+  const liveLayer = (entry: Entry): Layer => {
+    if (isGroupEntry(entry)) return transformedGroup(entry, false)
+    const layer = objectToLayer(entry.object, entry.base)
+    const holder = entry.object.group
+    if (!(holder instanceof ActiveSelection) || (holder.scaleX === 1 && holder.scaleY === 1)) return layer
+    const scaled = { ...layer, width: layer.width * holder.scaleX }
+    scaled.x = layer.x + (layer.width - scaled.width) / 2
+    if ('height' in layer && layer.height !== undefined) {
+      const height = layer.height * holder.scaleY
+      Object.assign(scaled, { height, y: layer.y + (layer.height - height) / 2 })
+    }
+    return scaled
+  }
+
+  /** Sends the Selection Box as shown now when it differs from the one last sent (see `SelectionBoxEvent`). */
+  const reportBox = () => {
+    if (holdSelection) return
+    const box = current ? (selectionBox(selectedEntries().map(liveLayer), env.measure) ?? null) : null
+    const key = JSON.stringify(box)
+    if (key === sentBox) return
+    sentBox = key
+    emit('selectionBox', { box })
+  }
+
+  /** Ends a logical modification of `objects`: bakes each into its Layer and emits one `change`. */
+  const commit = (objects: FabricObject[], cause: ChangeCause) => {
+    const c = requireCanvas()
+    const active = c.getActiveObject()
+    // Inside an ActiveSelection an object's own props are relative to the selection, so
+    // the selection is dissolved first (Fabric moves its transform onto the objects),
+    // the objects are baked in the scene, and then they are selected again.
+    const regroup = active instanceof ActiveSelection && objects.some((o) => o.group === active)
+    if (regroup) c.discardActiveObject()
+    const touched: Entry[] = []
+    for (const object of objects) {
+      const entry = entryOf(object)
+      if (!entry) continue
+      if (isGroupEntry(entry)) bakeGroup(entry, cause)
+      else {
+        const layer = objectToLayer(object, entry.base)
+        entry.base = cause === 'transform' ? wholePixels(layer) : layer
+      }
+      touched.push(entry)
+    }
+    // Lay out each top-level Layer touched again, so a Group's Box follows its Layers.
+    for (const root of new Set(touched.map(rootOf))) applyLayer(root.object, syncBase(root), env)
+    if (regroup) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
+    c.requestRenderAll()
+    if (touched.length === 0) return
+    const document = documentNow()
+    history.record(document)
+    const ids = new Set(touched.flatMap((e) => allEntries([e]).map((d) => d.base.id)))
+    emit('change', { document, cause, layerIds: [...ids] })
+    reportBox()
+  }
+
+  /**
+   * Lays `document` out in place of what is shown, once its fonts and Assets have
+   * loaded. Resolves false when a newer `show` (or `destroy`) won meanwhile.
+   */
+  const show = async (document: Document, nextEnv: MapperEnv): Promise<boolean> => {
+    const c = requireCanvas()
+    const token = ++loads
+    if (current && nextEnv === env && sameScene(documentNow(), document)) {
+      showGuidesOnly(document)
+      return true
+    }
+    const next = structuredClone(document)
+    const layers = next.layers
+    // Fonts first: text is laid out (AutoFit, wrapping) only with the real font.
+    await loadFonts(facesUsed(next))
+    if (token !== loads || canvas !== c) return false
+    // Fabric caches glyph widths per family; anything still shown is re-measured.
+    for (const object of c.getObjects()) if (object instanceof Textbox) object.initDimensions()
+    c.requestRenderAll()
+
+    const objects = await Promise.all(layers.map((layer) => layerToObject(layer, nextEnv)))
+    if (token !== loads || canvas !== c) return false // a newer show (or destroy) won
+    c.discardActiveObject()
+    c.remove(...c.getObjects())
+    current = next
+    env = nextEnv
+    roots = buildEntries(layers, objects)
+    for (const { object } of allEntries(roots)) if (object instanceof Textbox) object.controls = textControls(resizeText)
+    c.backgroundColor = current.canvas.background ?? ''
+    c.add(...roots.map((e) => e.object))
+    applyZoom()
+    c.renderAll()
+    guides.report()
+    return true
+  }
+
+  /** Shows `document` as a step taken by `cause` (recording it unless it is a history move), and emits it. */
+  const showStep = async (document: Document, cause: ChangeCause): Promise<boolean> => {
+    const before = documentNow()
+    if (!(await show(document, env))) return false
+    const after = documentNow()
+    if (cause !== 'undo' && cause !== 'redo') history.record(after)
+    emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
+    settleSize()
+    reportBox()
+    return true
+  }
+
+  /**
+   * The fast path of a step or preview that changes nothing the Canvas draws (a Guide
+   * dragged in a Document full of text): `next` becomes the shown Document, but no Layer
+   * is laid out again; only the overlay draws again.
+   */
+  const showGuidesOnly = (next: Document) => {
+    const layers = current!.layers
+    current = { ...structuredClone({ ...next, layers: [] }), layers }
+    canvas?.requestRenderAll()
+    guides.report()
+  }
+
+  /**
+   * Shows `next` keeping the Selection. When every Layer keeps its id, type and `src`
+   * (in the same order, in the same Groups) each is laid out again on its own object; otherwise the
+   * Document is shown afresh and the same Layers selected again. Resolves false when
+   * a newer `show` (or `destroy`) won meanwhile.
+   */
+  const relayout = async (next: Document): Promise<boolean> => {
+    const c = requireCanvas()
+    if (current && sameScene(documentNow(), next)) {
+      ++loads
+      showGuidesOnly(next)
+      return true
+    }
+    const ids = [...selected]
+    const inPlace = sameShape(roots, next.layers)
+    holdSelection = true
+    try {
+      if (!inPlace) {
+        if (!(await show(next, env))) return false
+        selectIds(ids)
+        return true
+      }
+      // Inside an ActiveSelection an object's props are relative to it: dissolve, lay out, regroup.
+      const active = c.getActiveObject()
+      const group = active instanceof ActiveSelection ? active.getObjects() : undefined
+      if (group) c.discardActiveObject()
+      current = structuredClone(next)
+      current.layers.forEach((layer, i) => {
+        const entry = roots[i]!
+        rebase(entry, layer)
+        applyLayer(entry.object, layer, env)
+      })
+      c.backgroundColor = current.canvas.background ?? ''
+      if (group) c.setActiveObject(new ActiveSelection(group, { canvas: c }))
+      applyZoom()
+      guides.report()
+      return true
+    } finally {
+      holdSelection = false
+      reportSelection()
+    }
+  }
+
+  /**
+   * Selects the Layers `ids`, locked and hidden ones too, skipping unknown ones. A Layer
+   * whose ancestor is among them is left out (the Selection never holds both).
+   */
+  const selectIds = (ids: readonly string[]) => {
+    const c = requireCanvas()
+    const objects = withoutDescendants(allEntries(roots).filter((e) => ids.includes(e.base.id))).map((e) => e.object)
+    const held = holdSelection
+    holdSelection = true // one report for the whole swap, not a `[]` in between
+    try {
+      c.discardActiveObject()
+      if (objects.length === 1) c.setActiveObject(objects[0]!)
+      else if (objects.length > 1) c.setActiveObject(new ActiveSelection(objects, { canvas: c }))
+    } finally {
+      holdSelection = held
+    }
+    c.requestRenderAll()
+    reportSelection()
+  }
+
+  /**
+   * Abandons a drag, resize or rotate in progress (a reload from disk replaced what it
+   * moves): no step, no `change`, the active object dropped and the Snapping session ended.
+   */
+  const abandonGesture = () => {
+    const c = canvas
+    if (!c?._currentTransform) return
+    c._currentTransform.target.isMoving = false
+    c._currentTransform = null
+    snap?.end()
+    resizeSnap?.end()
+    c.discardActiveObject()
+    c.requestRenderAll()
+  }
+
+  /** Ends a text edit in progress, so it becomes its own step before anything else. */
+  const finishTextEdit = () => {
+    const active = canvas?.getActiveObject()
+    if (active instanceof Textbox && active.isEditing) active.exitEditing()
+  }
+
+  /** Drops a preview in progress, so any other step starts from the Document before it. */
+  const dropPreview = async () => {
+    await previewing?.drop()
+    guides.settle()
+  }
+
+  /**
+   * Starts a preview of `base` once `ready` (a dropped preview's restore) settles:
+   * its shows queue behind `ready`, so they never race that restore.
+   */
+  const startPreview = (base: Document, ready: Promise<unknown>): Preview => {
+    let ended = false
+    let shows = 0
+    let pending: Promise<unknown> = ready
+    const end = () => {
+      ended = true
+      if (previewing === state) previewing = undefined
+    }
+    const restore = async () => {
+      if (ended) return
+      end()
+      // Synchronous when laid out in place, so a step right after starts from `base`.
+      if (current && !sameDocument(documentNow(), base)) await relayout(base)
+    }
+    const state = { base, drop: restore, end }
+    previewing = state
+
+    const showNow = async (recipe: DocumentRecipe, token: number) => {
+      snap?.end()
+      resizeSnap?.end()
+      const next = recipe(structuredClone(base))
+      if (!sameFaces(base, next)) {
+        await loadFonts(facesUsed(next))
+        if (ended || token !== shows || !current) return
+      }
+      await relayout(next)
+    }
+
+    return {
+      show(recipe) {
+        if (ended) return Promise.resolve()
+        const token = ++shows
+        const shown = pending.then(() => (ended || token !== shows ? undefined : showNow(recipe, token)))
+        pending = shown
+        return shown
+      },
+      async commit({ cause }) {
+        if (ended) return
+        end()
+        await pending
+        if (!current) return
+        const after = documentNow()
+        if (sameDocument(after, base)) return
+        history.record(after)
+        emit('change', { document: after, cause, layerIds: changedLayerIds(base, after) })
+        settleSize()
+      },
+      cancel: restore,
+      ended: () => ended,
+    }
+  }
+
+  const travel = async (direction: 'undo' | 'redo'): Promise<boolean> => {
+    if (!current) return false
+    finishTextEdit()
+    await dropPreview()
+    const snapshot = direction === 'undo' ? history.undo() : history.redo()
+    if (!snapshot) return false
+    return showStep(snapshot, direction)
+  }
+
+  /** Whether the Selection holds a locked or hidden Layer, so it shows no handles and does not move. */
+  const selectionFrozen = (): boolean => {
+    const active = canvas?.getActiveObjects() ?? []
+    return allEntries(roots).some((e) => isFrozenEntry(e) && active.includes(e.object))
+  }
+
+  /** A Selection holding a Group scales only proportionally, like the Group (controls.ts). */
+  const groupSelectionControls = () => {
+    const active = canvas?.getActiveObject()
+    if (active instanceof ActiveSelection && active.getObjects().some((o) => o instanceof DocumentGroup)) {
+      active.controls = groupControls()
+      active.setCoords()
+    }
+  }
+
+  const reportSelection = () => {
+    const active = canvas?.getActiveObject()
+    if (active instanceof ActiveSelection) {
+      const frozen = selectionFrozen()
+      active.set({ hasControls: !frozen, lockMovementX: frozen, lockMovementY: frozen })
+    }
+    if (holdSelection) return
+    const c = requireCanvas()
+    const ids = allEntries(roots).filter((e) => c.getActiveObjects().includes(e.object)).map((e) => e.base.id)
+    if (ids.length !== selected.length || ids.some((id, i) => id !== selected[i])) {
+      selected = ids
+      emit('selection', { layerIds: [...ids] })
+    }
+    reportBox()
+  }
+
+  /** Moves one edge of a text Layer's Box while its handle is dragged; committed on release. */
+  const resizeText = (object: FabricObject, edge: TextEdge, point: Point, event: TPointerEvent) => {
+    const entry = entryOf(object)
+    if (!entry || entry.base.type !== 'text') return false
+    const before = entry.base
+    entry.base = resizeTextLayer(object, before, edge, snapTextPoint(object, before, edge, point, event))
+    applyLayer(object, entry.base, env)
+    if (entry.parent) applyLayer(rootOf(entry).object, syncBase(rootOf(entry)), env)
+    reportBox()
+    return entry.base.width !== before.width || entry.base.height !== before.height
+  }
+
+  /**
+   * `point` for a text resize, moved so the dragged edge of the Box lands where
+   * Snapping puts it (an unrotated text Layer, so the edge is the point's x or y).
+   */
+  const snapTextPoint = (object: FabricObject, base: TextLayer, edge: TextEdge, point: Point, event: TPointerEvent): Point => {
+    if (!resizeSnap) return point
+    const raw = layerExtent(resizeTextLayer(object, base, edge, point), env.measure)
+    const box = resizeSnap.snapText(object, raw, event)
+    if (box === raw) return point
+    if (edge === 'left') return new Point(box.x, point.y)
+    if (edge === 'right') return new Point(box.x + box.width, point.y)
+    return new Point(point.x, box.y + box.height)
+  }
+
+  /** Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z and Ctrl+Y redo. */
+  const undoKeys = (event: KeyboardEvent): boolean => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return false
+    const key = event.key.toLowerCase()
+    const direction = key === 'z' ? (event.shiftKey ? 'redo' : 'undo') : key === 'y' && !event.shiftKey ? 'redo' : undefined
+    if (!direction) return false
+    event.preventDefault()
+    void travel(direction)
+    return true
+  }
+
+  /**
+   * Ctrl/Cmd+G groups the Selection, Ctrl/Cmd+Shift+G ungroups every selected Group
+   * (layer-actions.ts): one step, then the result is selected. The browser's own
+   * shortcut is blocked even when the action is unavailable.
+   */
+  const groupKeys = (event: KeyboardEvent): boolean => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'g') return false
+    event.preventDefault()
+    const result = (event.shiftKey ? ungroupSelection : groupSelection)(documentNow(), selected)
+    if (result) void applyLayers(result)
+    return true
+  }
+
+  /** Shows a Layer action's Document as one 'layers' step, then selects its result. */
+  const applyLayers = async ({ document, select }: LayerActionResult) => {
+    finishTextEdit()
+    await dropPreview()
+    if (await showStep(document, 'layers')) selectIds(select)
+  }
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!canvas || !current) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest?.(FIELD)) return
+    // A gesture is previewing; its owner handles keys (Escape cancels it).
+    if (previewing) return
+    if (undoKeys(event)) return
+    if (groupKeys(event)) return
+    if (escapeKey(event)) return
+    nudge(event)
+  }
+
+  const nudge = (event: KeyboardEvent) => {
+    const direction = ARROWS[event.key]
+    if (!direction || !canvas || event.altKey || event.ctrlKey || event.metaKey) return
+    const active = canvas.getActiveObject()
+    if (!active || (active instanceof Textbox && active.isEditing) || selectionFrozen()) return
+    event.preventDefault()
+    const step = event.shiftKey ? NUDGE_SHIFT : NUDGE
+    active.set({ left: active.left + direction[0] * step, top: active.top + direction[1] * step })
+    active.setCoords()
+    commit(canvas.getActiveObjects(), 'nudge')
+  }
+
+  const applyZoom = () => {
+    const c = requireCanvas()
+    if (current) {
+      const { width, height } = current.canvas
+      c.setDimensions({ width: Math.round(width * zoom), height: Math.round(height * zoom) })
+    }
+    c.setZoom(zoom)
+    c.requestRenderAll()
+  }
+
+  return {
+    mount(container) {
+      if (canvas) throw new Error('Editor is already mounted')
+      const element = container.ownerDocument.createElement('canvas')
+      container.append(element)
+      const c = new DocumentCanvas(element, { preserveObjectStacking: true })
+      canvas = c
+      c.on('object:modified', ({ target, transform }) => {
+        // A text edit fires this without a transform; `text:editing:exited` commits it.
+        if (!transform) return
+        commit(target instanceof ActiveSelection ? target.getObjects() : [target], 'transform')
+      })
+      c.on('text:editing:exited', ({ target }) => {
+        const entry = entryOf(target)
+        if (!entry || entry.base.type !== 'text') return
+        if (entry.base.text === target.text) {
+          // Unchanged: show the Layer again (its textTransform hides the typed text).
+          applyLayer(target, entry.base, env)
+          c.requestRenderAll()
+          return
+        }
+        entry.base = { ...entry.base, text: target.text } satisfies TextLayer
+        commit([target], 'text')
+      })
+      c.pick = pick
+      c.toggleSelected = toggle
+      c.on('mouse:dblclick', ({ e }) => onDoubleClick(e))
+      const adapter = attachSnapAdapter(c, {
+        document: documentNow,
+        idsOf: (objects) => allEntries(roots).filter((e) => objects.includes(e.object)).map((e) => e.base.id),
+        measure: () => env.measure,
+        zoom: () => zoom,
+      })
+      adapter.setEnabled(snapping)
+      snap = adapter
+      const resizing = attachResizeSnap(c, {
+        document: documentNow,
+        idsOf: (objects) => allEntries(roots).filter((e) => objects.includes(e.object)).map((e) => e.base.id),
+        boxOf: (object) => {
+          const entry = entryOf(object)
+          return entry && !isGroupEntry(entry) ? layerExtent(objectToLayer(object, entry.base), env.measure) : undefined
+        },
+        measure: () => env.measure,
+        zoom: () => zoom,
+      })
+      resizing.setEnabled(snapping)
+      resizeSnap = resizing
+      const measuring = attachMeasurement(c, container.ownerDocument, {
+        selectionBox: () => (current ? selectionBox(selectedEntries().map(liveLayer), env.measure) : undefined),
+        layerAt: measuredLayerAt,
+        canvasSize: () => current?.canvas,
+      })
+      measurement = measuring
+      const detachOverlay = attachOverlay(c, () => [...guides.guideMarks(), ...allMarks()], () => zoom, readOverlayColors(container))
+      const detachGuides = guides.attachHits(c)
+      c.on('selection:created', reportSelection)
+      c.on('selection:updated', reportSelection)
+      c.on('selection:created', groupSelectionControls)
+      c.on('selection:updated', groupSelectionControls)
+      c.on('selection:cleared', reportSelection)
+      // Every frame of a move, resize or rotation sends the Selection Box as it is then.
+      // Registered after the Snapping adapter (above): Fabric calls listeners in order, so
+      // a move frame's Box is the snapped one.
+      c.on('object:moving', reportBox)
+      c.on('object:scaling', reportBox)
+      c.on('object:rotating', reportBox)
+      const keyTarget = container.ownerDocument
+      keyTarget.addEventListener('keydown', onKeyDown)
+      unmount = () => {
+        keyTarget.removeEventListener('keydown', onKeyDown)
+        detachOverlay()
+        detachGuides()
+        adapter.detach()
+        snap = undefined
+        resizing.detach()
+        resizeSnap = undefined
+        measuring.detach()
+        measurement = undefined
+        return element
+      }
+    },
+
+    async load(document, { assetUrl = (src: string) => src } = {}) {
+      previewing?.end()
+      guides.settle()
+      if (!(await show(document, { assetUrl, measure }))) return
+      history.reset(document)
+      settleSize()
+    },
+
+    getDocument: documentNow,
+
+    async apply(document, { cause }) {
+      if (!current) throw new Error('No Document loaded')
+      if (cause === 'reload') abandonGesture()
+      finishTextEdit()
+      await dropPreview()
+      if (sameDocument(document, documentNow())) return
+      await showStep(document, cause)
+    },
+
+    async update(recipe, { cause }) {
+      if (!current) throw new Error('No Document loaded')
+      if (cause === 'reload') abandonGesture()
+      finishTextEdit()
+      await dropPreview()
+      let before = documentNow()
+      let next = recipe(structuredClone(before))
+      // A font not shown yet loads first; the recipe then runs on whatever shows by then.
+      if (!sameFaces(before, next)) {
+        const token = loads
+        await loadFonts(facesUsed(next))
+        if (token !== loads || !current) return
+        before = documentNow()
+        next = recipe(structuredClone(before))
+      }
+      if (sameDocument(next, before)) return
+      if (!(await relayout(next))) return
+      const after = documentNow()
+      history.record(after)
+      emit('change', { document: after, cause, layerIds: changedLayerIds(before, after) })
+      settleSize()
+    },
+
+    preview() {
+      if (!current) throw new Error('No Document loaded')
+      finishTextEdit()
+      // A dropped preview that changed the Layers restores asynchronously, so what
+      // shows now is not yet the Document from before it: start from that one instead.
+      const base = previewing?.base ?? documentNow()
+      return startPreview(base, dropPreview())
+    },
+
+    undo: () => travel('undo'),
+    redo: () => travel('redo'),
+    canUndo: () => current !== undefined && history.canUndo(),
+    canRedo: () => current !== undefined && history.canRedo(),
+
+    getSelection: () => [...selected],
+
+    select(ids) {
+      requireCanvas()
+      finishTextEdit()
+      selectIds(ids)
+    },
+
+    on(type, listener) {
+      listeners[type].add(listener)
+      return () => listeners[type].delete(listener)
+    },
+
+    textLayout: (layer) => layoutText(layer, measure),
+
+    measureText: measure,
+
+    objectFor(layerId) {
+      return allEntries(roots).find((e) => e.base.id === layerId)?.object
+    },
+
+    setZoom(value) {
+      if (!(value > 0) || !Number.isFinite(value)) throw new Error(`Zoom must be a positive number, got ${value}`)
+      zoom = value
+      applyZoom()
+      requireCanvas().renderAll()
+    },
+
+    getZoom: () => zoom,
+
+    setSnapping(on) {
+      snapping = on
+      snap?.setEnabled(on)
+      resizeSnap?.setEnabled(on)
+    },
+
+    marks: allMarks,
+
+    dragGuide: (axis, index) => guides.drag(axis, index),
+
+    addRuler: (element) => guides.addRuler(element),
+
+    zoomToFit(viewport) {
+      if (!current) throw new Error('No Document loaded')
+      this.setZoom(fitZoom(current.canvas, viewport))
+      return zoom
+    },
+
+    async export(options) {
+      const c = requireCanvas()
+      if (!current) throw new Error('No Document loaded')
+      const document = this.getDocument()
+      await loadFonts(facesUsed(document))
+      return exportCanvas(c, document.canvas, options)
+    },
+
+    async destroy() {
+      const c = canvas
+      const mounted = unmount()
+      unmount = () => undefined
+      previewing?.end()
+      canvas = undefined
+      current = undefined
+      roots = []
+      selected = []
+      listeners.change.clear()
+      listeners.selection.clear()
+      listeners.canvas.clear()
+      listeners.selectionBox.clear()
+      listeners.guides.clear()
+      guides.reset()
+      sentBox = undefined
+      settledSize = undefined
+      await c?.dispose()
+      // Fabric's dispose puts the bare <canvas> back into the container; take it out too.
+      mounted?.remove()
+    },
+  }
+}
+
+export type { Size } from './zoom.ts'
+export type { ExportOptions, ExportResult } from './export.ts'
+
+/** Whether `next` uses no font face that `before` does not (so nothing has to load first). */
+function sameFaces(before: Document, next: Document): boolean {
+  const shown = new Set(facesUsed(before).map(faceKey))
+  return facesUsed(next).every((f) => shown.has(faceKey(f)))
+}
+
+/**
+ * The editor's Fabric canvas. A Group is hit only where one of its Layers is (shown and
+ * not locked), never on the empty parts of its Box; a locked or hidden Group not at all.
+ * Which Layer of a hit Group a pointer event targets is up to `pick` (picking.ts).
+ */
+class DocumentCanvas extends Canvas {
+  /** The object a pointer event `e` on `path` (see `hitPath`) targets. */
+  pick: (path: FabricObject[], e: TPointerEvent) => FabricObject = (path) => path[0]!
+  /** Shift+click on `target`: adds it to the Selection or takes it out; false when not handled. */
+  toggleSelected: (target: FabricObject) => boolean = () => false
+  /** Whether a selection rectangle is being dragged out. */
+  get selecting(): boolean {
+    return Boolean(this._groupSelector)
+  }
+  /** The event `findTarget` runs for, so `searchPossibleTargets` can pick by its modifier keys. */
+  private finding: TPointerEvent | undefined
+
+  override _checkTarget(object: FabricObject, pointer: Point): boolean {
+    if (!(object instanceof DocumentGroup)) return super._checkTarget(object, pointer)
+    return object.visible && object.evented && object.getObjects().some((child) => this._checkTarget(child, pointer))
+  }
+
+  override findTarget(e: TPointerEvent) {
+    const outer = this.finding
+    this.finding = e
+    try {
+      return super.findTarget(e)
+    } finally {
+      this.finding = outer
+    }
+  }
+
+  override searchPossibleTargets(objects: FabricObject[], pointer: Point) {
+    const info = super.searchPossibleTargets(objects, pointer)
+    if (objects !== this._objects || !info.container || !this.finding) return info
+    return { ...info, target: this.pick(this.pathOf(info.container, info.subTargets), this.finding) }
+  }
+
+  /** Shift+click is the editor's `toggleSelected`, on the Layer `pick` targets (never a Layer with its ancestor). */
+  protected override handleMultiSelection(e: TPointerEvent, target?: FabricObject): boolean {
+    const active = this._activeObject
+    if (!active || !target || !this.selection || !this._isSelectionKeyPressed(e) || active.getActiveControl()) return false
+    if (target === active) {
+      // On a multiple Selection: the selected Layer under the pointer, else what a click picks.
+      if (!(active instanceof ActiveSelection)) return false
+      const path = this.hitPath(e)
+      target = this._searchPossibleTargets(active.getObjects(), this.getScenePoint(e), []).target ?? (path.length > 0 ? this.pick(path, e) : undefined)
+    }
+    if (!target?.selectable) return false
+    return this.toggleSelected(target)
+  }
+
+  /** The objects under the pointer of `e`: the top-level one, then one per Group level down to the deepest hit. */
+  hitPath(e: TPointerEvent): FabricObject[] {
+    const { target, subTargets } = this._searchPossibleTargets(this._objects, this.getScenePoint(e), [])
+    return target ? this.pathOf(target, subTargets) : []
+  }
+
+  /** Fabric collects sub-targets innermost first. */
+  private pathOf(top: FabricObject, subTargets: readonly FabricObject[]): FabricObject[] {
+    return [top, ...[...subTargets].reverse()]
+  }
+}
+
+/**
+ * A drag, resize or rotate lands on whole pixels (`x`, `y`, `width`, `height`) and
+ * a rotation of 0.1°, so the human's edits stay readable in the JSON. Nudges move
+ * by whole pixels already and keep whatever the Layer had.
+ */
+function wholePixels(layer: LeafLayer): LeafLayer {
+  const rounded: LeafLayer = { ...layer, x: roundPx(layer.x), y: roundPx(layer.y), width: roundPx(layer.width) }
+  if ('height' in layer && layer.height !== undefined) (rounded as { height: number }).height = roundPx(layer.height)
+  if (layer.rotation !== undefined) rounded.rotation = roundAngle(layer.rotation)
+  return rounded
+}

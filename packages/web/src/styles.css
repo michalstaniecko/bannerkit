@@ -1,0 +1,458 @@
+/* Editor window layout. Colors, spacing and radii come from semantic tokens (tokens.css);
+ * components (Button, IconButton, Panel/Section, Tabs) are styled in ui/ui.css. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-size-ui);
+  color: var(--text-default);
+  background: var(--surface-app);
+}
+
+/* Form controls take the UI font instead of the UA default. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Top bar: groups of controls, wrapping when crowded. */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-control);
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.topbar .spacer {
+  flex: 1;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-tight);
+}
+
+/* The Snapping switch (M3); takes no room while empty. */
+.topbar-snapping:empty {
+  display: none;
+}
+
+.topbar .zoom {
+  min-width: 4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.save {
+  color: var(--text-muted);
+}
+
+.save[data-state='failed'] {
+  color: var(--text-danger);
+}
+
+.error {
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+  color: var(--text-danger);
+}
+
+.reload-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+  background: var(--surface-warning);
+  border-bottom: 1px solid var(--border-warning);
+}
+
+/* Layer list | Canvas area | Inspector. */
+.editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Layer list (left). */
+.layer-list {
+  width: var(--layer-list-width);
+  flex: none;
+  overflow: auto;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.layer-list ol {
+  list-style: none;
+  margin: 0;
+  padding: var(--pad-list);
+}
+
+.layer-list ol ol {
+  padding: var(--pad-none);
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-tight);
+  padding-inline-start: calc(var(--layer-depth, 0) * var(--indent-tree));
+  border-radius: var(--control-radius);
+}
+
+.layer-row:hover {
+  background: var(--surface-hover);
+}
+
+.layer-list li[aria-selected='true'] > .layer-row {
+  background: var(--surface-selected);
+}
+
+/* Where a dragged row would land: a line above or below the row, or the Group row outlined. */
+.layer-row[data-drop='above'] {
+  box-shadow: inset 0 var(--drop-line) 0 var(--accent);
+}
+
+.layer-row[data-drop='below'] {
+  box-shadow: inset 0 calc(-1 * var(--drop-line)) 0 var(--accent);
+}
+
+.layer-row[data-drop='into'] {
+  box-shadow: inset 0 0 0 var(--drop-line) var(--accent);
+}
+
+.layer-list .layer-expand {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-size);
+  height: var(--control-size);
+  padding: var(--pad-none);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+}
+
+/* Rows inside a hidden or locked Group: their Layers are hidden or locked through it. */
+.layer-list li[data-inherited] > .layer-row .layer-name {
+  color: var(--text-muted);
+}
+
+.layer-list li[data-inherited~='hidden'] > .layer-row .layer-name {
+  font-style: italic;
+}
+
+.layer-list .layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  padding: var(--pad-control-y) var(--pad-control-x);
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: grab;
+}
+
+/* Canvas area (centre): Ruler gutters around the scrolling viewport. */
+.canvas-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--ruler-size) minmax(0, 1fr);
+  grid-template-rows: var(--ruler-size) minmax(0, 1fr);
+  grid-template-areas:
+    'corner top'
+    'left viewport';
+  background: var(--surface-canvas-area);
+}
+
+.ruler-corner {
+  grid-area: corner;
+}
+
+.ruler-top {
+  grid-area: top;
+  overflow: hidden;
+}
+
+.ruler-left {
+  grid-area: left;
+  overflow: hidden;
+}
+
+.ruler-corner,
+.ruler-top,
+.ruler-left {
+  background: var(--ruler-surface);
+}
+
+/* The Ruler <canvas> fills its gutter; its buffer is sized in device px (Ruler.tsx). */
+.ruler {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viewport {
+  grid-area: viewport;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: safe center;
+}
+
+/* The Canvas and, stacked exactly over it, the overlay (DOM outside Fabric). */
+.canvas-stage {
+  position: relative;
+}
+
+.canvas-stage[hidden] {
+  display: none;
+}
+
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Canvas resize handles (CanvasHandles.tsx): on the edges and corners of the overlay,
+   so they follow the zoom; only the handles take the pointer. */
+.canvas-handles {
+  position: absolute;
+  inset: 0;
+}
+
+.canvas-handle {
+  position: absolute;
+  width: var(--canvas-handle-size);
+  height: var(--canvas-handle-size);
+  translate: -50% -50%;
+  background: var(--surface-panel);
+  border: 1px solid var(--accent);
+  pointer-events: auto;
+}
+
+.canvas-handle[data-sx='-1'] { left: 0; }
+.canvas-handle[data-sx='0'] { left: 50%; cursor: ns-resize; }
+.canvas-handle[data-sx='1'] { left: 100%; }
+.canvas-handle[data-sy='-1'] { top: 0; }
+.canvas-handle[data-sy='0'] { top: 50%; cursor: ew-resize; }
+.canvas-handle[data-sy='1'] { top: 100%; }
+.canvas-handle[data-sx='-1'][data-sy='-1'],
+.canvas-handle[data-sx='1'][data-sy='1'] { cursor: nwse-resize; }
+.canvas-handle[data-sx='1'][data-sy='-1'],
+.canvas-handle[data-sx='-1'][data-sy='1'] { cursor: nesw-resize; }
+
+.canvas-size-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% var(--gap-control);
+  padding: var(--pad-control-y) var(--pad-control-x);
+  border-radius: var(--control-radius);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-size-small);
+  white-space: nowrap;
+}
+
+.hint {
+  color: var(--text-muted);
+}
+
+/* Inspector (right). */
+.inspector {
+  width: var(--inspector-width);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.inspector-tabs {
+  flex: 1;
+  min-height: 0;
+}
+
+.inspector-properties {
+  overflow: auto;
+}
+
+/* JSON tab. */
+.json-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.json-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap-control);
+  padding: var(--pad-bar-y) var(--pad-bar-x);
+}
+
+.json-stale {
+  color: var(--text-muted);
+}
+
+.json-errors {
+  margin: 0;
+  padding: var(--pad-bar-y) var(--pad-bar-x) var(--pad-bar-y) var(--indent-list);
+  color: var(--text-danger);
+}
+
+.json-code {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.json-code .cm-editor {
+  height: 100%;
+  font-family: var(--font-code);
+}
+
+/* Inspector fields: two per row; read-only values and toggles take a whole row. */
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-control);
+}
+
+.field-grid > .readonly-field,
+.field-grid > .text-field {
+  grid-column: 1 / -1;
+}
+
+/* The Align section: six Align buttons in a row, then Distribute and its Gap. */
+.align-buttons,
+.align-distribute {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+}
+
+.align-distribute {
+  margin-top: var(--gap-control);
+}
+
+.align-distribute > .text-field {
+  flex: 1;
+}
+
+/* "Locked by Group …": a Group around the Layer locks or hides it. */
+.inherited-flag {
+  margin: 0 0 var(--gap-control);
+  color: var(--text-muted);
+}
+
+/* The Anchor 3×3 of the Canvas size: a row of its own, nine points in a square. */
+.field-grid > .anchor-picker {
+  grid-column: 1 / -1;
+}
+
+.anchor-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  margin: var(--pad-none);
+  padding: var(--pad-none);
+  border: none;
+  min-width: 0;
+}
+
+.anchor-picker-label {
+  float: left;
+  padding: var(--pad-none);
+  color: var(--text-muted);
+}
+
+.anchor-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: var(--gap-tight);
+}
+
+.anchor-picker-point {
+  margin: var(--pad-none);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The gradient editor: the angle, then one row per stop (colour, offset, remove), then Add stop. */
+.field-grid > .gradient-field {
+  grid-column: 1 / -1;
+}
+
+.gradient-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-control);
+}
+
+.gradient-stops {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  width: 100%;
+  margin: var(--pad-none);
+  padding: var(--pad-none);
+  list-style: none;
+}
+
+.gradient-stop {
+  display: grid;
+  grid-template-columns: 1fr 5rem auto;
+  align-items: center;
+  gap: var(--gap-control-icon);
+}
+
+.gradient-field-mixed {
+  margin: var(--pad-none);
+  color: var(--text-muted);
+}
+
+.readonly-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-icon);
+  min-width: 0;
+}
+
+.readonly-field-label {
+  color: var(--text-muted);
+}
+
+.readonly-field-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-code);
+}

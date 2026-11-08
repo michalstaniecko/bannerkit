@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+# Working Projects stay out of git; committed example Projects live in examples/.
+/projects/
+.state.json
+packages/server/test/__snapshots__/__diff__/
+# Renders of committed example Projects are regenerated, not committed.
+/examples/*/exports/
+# Playwright (S3) output
+test-results/
+playwright-report/

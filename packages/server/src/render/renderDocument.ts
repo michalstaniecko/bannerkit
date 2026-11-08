@@ -1,0 +1,179 @@
+import {
+  DEFAULT_EXPORT_QUALITY,
+  SUPERSAMPLE,
+  boxTransform,
+  type ExportFormat,
+  type Document,
+  type GroupLayer,
+  type Layer,
+  type LeafLayer,
+  layerFace,
+  layoutText,
+  linearGradientLine,
+  type RectLayer,
+  type TextLayer,
+} from '@bannerkit/core'
+import sharp, { type Sharp } from 'sharp'
+import { Canvas, type CanvasRenderingContext2D } from 'skia-canvas'
+import { applyFont, measureText } from './fonts.ts'
+import { drawImageLayer, type LayerImages, loadLayerImages } from './images.ts'
+
+export type RenderOptions = {
+  /** Output scale relative to the Canvas size (1 or 2). Default 1. */
+  scale?: number
+  /** Default png. PNG keeps alpha; JPEG is flattened onto the Canvas background (white if null). */
+  format?: ExportFormat
+  /** JPEG/WebP quality 1-100. Default 90. Ignored for PNG, which is always lossless. */
+  quality?: number
+  /** The Project directory that image Layer `src` paths are relative to. Required for image Layers. */
+  projectDir?: string
+}
+
+/**
+ * Renders a Document to an encoded image at exactly `width × height × scale`.
+ * Reads Assets from `projectDir` but writes nothing; callers decide where bytes go.
+ * Throws a RENDER_FAILED OpError naming the Layer and `src` when an Asset cannot be loaded.
+ */
+export async function renderDocument(doc: Document, options: RenderOptions = {}): Promise<Buffer> {
+  const scale = options.scale ?? 1
+  const images = await loadLayerImages(doc, options.projectDir)
+  const { width, height, background } = doc.canvas
+  const drawScale = scale * SUPERSAMPLE
+  // CPU raster: the default GPU backend is not deterministic enough for snapshots.
+  const canvas = new Canvas(width * drawScale, height * drawScale, { gpu: false })
+  const ctx = canvas.getContext('2d')
+  ctx.scale(drawScale, drawScale)
+
+  if (background !== null) {
+    ctx.fillStyle = background
+    ctx.fillRect(0, 0, width, height)
+  }
+  const scene: Scene = { width, height, drawScale, images }
+  for (const layer of doc.layers) drawLayer(ctx, layer, scene)
+
+  const raw = await canvas.toBuffer('raw', { colorType: 'rgba', premultiplied: false })
+  const resized = sharp(raw, { raw: { width: canvas.width, height: canvas.height, channels: 4 } }).resize(
+    width * scale,
+    height * scale,
+    { kernel: 'lanczos3', fit: 'fill' },
+  )
+  return encode(resized, options.format ?? 'png', options.quality ?? DEFAULT_EXPORT_QUALITY, background).toBuffer()
+}
+
+function encode(image: Sharp, format: ExportFormat, quality: number, background: string | null): Sharp {
+  switch (format) {
+    case 'png':
+      // No quality/effort: either switches sharp to lossy palette PNG.
+      return image.png()
+    case 'jpg':
+      return image.flatten({ background: background ?? '#ffffff' }).jpeg({ quality })
+    case 'webp':
+      return image.webp({ quality })
+  }
+}
+
+/** What drawing any Layer needs besides the context: the Canvas size, the device pixels per Canvas pixel, the loaded images. */
+type Scene = { width: number; height: number; drawScale: number; images: LayerImages }
+
+/** Draws one Layer of any type; a hidden one (with everything in it, for a Group) is skipped. */
+function drawLayer(ctx: CanvasRenderingContext2D, layer: Layer, scene: Scene): void {
+  if (layer.visible === false) return
+  if (layer.type === 'group') drawGroup(ctx, layer, scene)
+  else drawLeaf(ctx, layer, scene)
+}
+
+/**
+ * Draws a Group's children, bottom to top. With opacity below 1 they are drawn
+ * onto a Canvas-sized surface at the same draw scale first, which is then laid
+ * on with the Group's opacity: CSS opacity, where overlapping children do not
+ * show through each other (ADR 0007). At opacity 1 that surface would change
+ * nothing, so the children are drawn directly.
+ */
+function drawGroup(ctx: CanvasRenderingContext2D, group: GroupLayer, scene: Scene): void {
+  const opacity = group.opacity ?? 1
+  if (opacity >= 1) {
+    for (const child of group.layers) drawLayer(ctx, child, scene)
+    return
+  }
+  const { width, height, drawScale } = scene
+  const surface = new Canvas(width * drawScale, height * drawScale, { gpu: false })
+  const sctx = surface.getContext('2d')
+  sctx.scale(drawScale, drawScale)
+  for (const child of group.layers) drawLayer(sctx, child, scene)
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalAlpha = opacity
+  ctx.drawImage(surface, 0, 0)
+  ctx.restore()
+}
+
+/**
+ * Draws one leaf Layer with the effects every leaf type shares: opacity and shadow.
+ * Shadows ignore the transform, so their blur and offsets are scaled by `drawScale` by hand.
+ */
+function drawLeaf(ctx: CanvasRenderingContext2D, layer: LeafLayer, { drawScale, images }: Scene): void {
+  ctx.save()
+  ctx.globalAlpha = layer.opacity ?? 1
+  if (layer.shadow) {
+    ctx.shadowColor = layer.shadow.color
+    ctx.shadowBlur = layer.shadow.blur * drawScale
+    ctx.shadowOffsetX = layer.shadow.offsetX * drawScale
+    ctx.shadowOffsetY = layer.shadow.offsetY * drawScale
+  }
+  switch (layer.type) {
+    case 'rect':
+      drawRect(ctx, layer)
+      break
+    case 'image':
+      drawImageLayer(ctx, layer, images.get(layer.id)!, drawScale)
+      break
+    case 'text':
+      drawText(ctx, layer)
+      break
+  }
+  ctx.restore()
+}
+
+function drawRect(ctx: CanvasRenderingContext2D, layer: RectLayer): void {
+  const { width, height, fill } = layer
+  ctx.save()
+  ctx.transform(...boxTransform(layer))
+  if (typeof fill === 'string') {
+    ctx.fillStyle = fill
+  } else {
+    const { x0, y0, x1, y1 } = linearGradientLine(fill.angle, width, height)
+    const gradient = ctx.createLinearGradient(x0, y0, x1, y1)
+    for (const [color, offset] of fill.stops) gradient.addColorStop(offset, color)
+    ctx.fillStyle = gradient
+  }
+  const radius = Math.min(layer.cornerRadius ?? 0, width / 2, height / 2)
+  if (radius > 0) {
+    ctx.beginPath()
+    ctx.roundRect(0, 0, width, height, radius)
+    ctx.fill()
+  } else {
+    ctx.fillRect(0, 0, width, height)
+  }
+  ctx.restore()
+}
+
+/**
+ * Draws the core Text Layout (ADR 0004): one `fillText` per pre-broken line at
+ * core's positions, never skia-canvas `textWrap`. Overflowing text is clipped to the Box.
+ */
+function drawText(ctx: CanvasRenderingContext2D, layer: TextLayer): void {
+  const layout = layoutText(layer, measureText)
+  ctx.save()
+  ctx.transform(...boxTransform({ ...layer, height: layout.height }))
+  if (layout.overflow) {
+    ctx.beginPath()
+    ctx.rect(0, 0, layer.width, layout.height)
+    ctx.clip()
+  }
+  applyFont(ctx, { ...layerFace(layer), size: layout.fontSize }, layer.letterSpacing ?? 0)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = layer.fill
+  for (const line of layout.lines) ctx.fillText(line.text, line.x, line.baselineY)
+  ctx.restore()
+}
